@@ -22,7 +22,6 @@ const Version = "0.1.0"
 
 type App struct {
 	Registry drivers.Registry
-	Packages drivers.PackageRegistry
 	Sessions sessions.Service
 	Runner   runtime.Runner
 	Stdin    io.Reader
@@ -41,7 +40,7 @@ const (
 
 func New(debug bool, stdin io.Reader, stdout, stderr io.Writer) App {
 	return App{
-		Registry: drivers.NewRegistry(), Packages: drivers.NewPackageRegistry(),
+		Registry: drivers.NewRegistry(),
 		Sessions: sessions.New(),
 		Runner:   runtime.ExecRunner{Debug: debug, Log: stderr},
 		Stdin:    stdin, Stdout: stdout, Stderr: stderr,
@@ -55,38 +54,63 @@ func (a App) Run(ctx context.Context, args []string) error {
 	}
 	a.Output = output
 	if len(args) == 0 {
+		if err := a.rejectStructured("help"); err != nil {
+			return err
+		}
 		a.printHelp()
 		return nil
 	}
 	switch args[0] {
 	case "help", "-h", "--help":
+		if err := a.rejectStructured("help"); err != nil {
+			return err
+		}
 		a.printHelp()
 		return nil
 	case "version", "-v", "--version":
+		if a.Output != OutputText {
+			return writeStructured(a.Stdout, map[string]string{"version": Version}, a.Output)
+		}
 		fmt.Fprintf(a.Stdout, "agentx %s\n", Version)
 		return nil
-	case "list", "agents":
-		return a.list(ctx, args[1:])
-	case "which":
-		return a.which(args[1:])
-	case "install":
-		return a.install(ctx, args[1:])
+	case "agent":
+		return a.agent(ctx, args[1:])
 	case "auth":
 		return a.auth(ctx, args[1:])
-	case "models":
-		return a.models(ctx, args[1:])
-	case "run":
-		return a.runAgent(ctx, args[1:])
-	case "session", "sessions":
+	case "session":
 		return a.sessions(ctx, args[1:])
 	default:
 		return fmt.Errorf("unknown command %q; run ax help", args[0])
 	}
 }
 
+func (a App) agent(ctx context.Context, args []string) error {
+	if len(args) == 0 {
+		return agentUsageError()
+	}
+	switch args[0] {
+	case "list":
+		return a.list(ctx, args[1:])
+	case "which":
+		return a.which(args[1:])
+	case "install":
+		return a.install(ctx, args[1:])
+	case "models":
+		return a.models(ctx, args[1:])
+	case "run":
+		return a.runAgent(ctx, args[1:])
+	default:
+		return agentUsageError()
+	}
+}
+
+func agentUsageError() error {
+	return fmt.Errorf("usage: ax [--json|--yaml] agent <list|which|install|models|run> [args...]")
+}
+
 func (a App) list(ctx context.Context, args []string) error {
 	if len(args) != 0 {
-		return fmt.Errorf("usage: ax [--json|--yaml] list")
+		return fmt.Errorf("usage: ax [--json|--yaml] agent list")
 	}
 	detections := make([]runtime.Detection, 0)
 	for _, agent := range a.Registry.All() {
@@ -120,7 +144,10 @@ func (a App) list(ctx context.Context, args []string) error {
 
 func (a App) which(args []string) error {
 	if len(args) != 1 {
-		return fmt.Errorf("usage: ax which <agent>")
+		return fmt.Errorf("usage: ax agent which <agent>")
+	}
+	if err := a.rejectStructured("agent which"); err != nil {
+		return err
 	}
 	agent, err := a.Registry.Get(args[0])
 	if err != nil {
@@ -128,7 +155,7 @@ func (a App) which(args []string) error {
 	}
 	path, err := exec.LookPath(agent.Binary)
 	if err != nil {
-		return fmt.Errorf("%s is not installed; run ax install %s", agent.Name, agent.ID)
+		return fmt.Errorf("%s is not installed; run ax agent install %s", agent.Name, agent.ID)
 	}
 	fmt.Fprintln(a.Stdout, path)
 	return nil
@@ -136,9 +163,9 @@ func (a App) which(args []string) error {
 
 func (a App) install(ctx context.Context, args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: ax [--json|--yaml] install <package> [--version <version>] [--dry-run]")
+		return fmt.Errorf("usage: ax [--json|--yaml] agent install <agent> [--version <version>] [--dry-run]")
 	}
-	item, err := a.Packages.Get(args[0])
+	item, err := a.Registry.Get(args[0])
 	if err != nil {
 		return err
 	}
@@ -165,13 +192,16 @@ func (a App) install(ctx context.Context, args []string) error {
 	if dryRun {
 		return writeStructured(a.Stdout, plan, a.structuredDefault())
 	}
+	if err := a.rejectStructuredNative("agent install", dryRun); err != nil {
+		return err
+	}
 	_, err = a.Runner.Execute(ctx, plan, runtime.ExecuteOptions{Interactive: true, Stdin: a.Stdin, Stdout: a.Stdout, Stderr: a.Stderr})
 	return err
 }
 
 func (a App) models(ctx context.Context, args []string) error {
 	if len(args) != 1 {
-		return fmt.Errorf("usage: ax [--json|--yaml] models <agent>")
+		return fmt.Errorf("usage: ax [--json|--yaml] agent models <agent>")
 	}
 	agent, err := a.Registry.Get(args[0])
 	if err != nil {
@@ -199,7 +229,7 @@ func (a App) models(ctx context.Context, args []string) error {
 
 func (a App) runAgent(ctx context.Context, args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: ax [--json|--yaml] run <agent> [--model <model>] [--cwd <path>] [--dry-run] [-- <native args...>]")
+		return fmt.Errorf("usage: ax [--json|--yaml] agent run <agent> [--model <model>] [--cwd <path>] [--dry-run] [-- <native args...>]")
 	}
 	agent, err := a.Registry.Get(args[0])
 	if err != nil {
@@ -257,8 +287,11 @@ func (a App) runAgent(ctx context.Context, args []string) error {
 	if dryRun {
 		return writeStructured(a.Stdout, plan, a.structuredDefault())
 	}
+	if err := a.rejectStructuredNative("agent run", dryRun); err != nil {
+		return err
+	}
 	if _, err := exec.LookPath(agent.Binary); err != nil {
-		return fmt.Errorf("%s is not installed; run ax install %s", agent.Name, agent.ID)
+		return fmt.Errorf("%s is not installed; run ax agent install %s", agent.Name, agent.ID)
 	}
 	result, err := a.Runner.Execute(ctx, plan, runtime.ExecuteOptions{Interactive: true, Stdin: a.Stdin, Stdout: a.Stdout, Stderr: a.Stderr})
 	if err != nil {
@@ -283,10 +316,10 @@ func (a App) auth(ctx context.Context, args []string) error {
 			return fmt.Errorf("usage: ax [--json|--yaml] auth status <agent>")
 		}
 		if !agent.Auth.SupportsStatus() {
-			return a.writeAuthStatus(runtime.AuthStatus{Agent: agent.ID, Supported: false})
+			return a.writeAuthStatus(runtime.AuthStatus{Agent: agent.ID, Supported: false, Providers: []runtime.AuthProvider{}})
 		}
 		if _, err := exec.LookPath(agent.Binary); err != nil {
-			return fmt.Errorf("%s is not installed; run ax install %s", agent.Name, agent.ID)
+			return fmt.Errorf("%s is not installed; run ax agent install %s", agent.Name, agent.ID)
 		}
 		status, err := agent.Auth.Status(ctx, a.Runner)
 		if err != nil {
@@ -295,7 +328,7 @@ func (a App) auth(ctx context.Context, args []string) error {
 		status.Agent = agent.ID
 		return a.writeAuthStatus(status)
 	}
-	if args[0] != "login" {
+	if args[0] != "login" && args[0] != "logout" {
 		return authUsageError()
 	}
 	dryRun := false
@@ -305,12 +338,23 @@ func (a App) auth(ctx context.Context, args []string) error {
 		}
 		dryRun = true
 	}
-	plan := agent.Auth.PlanLogin()
+	var plan runtime.AuthPlan
+	if args[0] == "login" {
+		plan = agent.Auth.PlanLogin()
+	} else {
+		if !agent.Auth.SupportsLogout() {
+			return fmt.Errorf("%s does not expose a verified native logout flow", agent.Name)
+		}
+		plan = agent.Auth.PlanLogout()
+	}
 	if dryRun {
 		return writeStructured(a.Stdout, plan, a.structuredDefault())
 	}
+	if err := a.rejectStructuredNative("auth "+args[0], dryRun); err != nil {
+		return err
+	}
 	if _, err := exec.LookPath(agent.Binary); err != nil {
-		return fmt.Errorf("%s is not installed; run ax install %s", agent.Name, agent.ID)
+		return fmt.Errorf("%s is not installed; run ax agent install %s", agent.Name, agent.ID)
 	}
 	if plan.Instruction != "" {
 		fmt.Fprintln(a.Stderr, plan.Instruction)
@@ -323,7 +367,7 @@ func (a App) auth(ctx context.Context, args []string) error {
 }
 
 func authUsageError() error {
-	return fmt.Errorf("usage: ax [--json|--yaml] auth login <agent> [--dry-run] | ax [--json|--yaml] auth status <agent>")
+	return fmt.Errorf("usage: ax [--json|--yaml] auth <login|status|logout> <agent> [--dry-run]")
 }
 
 func (a App) writeAuthStatus(status runtime.AuthStatus) error {
@@ -334,22 +378,24 @@ func (a App) writeAuthStatus(status runtime.AuthStatus) error {
 		fmt.Fprintf(a.Stdout, "%s\tunsupported\n", status.Agent)
 		return nil
 	}
-	if !status.LoggedIn {
+	if len(status.Providers) == 0 {
 		fmt.Fprintf(a.Stdout, "%s\tnot logged in\n", status.Agent)
 		return nil
 	}
-	details := []string{}
-	if status.Method != "" {
-		details = append(details, status.Method)
+	for _, provider := range status.Providers {
+		details := []string{}
+		if provider.Method != "" {
+			details = append(details, provider.Method)
+		}
+		if provider.Subscription != "" {
+			details = append(details, provider.Subscription)
+		}
+		fmt.Fprintf(a.Stdout, "%s\t%s", status.Agent, provider.ID)
+		if len(details) > 0 {
+			fmt.Fprintf(a.Stdout, " (%s)", strings.Join(details, ", "))
+		}
+		fmt.Fprintln(a.Stdout)
 	}
-	if status.Subscription != "" {
-		details = append(details, status.Subscription)
-	}
-	fmt.Fprintf(a.Stdout, "%s\tlogged in", status.Agent)
-	if len(details) > 0 {
-		fmt.Fprintf(a.Stdout, " (%s)", strings.Join(details, ", "))
-	}
-	fmt.Fprintln(a.Stdout)
 	return nil
 }
 
@@ -389,10 +435,10 @@ func (a App) sessionList(args []string) error {
 	options := sessions.ListOptions{Limit: 10, Sort: "date"}
 	for index := 0; index < len(args); index++ {
 		switch args[index] {
-		case "--provider":
+		case "--source":
 			index++
 			if index >= len(args) {
-				return fmt.Errorf("--provider requires a value")
+				return fmt.Errorf("--source requires a value")
 			}
 			options.Provider = args[index]
 		case "--workspace":
@@ -561,8 +607,11 @@ func (a App) sessionResume(ctx context.Context, args []string) error {
 	if dryRun {
 		return writeStructured(a.Stdout, plan, a.structuredDefault())
 	}
+	if err := a.rejectStructuredNative("session resume", dryRun); err != nil {
+		return err
+	}
 	if _, err := exec.LookPath(agent.Binary); err != nil {
-		return fmt.Errorf("%s is not installed; run ax install %s", agent.Name, agent.ID)
+		return fmt.Errorf("%s is not installed; run ax agent install %s", agent.Name, agent.ID)
 	}
 	result, err := a.Runner.Execute(ctx, plan, runtime.ExecuteOptions{Interactive: true, Stdin: a.Stdin, Stdout: a.Stdout, Stderr: a.Stderr})
 	if err != nil {
@@ -587,18 +636,18 @@ func (a App) printHelp() {
 	fmt.Fprint(a.Stdout, `agentx manages native AI coding-agent runtimes.
 
 Usage:
-  ax [--json|--yaml] list
-  ax which <agent>
-  ax [--json|--yaml] install <package> [--version <version>] [--dry-run]
+  ax [--json|--yaml] agent list
+  ax agent which <agent>
+  ax [--json|--yaml] agent install <agent> [--version <version>] [--dry-run]
+  ax [--json|--yaml] agent models <agent>
+  ax [--json|--yaml] agent run <agent> [--model <model>] [--cwd <path>] [--dry-run] [-- <native args...>]
   ax [--json|--yaml] auth login <agent> [--dry-run]
   ax [--json|--yaml] auth status <agent>
-  ax [--json|--yaml] models <agent>
-  ax [--json|--yaml] run <agent> [--model <model>] [--cwd <path>] [--dry-run] [-- <native args...>]
+  ax [--json|--yaml] auth logout <agent> [--dry-run]
   ax [--json|--yaml] session <providers|list|info|resume> [args...]
   ax version
 
 Agents: claude, codex, gemini, opencode, pi
-Packages: claude, codex, gemini, opencode, pi
 
 Set AX_LOG=debug or pass --verbose before the command to log raw external input,
 output, and errors as JSON on stderr.
@@ -656,6 +705,59 @@ func writeStructured(writer io.Writer, value any, format OutputFormat) error {
 	default:
 		return fmt.Errorf("unsupported structured output format %q", format)
 	}
+}
+
+func (a App) rejectStructured(operation string) error {
+	if a.Output == OutputText {
+		return nil
+	}
+	return fmt.Errorf("--%s is not supported for %s", a.Output, operation)
+}
+
+func (a App) rejectStructuredNative(operation string, dryRun bool) error {
+	if dryRun || a.Output == OutputText {
+		return nil
+	}
+	return fmt.Errorf("--%s is only supported for %s with --dry-run because native output is passed through", a.Output, operation)
+}
+
+type errorEnvelope struct {
+	Error structuredError `json:"error" yaml:"error"`
+}
+
+type structuredError struct {
+	Code     string `json:"code" yaml:"code"`
+	Message  string `json:"message" yaml:"message"`
+	ExitCode int    `json:"exit_code" yaml:"exit_code"`
+}
+
+func WriteError(writer io.Writer, args []string, err error) error {
+	format, _, formatErr := parseOutputFormat(args)
+	if formatErr != nil || format == OutputText {
+		_, writeErr := fmt.Fprintf(writer, "ax: %v\n", err)
+		return writeErr
+	}
+	envelope := errorEnvelope{Error: structuredError{
+		Code: classifyError(err), Message: err.Error(), ExitCode: ExitCode(err),
+	}}
+	return writeStructured(writer, envelope, format)
+}
+
+func classifyError(err error) string {
+	var exitErr *ExitError
+	if errors.As(err, &exitErr) {
+		return "external_command"
+	}
+	message := err.Error()
+	if strings.Contains(message, "no verified") || strings.Contains(message, "does not expose a verified") {
+		return "unsupported_capability"
+	}
+	for _, marker := range []string{"usage:", "unknown command", "unknown ", "requires a value", "must be", "mutually exclusive", "is only supported"} {
+		if strings.Contains(message, marker) {
+			return "usage"
+		}
+	}
+	return "operation_failed"
 }
 
 func (a App) structuredDefault() OutputFormat {

@@ -24,19 +24,6 @@ func TestRegistryContainsSupportedAgents(t *testing.T) {
 	}
 }
 
-func TestPackageRegistryContainsOnlyAgents(t *testing.T) {
-	registry := NewPackageRegistry()
-	want := []string{"claude", "codex", "gemini", "opencode", "pi"}
-	all := registry.All()
-	got := make([]string, 0, len(all))
-	for _, item := range all {
-		got = append(got, item.ID)
-	}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("package IDs = %v, want %v", got, want)
-	}
-}
-
 func TestNativeAuthPlansUseAgentOAuthFlows(t *testing.T) {
 	want := map[string]runtime.CommandPlan{
 		"claude":   {Executable: "claude", Args: []string{"auth", "login", "--claudeai"}},
@@ -56,6 +43,26 @@ func TestNativeAuthPlansUseAgentOAuthFlows(t *testing.T) {
 		}
 		if got := agent.Auth.PlanLogin().Command; !reflect.DeepEqual(got, expected) {
 			t.Fatalf("%s auth plan = %#v, want %#v", id, got, expected)
+		}
+	}
+}
+
+func TestNativeAuthLogoutPlans(t *testing.T) {
+	want := map[string]runtime.CommandPlan{
+		"claude":   {Executable: "claude", Args: []string{"auth", "logout"}},
+		"codex":    {Executable: "codex", Args: []string{"logout"}},
+		"gemini":   {Executable: "gemini"},
+		"opencode": {Executable: "opencode", Args: []string{"auth", "logout"}},
+		"pi":       {Executable: "pi"},
+	}
+	registry := NewRegistry()
+	for id, expected := range want {
+		agent, err := registry.Get(id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := agent.Auth.PlanLogout().Command; !reflect.DeepEqual(got, expected) {
+			t.Fatalf("%s logout plan = %#v, want %#v", id, got, expected)
 		}
 	}
 }
@@ -93,25 +100,25 @@ func TestNativeAuthStatusParsers(t *testing.T) {
 			name:   "claude",
 			parser: parseClaudeAuthStatus,
 			result: runtime.CommandResult{Stdout: `{"loggedIn":true,"authMethod":"claude.ai","email":"private@example.com","orgId":"private","subscriptionType":"max"}`},
-			want:   runtime.AuthStatus{Supported: true, LoggedIn: true, Method: "claude.ai", Subscription: "max"},
+			want:   runtime.AuthStatus{Supported: true, Providers: []runtime.AuthProvider{{ID: "claude", Method: "claude.ai", Subscription: "max"}}},
 		},
 		{
 			name:   "codex logged in",
 			parser: parseCodexAuthStatus,
 			result: runtime.CommandResult{Stdout: "Logged in using ChatGPT\n"},
-			want:   runtime.AuthStatus{Supported: true, LoggedIn: true, Method: "ChatGPT"},
+			want:   runtime.AuthStatus{Supported: true, Providers: []runtime.AuthProvider{{ID: "codex", Method: "ChatGPT"}}},
 		},
 		{
 			name:   "codex logged out",
 			parser: parseCodexAuthStatus,
 			result: runtime.CommandResult{Stderr: "Not logged in\n", ExitCode: 1},
-			want:   runtime.AuthStatus{Supported: true},
+			want:   runtime.AuthStatus{Supported: true, Providers: []runtime.AuthProvider{}},
 		},
 		{
 			name:   "opencode",
 			parser: parseOpenCodeAuthStatus,
-			result: runtime.CommandResult{Stdout: "\x1b[0mCredentials\n1 credentials\nEnvironment\n4 environment variables\n"},
-			want:   runtime.AuthStatus{Supported: true, LoggedIn: true, Method: "1 configured credential"},
+			result: runtime.CommandResult{Stdout: "\x1b[0mCredentials\n●  GitHub Copilot \x1b[90moauth\n1 credentials\nEnvironment\n4 environment variables\n"},
+			want:   runtime.AuthStatus{Supported: true, Providers: []runtime.AuthProvider{{ID: "GitHub Copilot", Method: "oauth"}}},
 		},
 	}
 	for _, test := range tests {
@@ -133,7 +140,7 @@ func TestNativeAuthStatusParsers(t *testing.T) {
 
 func TestAuthStatusCapabilitiesMatchNativeSupport(t *testing.T) {
 	registry := NewRegistry()
-	for _, id := range []string{"claude", "codex", "opencode"} {
+	for _, id := range []string{"claude", "codex", "opencode", "pi"} {
 		agent, err := registry.Get(id)
 		if err != nil {
 			t.Fatal(err)
@@ -142,13 +149,29 @@ func TestAuthStatusCapabilitiesMatchNativeSupport(t *testing.T) {
 			t.Fatalf("%s should support auth status", id)
 		}
 	}
-	for _, id := range []string{"gemini", "pi"} {
+	for _, id := range []string{"gemini"} {
 		agent, err := registry.Get(id)
 		if err != nil {
 			t.Fatal(err)
 		}
 		if agent.Auth.SupportsStatus() || containsCapability(agent.Capabilities, runtime.CapabilityAuthStatus) {
 			t.Fatalf("%s should not support auth status", id)
+		}
+	}
+}
+
+func TestAuthLogoutCapabilitiesMatchNativeSupport(t *testing.T) {
+	for _, agent := range NewRegistry().All() {
+		if !agent.Auth.SupportsLogout() || !containsCapability(agent.Capabilities, runtime.CapabilityAuthLogout) {
+			t.Fatalf("%s should support auth logout", agent.ID)
+		}
+	}
+}
+
+func TestInstallDriversBelongToAgents(t *testing.T) {
+	for _, agent := range NewRegistry().All() {
+		if agent.Install == nil {
+			t.Fatalf("%s has no install driver", agent.ID)
 		}
 	}
 }

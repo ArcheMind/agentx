@@ -157,3 +157,18 @@ func TestPiModelsPropagatesProviderSourceError(t *testing.T) {
 		t.Fatalf("error = %v, want %v", err, want)
 	}
 }
+
+func TestProviderAuthUsesSameProviderSourceAsModels(t *testing.T) {
+	driver := ProviderAuth{
+		NativeAuth: NativeAuth{LogoutCommand: runtime.CommandPlan{Executable: "pi"}},
+		Providers:  staticProviderSource{providers: []string{"anthropic", "openai-codex"}},
+	}
+	status, err := driver.Status(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := runtime.AuthStatus{Supported: true, Providers: []runtime.AuthProvider{{ID: "anthropic"}, {ID: "openai-codex"}}}
+	if !reflect.DeepEqual(status, want) {
+		t.Fatalf("status = %#v, want %#v", status, want)
+	}
+}

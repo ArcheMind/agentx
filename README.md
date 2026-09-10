@@ -13,16 +13,18 @@ make verify
 
 ## Commands
 
+The resource-first grammar is `agent <list|which|install|models|run>`, `auth login <agent>`, `auth status <agent>`, `auth logout <agent>`, and `session <providers|list|info|resume>`.
+
 ```bash
 # Locate installed agents and inspect their versions
-ax list
-ax --json list
-ax --yaml list
-ax which codex
+ax agent list
+ax --json agent list
+ax --yaml agent list
+ax agent which <agent>
 
 # Preview or run a native package installation
-ax install codex --dry-run
-ax install codex --version 0.153.4
+ax agent install <agent> --dry-run
+ax agent install codex --version 0.153.4
 
 # Open the agent's native subscription OAuth flow
 ax auth login claude
@@ -31,33 +33,37 @@ ax auth login gemini
 ax auth login opencode
 ax auth login pi
 
-# Check native login status (Gemini and Pi report unsupported)
+# Check native login status (Gemini reports unsupported)
 ax auth status claude
 ax --json auth status codex
 ax --yaml auth status opencode
+ax auth status pi
+
+# Open the native logout flow
+ax auth logout <agent>
 
 # Read available models from verified native sources
-ax models codex
-ax models opencode
-ax models pi
-ax --yaml models codex
+ax agent models <agent>
+ax agent models opencode
+ax agent models pi
+ax --yaml agent models codex
 
 # Select a model and launch the native agent
-ax run codex --model gpt-5.4 --cwd .
-ax run claude --model sonnet -- --permission-mode plan
+ax agent run <agent> --model gpt-5.4 --cwd .
+ax agent run claude --model sonnet -- --permission-mode plan
 
 # Discover, inspect, and resume native sessions without a separate CASR binary
 ax session providers
-ax session list --all --limit 20 --sort date
+ax session list --source codex --all --limit 20 --sort date
 ax --yaml session info <session-id> --source codex
 ax session resume claude <session-id> --source codex
 ```
 
 Arguments after `--` pass directly to the native agent. `ax` does not create a Profile format or copy credentials.
 
-`--json` and `--yaml` are global output selectors for AgentX-owned structured results. They cover agent, model, provider, and session data, authentication status, plus install, auth, run, and session-resume dry-run plans. Output from actual agents and installers remains native and is not re-encoded.
+`--json` and `--yaml` select AgentX-owned structured results and structured error envelopes. They cover agent, model, provider, and session data, authentication status, version, plus install, auth, run, and session-resume dry-run plans. Actual agents and installers keep their native output; selecting JSON or YAML for those non-dry-run operations is rejected instead of ignored.
 
-Authentication is delegated to each agent's native flow. Claude, Codex, and OpenCode expose direct login commands and non-interactive status checks. Gemini and Pi expose login inside their interactive clients but no reliable agent-wide status command, so `ax auth status` reports `unsupported` for them. AgentX never accepts, stores, or prints account credentials.
+Authentication is delegated to each agent's native flow. Claude, Codex, and OpenCode expose direct login and status commands. Pi status reads only provider IDs from the same native credential source used to filter its model list. Gemini has no reliable Agent-wide status source and reports `unsupported`. Logout delegates to each native direct or interactive flow. AgentX never accepts, stores, or prints account credentials.
 
 ## Sessions
 
@@ -67,18 +73,20 @@ Session discovery and transcript normalization are compiled into `ax`; there is 
 
 ## Model sources
 
-Model discovery is capability-based:
+Model discovery through `agent models <agent>` is capability-based:
 
 - Codex reads its native `~/.codex/models_cache.json`.
 - OpenCode runs `opencode models`.
 - Pi runs `pi --list-models`.
-- Claude Code and Gemini CLI support model selection, but their installed CLIs expose no verified local model-list source. `ax models` reports that limitation instead of returning an invented catalog.
+- Claude Code and Gemini CLI support model selection, but their installed CLIs expose no verified local model-list source. `ax agent models` reports that limitation instead of returning an invented catalog.
 
 ## Debug logging
 
-Set `AX_LOG=debug` or place `--verbose` before the command. Every external command then emits a JSON record containing its raw command input, stdout, stderr, error, and exit code.
+Set `AX_LOG=debug` or place `--verbose` before the command. Every external command then emits a JSON record containing its raw command input, stdout, stderr, error, and exit code. Debug logs are a separate, explicitly enabled protocol and can contain sensitive native output.
 
 ```bash
-AX_LOG=debug ax list
-ax --verbose models opencode
+AX_LOG=debug ax agent list
+ax --verbose agent models opencode
 ```
+
+The evidence and decisions behind the supported lifecycle surface are recorded in [the lifecycle and protocol audit](docs/lifecycle-and-protocol-audit.md).

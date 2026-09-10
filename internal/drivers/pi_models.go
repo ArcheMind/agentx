@@ -102,7 +102,7 @@ func (d PiModels) ListModels(ctx context.Context, runner runtime.Runner) ([]runt
 	}
 	result, err := runner.Execute(ctx, d.Plan, runtime.ExecuteOptions{})
 	if err != nil {
-		return nil, fmt.Errorf("read Pi models: %w: %s", err, strings.TrimSpace(result.Stderr))
+		return nil, fmt.Errorf("read Pi models: %w", err)
 	}
 	return parsePiModels(result.Stdout, d.Plan.Executable, providers)
 }

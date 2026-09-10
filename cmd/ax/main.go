@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"os"
 
 	"agentx/internal/app"
@@ -28,7 +27,7 @@ func main() {
 	args = appArgs
 	application := app.New(debug, os.Stdin, os.Stdout, os.Stderr)
 	if err := application.Run(context.Background(), args); err != nil {
-		fmt.Fprintf(os.Stderr, "ax: %v\n", err)
+		_ = app.WriteError(os.Stderr, args, err)
 		os.Exit(app.ExitCode(err))
 	}
 }
