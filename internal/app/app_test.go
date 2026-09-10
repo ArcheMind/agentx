@@ -234,6 +234,96 @@ func TestSessionSelectorCanBeCancelled(t *testing.T) {
 	}
 }
 
+func TestSessionSelectorViewport(t *testing.T) {
+	var currentItems []sessions.Summary
+	for i := 0; i < 3; i++ {
+		currentItems = append(currentItems, sessions.Summary{
+			ID: fmt.Sprintf("c%d", i), Provider: "codex", Title: fmt.Sprintf("Task %d", i),
+			UpdatedAt: "2026-09-10T12:00:00Z",
+		})
+	}
+	var globalItems []sessions.Summary
+	for i := 0; i < 3; i++ {
+		globalItems = append(globalItems, sessions.Summary{
+			ID: fmt.Sprintf("g%d", i), Provider: "claude", Title: fmt.Sprintf("Global %d", i),
+			Workspace: "/work/other", UpdatedAt: "2026-09-10T11:00:00Z",
+		})
+	}
+	groups := []sessionGroup{
+		{Heading: "Current workspace", Items: currentItems},
+		{Heading: "Global", Items: globalItems},
+	}
+
+	t.Run("shows bottom indicator when content overflows", func(t *testing.T) {
+		var stdout bytes.Buffer
+		app := New(false, strings.NewReader("\r"), &stdout, &bytes.Buffer{})
+		app.termHeight = 12
+		selected, err := app.chooseSession(bufio.NewReader(app.Stdin), groups)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if selected.ID != "c0" {
+			t.Fatalf("selected = %v, want c0", selected.ID)
+		}
+		output := stdout.String()
+		if !strings.Contains(output, "↓") || !strings.Contains(output, "more\r\n") {
+			t.Fatalf("expected bottom scroll indicator, output = %q", output)
+		}
+	})
+
+	t.Run("scrolls to keep selection visible", func(t *testing.T) {
+		keys := strings.Repeat("\x1b[B", 5) + "\r"
+		var stdout bytes.Buffer
+		app := New(false, strings.NewReader(keys), &stdout, &bytes.Buffer{})
+		app.termHeight = 12
+		selected, err := app.chooseSession(bufio.NewReader(app.Stdin), groups)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if selected.ID != "g2" {
+			t.Fatalf("selected = %v, want g2", selected.ID)
+		}
+		output := stdout.String()
+		if !strings.Contains(output, "↑") {
+			t.Fatalf("expected top scroll indicator after scrolling down, output = %q", output)
+		}
+	})
+
+	t.Run("no viewport when content fits", func(t *testing.T) {
+		small := []sessionGroup{
+			{Heading: "Current workspace", Items: currentItems[:1]},
+			{Heading: "Global"},
+		}
+		var stdout bytes.Buffer
+		app := New(false, strings.NewReader("\r"), &stdout, &bytes.Buffer{})
+		app.termHeight = 20
+		_, err := app.chooseSession(bufio.NewReader(app.Stdin), small)
+		if err != nil {
+			t.Fatal(err)
+		}
+		output := stdout.String()
+		if strings.Contains(output, "more\r\n") {
+			t.Fatalf("unexpected scroll indicator when content fits, output = %q", output)
+		}
+	})
+}
+
+func TestSelectedRowRangeIncludesGlobalDetail(t *testing.T) {
+	now := time.Date(2026, 9, 10, 12, 0, 0, 0, time.UTC)
+	groups := []sessionGroup{
+		{Heading: "Current workspace", Items: []sessions.Summary{{ID: "c0", Provider: "codex", UpdatedAt: "2026-09-10T12:00:00Z"}}},
+		{Heading: "Global", Items: []sessions.Summary{{ID: "g0", Provider: "claude", Workspace: "/work", UpdatedAt: "2026-09-10T11:00:00Z"}}},
+	}
+	rows := buildContentRows(groups, now)
+	first, last := selectedRowRange(rows, 1)
+	if first == last {
+		t.Fatalf("Global item range should include detail line, got single row %d", first)
+	}
+	if !strings.Contains(rows[last].text, "↳") {
+		t.Fatalf("last row should be detail line, got %q", rows[last].text)
+	}
+}
+
 func TestRecentSessionGroupsExcludeCurrentSessionsFromGlobal(t *testing.T) {
 	home := t.TempDir()
 	currentWorkspace := filepath.Join(t.TempDir(), "current")
