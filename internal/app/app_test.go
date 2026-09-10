@@ -176,7 +176,7 @@ func TestSessionSelectorMovesAcrossGroupBoundary(t *testing.T) {
 	if !strings.Contains(stdout.String(), "Current workspace") || !strings.Contains(stdout.String(), "Global") {
 		t.Fatalf("selector output = %q", stdout.String())
 	}
-	if !strings.Contains(stdout.String(), "↳ /work/other") {
+	if !strings.Contains(stdout.String(), "/work/other") {
 		t.Fatalf("selector output does not show global workspace: %q", stdout.String())
 	}
 }
@@ -257,7 +257,7 @@ func TestSessionSelectorViewport(t *testing.T) {
 	t.Run("shows bottom indicator when content overflows", func(t *testing.T) {
 		var stdout bytes.Buffer
 		app := New(false, strings.NewReader("\r"), &stdout, &bytes.Buffer{})
-		app.termHeight = 12
+		app.termHeight = 10
 		selected, err := app.chooseSession(bufio.NewReader(app.Stdin), groups)
 		if err != nil {
 			t.Fatal(err)
@@ -275,7 +275,7 @@ func TestSessionSelectorViewport(t *testing.T) {
 		keys := strings.Repeat("\x1b[B", 5) + "\r"
 		var stdout bytes.Buffer
 		app := New(false, strings.NewReader(keys), &stdout, &bytes.Buffer{})
-		app.termHeight = 12
+		app.termHeight = 10
 		selected, err := app.chooseSession(bufio.NewReader(app.Stdin), groups)
 		if err != nil {
 			t.Fatal(err)
@@ -306,22 +306,6 @@ func TestSessionSelectorViewport(t *testing.T) {
 			t.Fatalf("unexpected scroll indicator when content fits, output = %q", output)
 		}
 	})
-}
-
-func TestSelectedRowRangeIncludesGlobalDetail(t *testing.T) {
-	now := time.Date(2026, 9, 10, 12, 0, 0, 0, time.UTC)
-	groups := []sessionGroup{
-		{Heading: "Current workspace", Items: []sessions.Summary{{ID: "c0", Provider: "codex", UpdatedAt: "2026-09-10T12:00:00Z"}}},
-		{Heading: "Global", Items: []sessions.Summary{{ID: "g0", Provider: "claude", Workspace: "/work", UpdatedAt: "2026-09-10T11:00:00Z"}}},
-	}
-	rows := buildContentRows(groups, now)
-	first, last := selectedRowRange(rows, 1)
-	if first == last {
-		t.Fatalf("Global item range should include detail line, got single row %d", first)
-	}
-	if !strings.Contains(rows[last].text, "↳") {
-		t.Fatalf("last row should be detail line, got %q", rows[last].text)
-	}
 }
 
 func TestRecentSessionGroupsExcludeCurrentSessionsFromGlobal(t *testing.T) {

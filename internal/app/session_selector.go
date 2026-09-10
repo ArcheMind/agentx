@@ -53,11 +53,12 @@ func buildContentRows(groups []sessionGroup, now time.Time) []contentRow {
 				title = item.ID
 			}
 			updated := displaySessionTime(item.UpdatedAt, now)
-			text := fmt.Sprintf("%-8s  %-18s  %s", item.Provider, updated, singleLine(title, 52))
-			rows = append(rows, contentRow{text: text, itemIndex: itemIndex})
 			if group.Heading == "Global" {
-				detail := fmt.Sprintf("            ↳ %s", displayWorkspace(item.Workspace, 72))
-				rows = append(rows, contentRow{text: detail, itemIndex: -1})
+				text := fmt.Sprintf("%-8s  %-18s  %-30s  %s", item.Provider, updated, singleLine(title, 30), displayWorkspace(item.Workspace, 28))
+				rows = append(rows, contentRow{text: text, itemIndex: itemIndex})
+			} else {
+				text := fmt.Sprintf("%-8s  %-18s  %s", item.Provider, updated, singleLine(title, 52))
+				rows = append(rows, contentRow{text: text, itemIndex: itemIndex})
 			}
 			itemIndex++
 		}
@@ -68,11 +69,7 @@ func buildContentRows(groups []sessionGroup, now time.Time) []contentRow {
 func selectedRowRange(rows []contentRow, selected int) (int, int) {
 	for i, r := range rows {
 		if r.itemIndex == selected {
-			last := i
-			if i+1 < len(rows) && rows[i+1].itemIndex < 0 && strings.HasPrefix(rows[i+1].text, "            ↳") {
-				last = i + 1
-			}
-			return i, last
+			return i, i
 		}
 	}
 	return 0, 0
