@@ -10,6 +10,7 @@ type Capability string
 const (
 	CapabilityLaunch      Capability = "launch"
 	CapabilityAuthLogin   Capability = "auth_login"
+	CapabilityAuthStatus  Capability = "auth_status"
 	CapabilityModelList   Capability = "model_list"
 	CapabilityModelSelect Capability = "model_select"
 )
@@ -61,6 +62,14 @@ type AuthPlan struct {
 	Instruction string      `json:"instruction,omitempty" yaml:"instruction,omitempty"`
 }
 
+type AuthStatus struct {
+	Agent        string `json:"agent" yaml:"agent"`
+	Supported    bool   `json:"supported" yaml:"supported"`
+	LoggedIn     bool   `json:"logged_in" yaml:"logged_in"`
+	Method       string `json:"method,omitempty" yaml:"method,omitempty"`
+	Subscription string `json:"subscription,omitempty" yaml:"subscription,omitempty"`
+}
+
 type Package struct {
 	ID      string
 	Name    string
@@ -85,10 +94,8 @@ type ModelDriver interface {
 
 type AuthDriver interface {
 	PlanLogin() AuthPlan
-}
-
-type SessionDriver interface {
-	Plan(args []string) (CommandPlan, error)
+	SupportsStatus() bool
+	Status(context.Context, Runner) (AuthStatus, error)
 }
 
 type Agent struct {
