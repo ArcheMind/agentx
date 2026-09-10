@@ -17,6 +17,11 @@ func TestCrossLayerConsistency(t *testing.T) {
 	}
 	var help bytes.Buffer
 	App{Stdout: &help}.printHelp()
+	for _, entrypoint := range []string{"$ ax codex", "Resume recent work:"} {
+		if !strings.Contains(string(readme), entrypoint) {
+			t.Errorf("README does not present daily entry point %q", entrypoint)
+		}
+	}
 	for _, command := range []string{
 		"agent list",
 		"agent which <agent>",
