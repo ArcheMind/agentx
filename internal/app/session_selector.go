@@ -6,6 +6,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
+	"strings"
+	"time"
 
 	"github.com/ArcheMind/agentx/internal/sessions"
 	"golang.org/x/term"
@@ -19,37 +22,14 @@ type sessionGroup struct {
 }
 
 func (a App) recentSessionGroups() ([]sessionGroup, error) {
-	current, err := a.Sessions.List(sessions.ListOptions{Limit: recentSessionsPerProvider, Sort: "date"})
+	items, err := a.Sessions.RecentGroups("", recentSessionsPerProvider)
 	if err != nil {
 		return nil, err
 	}
-	all, err := a.Sessions.List(sessions.ListOptions{All: true, Limit: 0, Sort: "date"})
-	if err != nil {
-		return nil, err
-	}
-
-	currentKeys := make(map[string]bool, len(current))
-	for _, item := range current {
-		currentKeys[sessionKey(item)] = true
-	}
-	counts := make(map[string]int)
-	global := make([]sessions.Summary, 0)
-	for _, item := range all {
-		if currentKeys[sessionKey(item)] || counts[item.Provider] >= recentSessionsPerProvider {
-			continue
-		}
-		counts[item.Provider]++
-		global = append(global, item)
-	}
-
 	return []sessionGroup{
-		{Heading: "Current workspace", Items: current},
-		{Heading: "Global", Items: global},
+		{Heading: "Current workspace", Items: items.Current},
+		{Heading: "Global", Items: items.Global},
 	}, nil
-}
-
-func sessionKey(item sessions.Summary) string {
-	return item.Provider + "\x00" + item.ID
 }
 
 func (a App) chooseSession(reader *bufio.Reader, groups []sessionGroup) (sessions.Summary, error) {
@@ -60,6 +40,7 @@ func (a App) chooseSession(reader *bufio.Reader, groups []sessionGroup) (session
 
 	selected := 0
 	lineCount := 0
+	now := time.Now()
 	render := func(clear bool) {
 		if clear {
 			fmt.Fprintf(a.Stdout, "\x1b[%dA\r\x1b[J", lineCount)
@@ -85,7 +66,14 @@ func (a App) chooseSession(reader *bufio.Reader, groups []sessionGroup) (session
 				if title == "" {
 					title = item.ID
 				}
-				fmt.Fprintf(a.Stdout, "%s%-10s  %-20s  %s\r\n", marker, item.Provider, item.UpdatedAt, singleLine(title, 72))
+				updated := displaySessionTime(item.UpdatedAt, now)
+				if group.Heading == "Global" {
+					fmt.Fprintf(a.Stdout, "%s%-8s  %-18s  %s\r\n", marker, item.Provider, updated, singleLine(title, 52))
+					fmt.Fprintf(a.Stdout, "            ↳ %s\r\n", displayWorkspace(item.Workspace, 72))
+					lineCount++
+				} else {
+					fmt.Fprintf(a.Stdout, "%s%-8s  %-18s  %s\r\n", marker, item.Provider, updated, singleLine(title, 52))
+				}
 				lineCount++
 				itemIndex++
 			}
@@ -184,4 +172,47 @@ func makeRaw(input io.Reader) (func(), error) {
 		return nil, fmt.Errorf("enable interactive terminal input: %w", err)
 	}
 	return func() { _ = term.Restore(int(file.Fd()), state) }, nil
+}
+
+func displaySessionTime(value string, now time.Time) string {
+	parsed, err := time.Parse(time.RFC3339Nano, value)
+	if err != nil {
+		return singleLine(value, 18)
+	}
+	parsed = parsed.In(now.Location())
+	if sameCalendarDay(parsed, now) {
+		return "Today " + parsed.Format("15:04")
+	}
+	if sameCalendarDay(parsed, now.AddDate(0, 0, -1)) {
+		return "Yesterday " + parsed.Format("15:04")
+	}
+	if parsed.Year() == now.Year() {
+		return parsed.Format("Jan 2 15:04")
+	}
+	return parsed.Format("Jan 2 2006")
+}
+
+func sameCalendarDay(left, right time.Time) bool {
+	leftYear, leftMonth, leftDay := left.Date()
+	rightYear, rightMonth, rightDay := right.Date()
+	return leftYear == rightYear && leftMonth == rightMonth && leftDay == rightDay
+}
+
+func displayWorkspace(value string, max int) string {
+	if value == "" {
+		return "(workspace unknown)"
+	}
+	value = filepath.Clean(value)
+	if home, err := os.UserHomeDir(); err == nil {
+		if value == home {
+			value = "~"
+		} else if relative, err := filepath.Rel(home, value); err == nil && relative != ".." && !strings.HasPrefix(relative, ".."+string(os.PathSeparator)) {
+			value = filepath.Join("~", relative)
+		}
+	}
+	runes := []rune(value)
+	if len(runes) <= max {
+		return value
+	}
+	return "…" + string(runes[len(runes)-max+1:])
 }

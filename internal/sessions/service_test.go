@@ -121,6 +121,36 @@ func TestResumePromptDropsReasoningAndCapsSize(t *testing.T) {
 	}
 }
 
+func TestCodexSummarySkipsInjectedContextAndPreservesUTF8(t *testing.T) {
+	home := t.TempDir()
+	workspace := t.TempDir()
+	path := filepath.Join(home, ".codex", "sessions", "2026", "09", "10", "session.jsonl")
+	writeFixture(t, path, strings.Join([]string{
+		fmt.Sprintf(`{"type":"session_meta","timestamp":"2026-09-10T20:00:00Z","payload":{"id":"codex-title","cwd":%q,"timestamp":"2026-09-10T20:00:00Z"}}`, workspace),
+		`{"type":"response_item","timestamp":"2026-09-10T20:00:01Z","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"# AGENTS.md instructions\n\n<INSTRUCTIONS>internal context</INSTRUCTIONS>"}]}}`,
+		`{"type":"response_item","timestamp":"2026-09-10T20:00:02Z","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"修复中文标题并提高会话加载速度"}]}}`,
+		`{"type":"response_item","timestamp":"2026-09-10T20:00:03Z","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"done"}]}}`,
+	}, "\n"))
+
+	groups, err := (Service{HomeDir: home}).RecentGroups(workspace, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(groups.Current) != 1 || groups.Current[0].Title != "修复中文标题并提高会话加载速度" {
+		t.Fatalf("recent groups = %#v", groups)
+	}
+	items, err := (Service{HomeDir: home}).List(ListOptions{Workspace: workspace, Limit: 10, Sort: "date"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 || items[0].Title != "修复中文标题并提高会话加载速度" {
+		t.Fatalf("list = %#v", items)
+	}
+	if got := oneLine("你好世界", 3); got != "你好…" {
+		t.Fatalf("oneLine = %q", got)
+	}
+}
+
 func writeFixture(t *testing.T, path, content string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
