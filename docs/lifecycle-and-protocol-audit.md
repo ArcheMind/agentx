@@ -1,6 +1,12 @@
 # Lifecycle and protocol audit
 
-Verified on 2026-09-10 against the installed native CLIs and their bundled help/source: Claude Code 2.1.206, Codex CLI 0.154.0, Gemini CLI 0.51.0, OpenCode 0.5.27, and Pi 0.84.4. This matrix defines AgentX's advertised surface; newer native releases must be re-audited before capabilities change.
+Verified on 2026-09-10 against the installed native CLIs and their bundled help/source: Claude Code 2.1.206, Codex CLI 0.154.0, DeepSeek Harness 0.1.5-rc.1, Gemini CLI 0.51.0, OpenCode 0.5.27, and Pi 0.84.4. This matrix defines AgentX's advertised surface; newer native releases must be re-audited before capabilities change.
+
+## DeepSeek Harness
+
+DSH is registered as `dsh` with the official npm package `@deepseek-ai/dsh`. Its installed package metadata identifies the executable as `dsh`, the package as MIT-licensed, and its repository as `deepseek-ai/deepseek-harness`. Native `dsh --help` verifies `--version`, `--profile`, `--patch`, `web`, and `plugin`; AgentX therefore supports detection, npm install planning, and raw native launch with working-directory and argument passthrough.
+
+DSH does not expose a verified AgentX model-selection flag, stable machine-readable model list, native auth lifecycle/status, or safe session list/info/resume source. Those drivers and capabilities are intentionally omitted. In particular, DSH's Web UI API-key settings and `$DSH_HOME` credential storage remain native-owned and are not read or written by AgentX.
 
 ## Authentication
 

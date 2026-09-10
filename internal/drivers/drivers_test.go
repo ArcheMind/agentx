@@ -13,7 +13,7 @@ import (
 
 func TestRegistryContainsSupportedAgents(t *testing.T) {
 	registry := NewRegistry()
-	want := []string{"claude", "codex", "gemini", "opencode", "pi"}
+	want := []string{"claude", "codex", "dsh", "gemini", "opencode", "pi"}
 	all := registry.All()
 	got := make([]string, 0, len(all))
 	for _, agent := range all {
@@ -162,6 +162,9 @@ func TestAuthStatusCapabilitiesMatchNativeSupport(t *testing.T) {
 
 func TestAuthLogoutCapabilitiesMatchNativeSupport(t *testing.T) {
 	for _, agent := range NewRegistry().All() {
+		if agent.Auth == nil {
+			continue
+		}
 		if !agent.Auth.SupportsLogout() || !containsCapability(agent.Capabilities, runtime.CapabilityAuthLogout) {
 			t.Fatalf("%s should support auth logout", agent.ID)
 		}
@@ -206,6 +209,29 @@ func TestNativeLaunchPreservesPassthroughArgs(t *testing.T) {
 	want := []string{"--model", "gpt-test", "--full-auto", "fix it"}
 	if !reflect.DeepEqual(plan.Args, want) || plan.Cwd != "/tmp/project" {
 		t.Fatalf("plan = %#v", plan)
+	}
+}
+
+func TestDSHHasOnlyVerifiedDrivers(t *testing.T) {
+	agent, err := NewRegistry().Get("dsh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if agent.Models != nil || agent.Auth != nil {
+		t.Fatalf("dsh should not expose unverified model or auth drivers: %#v", agent)
+	}
+	if !reflect.DeepEqual(agent.Capabilities, []runtime.Capability{runtime.CapabilityLaunch}) {
+		t.Fatalf("dsh capabilities = %#v", agent.Capabilities)
+	}
+	plan, err := agent.Launch.PlanRun(runtime.RunRequest{Cwd: "/tmp/project", PassthroughArgs: []string{"web", "--no-open"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.Executable != "dsh" || !reflect.DeepEqual(plan.Args, []string{"web", "--no-open"}) || plan.Cwd != "/tmp/project" {
+		t.Fatalf("dsh launch plan = %#v", plan)
+	}
+	if _, err := agent.Launch.PlanRun(runtime.RunRequest{Model: "unverified"}); err == nil {
+		t.Fatal("dsh model selection should be rejected")
 	}
 }
 
