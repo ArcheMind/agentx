@@ -629,35 +629,16 @@ func (a App) resumeSession(ctx context.Context, agent runtime.Agent, detail sess
 }
 
 func (a App) interactiveResume(ctx context.Context) error {
-	scanner := bufio.NewScanner(a.Stdin)
-	scope, err := a.choose(scanner, "Choose sessions:\n", []string{"Current workspace", "All workspaces"})
+	reader := bufio.NewReader(a.Stdin)
+	groups, err := a.recentSessionGroups()
 	if err != nil {
 		return err
 	}
-	options := sessions.ListOptions{Limit: 10, Sort: "date"}
-	if scope == 1 {
-		options.All = true
-	}
-	items, err := a.Sessions.List(options)
+	selected, err := a.chooseSession(reader, groups)
 	if err != nil {
 		return err
 	}
-	if len(items) == 0 {
-		return fmt.Errorf("no recent sessions found")
-	}
-	labels := make([]string, len(items))
-	for index, item := range items {
-		title := item.Title
-		if title == "" {
-			title = item.ID
-		}
-		labels[index] = fmt.Sprintf("%s  %s  %s", item.Provider, item.UpdatedAt, singleLine(title, 80))
-	}
-	sessionIndex, err := a.choose(scanner, "Choose a recent session:\n", labels)
-	if err != nil {
-		return err
-	}
-	detail, err := a.Sessions.Info(items[sessionIndex].ID, items[sessionIndex].Provider)
+	detail, err := a.Sessions.Info(selected.ID, selected.Provider)
 	if err != nil {
 		return err
 	}
@@ -671,25 +652,25 @@ func (a App) interactiveResume(ctx context.Context) error {
 	if len(agents) == 0 {
 		return fmt.Errorf("no supported agents are installed")
 	}
-	labels = make([]string, len(agents))
+	labels := make([]string, len(agents))
 	for index, agent := range agents {
 		labels[index] = agent.ID
 	}
-	agentIndex, err := a.choose(scanner, "Choose an agent:\n", labels)
+	agentIndex, err := a.choose(reader, "Choose an agent:\n", labels)
 	if err != nil {
 		return err
 	}
 	agent := agents[agentIndex]
-	model, err := a.chooseModel(ctx, scanner, agent)
+	model, err := a.chooseModel(ctx, reader, agent)
 	if err != nil {
 		return err
 	}
 	return a.resumeSession(ctx, agent, detail, "", model, false)
 }
 
-func (a App) chooseModel(ctx context.Context, scanner *bufio.Scanner, agent runtime.Agent) (string, error) {
+func (a App) chooseModel(ctx context.Context, reader *bufio.Reader, agent runtime.Agent) (string, error) {
 	if _, unsupported := agent.Models.(drivers.UnsupportedModels); unsupported {
-		return a.prompt(scanner, fmt.Sprintf("Model for %s (leave blank for native default): ", agent.ID), true)
+		return a.prompt(reader, fmt.Sprintf("Model for %s (leave blank for native default): ", agent.ID), true)
 	}
 	models, err := agent.Models.ListModels(ctx, a.Runner)
 	if err != nil {
@@ -706,7 +687,7 @@ func (a App) chooseModel(ctx context.Context, scanner *bufio.Scanner, agent runt
 			labels[index+1] += "  " + model.DisplayName
 		}
 	}
-	choice, err := a.choose(scanner, "Choose a model:\n", labels)
+	choice, err := a.choose(reader, "Choose a model:\n", labels)
 	if err != nil {
 		return "", err
 	}
@@ -716,12 +697,12 @@ func (a App) chooseModel(ctx context.Context, scanner *bufio.Scanner, agent runt
 	return models[choice-1].ID, nil
 }
 
-func (a App) choose(scanner *bufio.Scanner, prompt string, options []string) (int, error) {
+func (a App) choose(reader *bufio.Reader, prompt string, options []string) (int, error) {
 	fmt.Fprint(a.Stdout, prompt)
 	for index, option := range options {
 		fmt.Fprintf(a.Stdout, "  %d. %s\n", index+1, option)
 	}
-	value, err := a.prompt(scanner, "Selection (or q to cancel): ", false)
+	value, err := a.prompt(reader, "Selection (or q to cancel): ", false)
 	if err != nil {
 		return 0, err
 	}
@@ -735,15 +716,16 @@ func (a App) choose(scanner *bufio.Scanner, prompt string, options []string) (in
 	return choice - 1, nil
 }
 
-func (a App) prompt(scanner *bufio.Scanner, label string, allowBlank bool) (string, error) {
+func (a App) prompt(reader *bufio.Reader, label string, allowBlank bool) (string, error) {
 	fmt.Fprint(a.Stdout, label)
-	if !scanner.Scan() {
-		if err := scanner.Err(); err != nil {
-			return "", fmt.Errorf("read interactive input: %w", err)
-		}
+	value, err := reader.ReadString('\n')
+	if err != nil && !errors.Is(err, io.EOF) {
+		return "", fmt.Errorf("read interactive input: %w", err)
+	}
+	if errors.Is(err, io.EOF) && value == "" {
 		return "", errors.New("interactive input closed")
 	}
-	value := strings.TrimSpace(scanner.Text())
+	value = strings.TrimSpace(value)
 	if value == "" && !allowBlank {
 		return "", errors.New("a selection is required")
 	}

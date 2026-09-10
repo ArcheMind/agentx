@@ -17,8 +17,13 @@ func main() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
+	demoDirectory := filepath.Join(workingDirectory, "docs", "demo")
+	if err := os.Chdir(filepath.Join(demoDirectory, "workspace")); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
 	application := app.New(false, os.Stdin, os.Stdout, os.Stderr)
-	application.Sessions = sessions.Service{HomeDir: filepath.Join(workingDirectory, "docs", "demo", "home")}
+	application.Sessions = sessions.Service{HomeDir: filepath.Join(demoDirectory, "home")}
 	application.Runner = demoRunner{}
 	if err := application.Run(context.Background(), os.Args[1:]); err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -41,7 +46,7 @@ func (demoRunner) Execute(_ context.Context, plan runtime.CommandPlan, options r
 			}
 		}
 		fmt.Fprintf(options.Stdout, "\nLaunching %s with %s...\n", plan.Executable, model)
-		fmt.Fprintln(options.Stdout, "Session handed off to the native agent.")
+		fmt.Fprintln(options.Stdout, "Cross-Agent session handed off to the native agent.")
 	}
 	return runtime.CommandResult{}, nil
 }
