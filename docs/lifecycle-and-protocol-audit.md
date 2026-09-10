@@ -4,9 +4,9 @@ Verified on 2026-09-10 against the installed native CLIs and their bundled help/
 
 ## DeepSeek Harness
 
-DSH is registered as `dsh` with the official npm package `@deepseek-ai/dsh`. Its installed package metadata identifies the executable as `dsh`, the package as MIT-licensed, and its repository as `deepseek-ai/deepseek-harness`. Native `dsh --help` verifies `--version`, `--profile`, `--patch`, `web`, and `plugin`; AgentX therefore supports detection, npm install planning, and raw native launch with working-directory and argument passthrough.
+DSH is registered as `dsh` with the official npm package `@deepseek-ai/dsh`. Its installed package metadata identifies the executable as `dsh`, the package as MIT-licensed, and its repository as `deepseek-ai/deepseek-harness`. Native `dsh --help` verifies `--version`, `--profile`, `--patch`, `web`, and `plugin`; the bundled README verifies the `headless`, `acp`, `sdk`, and `sdk-minimal` profiles. AgentX supports detection, npm install planning, and raw native launch with working-directory and argument passthrough, so every native profile remains reachable through `ax dsh -- --profile <profile> ...`.
 
-DSH does not expose a verified AgentX model-selection flag, stable machine-readable model list, native auth lifecycle/status, or safe session list/info/resume source. Those drivers and capabilities are intentionally omitted. In particular, DSH's Web UI API-key settings and `$DSH_HOME` credential storage remain native-owned and are not read or written by AgentX.
+DSH's bundled DeepSeek catalog supplies model discovery. Its local credential provider reports the presence of `DEEPSEEK_API_KEY` in the inherited environment or `$DSH_HOME/.credentials.yaml`; AgentX reports only the provider identity and never prints the value. `ax auth login dsh` starts DSH's native Web UI, whose Models page owns credential configuration. DSH does not expose a model-selection command-line flag, so selection remains native profile configuration rather than a fabricated `ax --model` mapping. Its durable session store is compressed, versioned, profile-configurable, and has no stable standalone list/info/resume command; AgentX does not parse or modify it.
 
 ## Authentication
 

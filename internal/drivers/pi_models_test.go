@@ -127,6 +127,40 @@ func TestPiAuthFileProvidersReadsProviderIDsOnly(t *testing.T) {
 	}
 }
 
+func TestDSHAuthProvidersReportsConfiguredKeyWithoutReadingItsValue(t *testing.T) {
+	path := filepath.Join(t.TempDir(), ".credentials.yaml")
+	if err := os.WriteFile(path, []byte("version: 1\nrefs:\n  DEEPSEEK_API_KEY: secret\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	providers, err := (DSHAuthProviders{Path: path}).ListLoggedInProviders(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(providers, []string{dshProviderID}) {
+		t.Fatalf("providers = %#v", providers)
+	}
+}
+
+func TestDSHAuthProvidersHonorsEnvironmentWithoutReadingCredentialFile(t *testing.T) {
+	providers, err := (DSHAuthProviders{Path: filepath.Join(t.TempDir(), "missing"), Env: func(string) string { return "secret" }}).ListLoggedInProviders(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(providers, []string{dshProviderID}) {
+		t.Fatalf("providers = %#v", providers)
+	}
+}
+
+func TestDSHModelsExposeBundledCatalog(t *testing.T) {
+	models, err := (DSHModels{}).ListModels(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(models) != 4 || models[0].ID != "deepseek-flash" || models[2].ID != "deepseek-v4-pro" {
+		t.Fatalf("models = %#v", models)
+	}
+}
+
 func TestPiAuthFileProvidersTreatsMissingFileAsEmpty(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "auth.json")
 	providers, err := (PiAuthFileProviders{Path: path}).ListLoggedInProviders(context.Background())

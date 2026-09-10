@@ -28,6 +28,7 @@ func TestNativeAuthPlansUseAgentOAuthFlows(t *testing.T) {
 	want := map[string]runtime.CommandPlan{
 		"claude":   {Executable: "claude", Args: []string{"auth", "login", "--claudeai"}},
 		"codex":    {Executable: "codex", Args: []string{"login"}},
+		"dsh":      {Executable: "dsh", Args: []string{"web"}},
 		"gemini":   {Executable: "gemini"},
 		"opencode": {Executable: "opencode", Args: []string{"auth", "login"}},
 		"pi":       {Executable: "pi"},
@@ -140,7 +141,7 @@ func TestNativeAuthStatusParsers(t *testing.T) {
 
 func TestAuthStatusCapabilitiesMatchNativeSupport(t *testing.T) {
 	registry := NewRegistry()
-	for _, id := range []string{"claude", "codex", "opencode", "pi"} {
+	for _, id := range []string{"claude", "codex", "dsh", "opencode", "pi"} {
 		agent, err := registry.Get(id)
 		if err != nil {
 			t.Fatal(err)
@@ -165,8 +166,8 @@ func TestAuthLogoutCapabilitiesMatchNativeSupport(t *testing.T) {
 		if agent.Auth == nil {
 			continue
 		}
-		if !agent.Auth.SupportsLogout() || !containsCapability(agent.Capabilities, runtime.CapabilityAuthLogout) {
-			t.Fatalf("%s should support auth logout", agent.ID)
+		if agent.Auth.SupportsLogout() != containsCapability(agent.Capabilities, runtime.CapabilityAuthLogout) {
+			t.Fatalf("%s auth logout support and capability disagree", agent.ID)
 		}
 	}
 }
@@ -217,10 +218,11 @@ func TestDSHHasOnlyVerifiedDrivers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if agent.Models != nil || agent.Auth != nil {
-		t.Fatalf("dsh should not expose unverified model or auth drivers: %#v", agent)
+	if agent.Models == nil || agent.Auth == nil {
+		t.Fatalf("dsh should expose verified model and auth drivers: %#v", agent)
 	}
-	if !reflect.DeepEqual(agent.Capabilities, []runtime.Capability{runtime.CapabilityLaunch}) {
+	want := []runtime.Capability{runtime.CapabilityLaunch, runtime.CapabilityAuthLogin, runtime.CapabilityAuthStatus, runtime.CapabilityModelList}
+	if !reflect.DeepEqual(agent.Capabilities, want) {
 		t.Fatalf("dsh capabilities = %#v", agent.Capabilities)
 	}
 	plan, err := agent.Launch.PlanRun(runtime.RunRequest{Cwd: "/tmp/project", PassthroughArgs: []string{"web", "--no-open"}})
@@ -231,7 +233,7 @@ func TestDSHHasOnlyVerifiedDrivers(t *testing.T) {
 		t.Fatalf("dsh launch plan = %#v", plan)
 	}
 	if _, err := agent.Launch.PlanRun(runtime.RunRequest{Model: "unverified"}); err == nil {
-		t.Fatal("dsh model selection should be rejected")
+		t.Fatal("dsh model selection must remain owned by the native profile")
 	}
 }
 
