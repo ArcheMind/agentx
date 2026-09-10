@@ -1,6 +1,7 @@
 package app
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
@@ -54,11 +55,10 @@ func (a App) Run(ctx context.Context, args []string) error {
 	}
 	a.Output = output
 	if len(args) == 0 {
-		if err := a.rejectStructured("help"); err != nil {
+		if err := a.rejectStructured("interactive session resume"); err != nil {
 			return err
 		}
-		a.printHelp()
-		return nil
+		return a.interactiveResume(ctx)
 	}
 	switch args[0] {
 	case "help", "-h", "--help":
@@ -80,6 +80,9 @@ func (a App) Run(ctx context.Context, args []string) error {
 	case "session":
 		return a.sessions(ctx, args[1:])
 	default:
+		if _, err := a.Registry.Get(args[0]); err == nil {
+			return a.runAgent(ctx, args)
+		}
 		return fmt.Errorf("unknown command %q; run ax help", args[0])
 	}
 }
@@ -578,6 +581,11 @@ func (a App) sessionResume(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
+	return a.resumeSession(ctx, agent, detail, workspace, "", dryRun)
+}
+
+func (a App) resumeSession(ctx context.Context, agent runtime.Agent, detail sessions.Detail, workspace, model string, dryRun bool) error {
+	var err error
 	if workspace == "" {
 		workspace = detail.Workspace
 	}
@@ -596,7 +604,7 @@ func (a App) sessionResume(ctx context.Context, args []string) error {
 		return fmt.Errorf("session workspace %s is not an accessible directory", workspace)
 	}
 	prompt := sessions.ResumePrompt(detail)
-	request := runtime.RunRequest{Cwd: workspace, PassthroughArgs: []string{prompt}}
+	request := runtime.RunRequest{Cwd: workspace, Model: model, PassthroughArgs: []string{prompt}}
 	if agent.ID == "opencode" {
 		request.PassthroughArgs = []string{"--prompt", prompt}
 	}
@@ -620,6 +628,128 @@ func (a App) sessionResume(ctx context.Context, args []string) error {
 	return nil
 }
 
+func (a App) interactiveResume(ctx context.Context) error {
+	scanner := bufio.NewScanner(a.Stdin)
+	scope, err := a.choose(scanner, "Choose sessions:\n", []string{"Current workspace", "All workspaces"})
+	if err != nil {
+		return err
+	}
+	options := sessions.ListOptions{Limit: 10, Sort: "date"}
+	if scope == 1 {
+		options.All = true
+	}
+	items, err := a.Sessions.List(options)
+	if err != nil {
+		return err
+	}
+	if len(items) == 0 {
+		return fmt.Errorf("no recent sessions found")
+	}
+	labels := make([]string, len(items))
+	for index, item := range items {
+		title := item.Title
+		if title == "" {
+			title = item.ID
+		}
+		labels[index] = fmt.Sprintf("%s  %s  %s", item.Provider, item.UpdatedAt, singleLine(title, 80))
+	}
+	sessionIndex, err := a.choose(scanner, "Choose a recent session:\n", labels)
+	if err != nil {
+		return err
+	}
+	detail, err := a.Sessions.Info(items[sessionIndex].ID, items[sessionIndex].Provider)
+	if err != nil {
+		return err
+	}
+
+	agents := make([]runtime.Agent, 0)
+	for _, agent := range a.Registry.All() {
+		if _, err := exec.LookPath(agent.Binary); err == nil {
+			agents = append(agents, agent)
+		}
+	}
+	if len(agents) == 0 {
+		return fmt.Errorf("no supported agents are installed")
+	}
+	labels = make([]string, len(agents))
+	for index, agent := range agents {
+		labels[index] = agent.ID
+	}
+	agentIndex, err := a.choose(scanner, "Choose an agent:\n", labels)
+	if err != nil {
+		return err
+	}
+	agent := agents[agentIndex]
+	model, err := a.chooseModel(ctx, scanner, agent)
+	if err != nil {
+		return err
+	}
+	return a.resumeSession(ctx, agent, detail, "", model, false)
+}
+
+func (a App) chooseModel(ctx context.Context, scanner *bufio.Scanner, agent runtime.Agent) (string, error) {
+	if _, unsupported := agent.Models.(drivers.UnsupportedModels); unsupported {
+		return a.prompt(scanner, fmt.Sprintf("Model for %s (leave blank for native default): ", agent.ID), true)
+	}
+	models, err := agent.Models.ListModels(ctx, a.Runner)
+	if err != nil {
+		return "", err
+	}
+	if len(models) == 0 {
+		return "", fmt.Errorf("%s returned no models", agent.Name)
+	}
+	labels := make([]string, len(models)+1)
+	labels[0] = "Native default"
+	for index, model := range models {
+		labels[index+1] = model.ID
+		if model.DisplayName != "" && model.DisplayName != model.ID {
+			labels[index+1] += "  " + model.DisplayName
+		}
+	}
+	choice, err := a.choose(scanner, "Choose a model:\n", labels)
+	if err != nil {
+		return "", err
+	}
+	if choice == 0 {
+		return "", nil
+	}
+	return models[choice-1].ID, nil
+}
+
+func (a App) choose(scanner *bufio.Scanner, prompt string, options []string) (int, error) {
+	fmt.Fprint(a.Stdout, prompt)
+	for index, option := range options {
+		fmt.Fprintf(a.Stdout, "  %d. %s\n", index+1, option)
+	}
+	value, err := a.prompt(scanner, "Selection (or q to cancel): ", false)
+	if err != nil {
+		return 0, err
+	}
+	if strings.EqualFold(value, "q") {
+		return 0, errors.New("interactive session resume cancelled")
+	}
+	choice, err := strconv.Atoi(value)
+	if err != nil || choice < 1 || choice > len(options) {
+		return 0, fmt.Errorf("selection must be a number from 1 to %d", len(options))
+	}
+	return choice - 1, nil
+}
+
+func (a App) prompt(scanner *bufio.Scanner, label string, allowBlank bool) (string, error) {
+	fmt.Fprint(a.Stdout, label)
+	if !scanner.Scan() {
+		if err := scanner.Err(); err != nil {
+			return "", fmt.Errorf("read interactive input: %w", err)
+		}
+		return "", errors.New("interactive input closed")
+	}
+	value := strings.TrimSpace(scanner.Text())
+	if value == "" && !allowBlank {
+		return "", errors.New("a selection is required")
+	}
+	return value, nil
+}
+
 func sessionUsageError() error {
 	return fmt.Errorf("usage: ax [--json|--yaml] session <providers|list|info|resume> [args...]")
 }
@@ -636,6 +766,8 @@ func (a App) printHelp() {
 	fmt.Fprint(a.Stdout, `agentx manages native AI coding-agent runtimes.
 
 Usage:
+  ax
+  ax <agent> [--model <model>] [--cwd <path>] [--dry-run] [-- <native args...>]
   ax [--json|--yaml] agent list
   ax agent which <agent>
   ax [--json|--yaml] agent install <agent> [--version <version>] [--dry-run]
@@ -646,6 +778,9 @@ Usage:
   ax [--json|--yaml] auth logout <agent> [--dry-run]
   ax [--json|--yaml] session <providers|list|info|resume> [args...]
   ax version
+
+Running ax without arguments starts an interactive session resume. The ax <agent>
+shortcut launches an installed agent directly.
 
 Agents: claude, codex, gemini, opencode, pi
 
