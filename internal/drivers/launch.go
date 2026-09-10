@@ -3,7 +3,7 @@ package drivers
 import (
 	"fmt"
 
-	"agentx/internal/runtime"
+	"github.com/ArcheMind/agentx/internal/runtime"
 )
 
 type NativeLaunch struct {

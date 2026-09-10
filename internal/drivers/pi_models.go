@@ -9,7 +9,7 @@ import (
 	"slices"
 	"strings"
 
-	"agentx/internal/runtime"
+	"github.com/ArcheMind/agentx/internal/runtime"
 )
 
 const piAgentDirEnv = "PI_CODING_AGENT_DIR"

@@ -8,7 +8,7 @@ import (
 	"reflect"
 	"testing"
 
-	"agentx/internal/runtime"
+	"github.com/ArcheMind/agentx/internal/runtime"
 )
 
 func TestRegistryContainsSupportedAgents(t *testing.T) {

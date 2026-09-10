@@ -4,7 +4,7 @@ import (
 	"context"
 	"os"
 
-	"agentx/internal/app"
+	"github.com/ArcheMind/agentx/internal/app"
 )
 
 func main() {

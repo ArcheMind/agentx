@@ -8,7 +8,7 @@ import (
 	"reflect"
 	"testing"
 
-	"agentx/internal/runtime"
+	"github.com/ArcheMind/agentx/internal/runtime"
 )
 
 const piModelsFixture = `provider        model                  context  max-out  thinking  images

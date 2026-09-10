@@ -5,6 +5,7 @@ fmt:
 
 check:
 	go vet ./...
+	sh -n install.sh
 
 test:
 	go test ./...

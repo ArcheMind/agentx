@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"agentx/internal/runtime"
-	"agentx/internal/sessions"
+	"github.com/ArcheMind/agentx/internal/runtime"
+	"github.com/ArcheMind/agentx/internal/sessions"
 )
 
 func TestOutputFormatIsGlobal(t *testing.T) {

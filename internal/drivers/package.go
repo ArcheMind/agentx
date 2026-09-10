@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"agentx/internal/runtime"
+	"github.com/ArcheMind/agentx/internal/runtime"
 )
 
 type NPMPackage struct {

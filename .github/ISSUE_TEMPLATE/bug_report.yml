@@ -1,0 +1,49 @@
+name: Bug report
+description: Report reproducible AgentX behavior that is incorrect.
+title: "bug: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: Do not include credentials, prompts, session transcripts, or unredacted debug logs. Report security issues privately.
+  - type: input
+    id: version
+    attributes:
+      label: AgentX version
+      description: Output of `ax version`.
+      placeholder: agentx 0.1.0
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: Operating system, architecture, shell, and relevant native agent version.
+    validations:
+      required: true
+  - type: textarea
+    id: command
+    attributes:
+      label: Command
+      description: The smallest command that reproduces the problem.
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Add redacted output or logs if they are necessary to understand the problem.

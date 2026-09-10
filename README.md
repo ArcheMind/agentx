@@ -1,92 +1,168 @@
 # agentx
 
-`agentx` is a native-first runtime manager for AI coding-agent CLIs. Its command is `ax`.
+[![CI](https://github.com/ArcheMind/agentx/actions/workflows/ci.yml/badge.svg)](https://github.com/ArcheMind/agentx/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/ArcheMind/agentx?display_name=tag)](https://github.com/ArcheMind/agentx/releases)
+[![License](https://img.shields.io/github/license/ArcheMind/agentx)](LICENSE)
 
-It keeps each agent's executable, configuration, credentials, and sessions native. The shared layer is the workflow: locate or install an agent, launch its native subscription login, read models from verified native sources, select a model at launch, and resume local sessions across agents through AgentX's built-in session service.
+**One native workflow for every coding agent you already use.**
 
-## Build
+`agentx` is a native-first runtime manager for AI coding-agent CLIs. Its command is `ax`. It discovers, installs, authenticates, inspects, launches, and resumes Claude Code, Codex CLI, Gemini CLI, OpenCode, and Pi without replacing their configuration, credentials, or session stores.
+
+```console
+$ ax agent list
+claude     /usr/local/bin/claude (2.1.206)
+codex      /usr/local/bin/codex (codex-cli 0.154.0)
+gemini     not installed
+opencode   /usr/local/bin/opencode (0.5.27)
+pi         /usr/local/bin/pi (0.84.4)
+
+$ ax agent run codex --model gpt-5.4 --cwd .
+```
+
+## Why agentx
+
+Coding agents are good native tools. The fragmented workflow around them is not.
+
+- **Keep native ownership.** AgentX does not invent a profile format, copy credentials, or rewrite private session databases.
+- **Adopt one command at a time.** Use discovery, installation, model selection, launching, or sessions independently.
+- **See the plan first.** Mutating operations support `--dry-run`; AgentX-owned results support JSON and YAML.
+- **Move between agents.** Inspect five native session formats and resume useful context in a different agent.
+- **Fail honestly.** If an agent exposes no verified model or authentication source, AgentX says so instead of inventing data.
+
+The design is inspired by [uv](https://github.com/astral-sh/uv): make the first useful action cheap, preserve established standards, and unify the workflow rather than claiming ownership of every underlying format.
+
+## Install
+
+### macOS and Linux
+
+```bash
+curl -LsSf https://raw.githubusercontent.com/ArcheMind/agentx/main/install.sh | sh
+```
+
+The installer downloads the release artifact for the current platform, verifies its SHA-256 checksum, and installs `ax` to `$HOME/.local/bin`. Set `AX_INSTALL_DIR` to choose another directory.
+
+### Go
+
+```bash
+go install github.com/ArcheMind/agentx/cmd/ax@latest
+```
+
+Prebuilt archives for macOS, Linux, and Windows are available on the [releases page](https://github.com/ArcheMind/agentx/releases). See [installation](docs/installation.md) for version pinning, verification, Windows setup, and source builds.
+
+## Start in 60 seconds
+
+```bash
+# See what is already available
+ax agent list
+
+# Preview an installation, then perform it
+ax agent install codex --dry-run
+ax agent install codex
+
+# Use the agent's native subscription login
+ax auth login codex
+ax auth status codex
+
+# Inspect verified native models and launch
+ax agent models codex
+ax agent run codex --model gpt-5.4 --cwd .
+```
+
+Arguments after `--` are passed directly to the native agent:
+
+```bash
+ax agent run claude --model sonnet -- --permission-mode plan
+```
+
+## Cross-agent sessions
+
+Session discovery and transcript normalization are built into `ax`; there is no companion service or database.
+
+```bash
+# Sessions default to the current workspace
+ax session list
+
+# Inspect a session from any supported native store
+ax session list --source codex --all --limit 20 --sort date
+ax session info <session-id> --source codex --peek
+
+# Continue its bounded context in another native agent
+ax session resume claude <session-id> --source codex
+```
+
+AgentX reads native session stores but never modifies them. Resume passes a bounded normalized transcript to the target agent's native interactive command.
+
+## Supported agents
+
+| Agent | Install | Login | Auth status | Model list | Model select | Sessions |
+| --- | --- | --- | --- | --- | --- | --- |
+| Claude Code | Yes | Yes | Yes | No verified source | Yes | Yes |
+| Codex CLI | Yes | Yes | Yes | Native cache | Yes | Yes |
+| Gemini CLI | Yes | Interactive | Unsupported | No verified source | Yes | Yes |
+| OpenCode | Yes | Yes | Provider list | Native command | Yes | Yes |
+| Pi | Yes | Interactive | Provider list | Native command + auth filter | Yes | Yes |
+
+The exact native versions and evidence behind this table live in the [lifecycle and protocol audit](docs/lifecycle-and-protocol-audit.md).
+
+## Command map
+
+```text
+ax agent list
+ax agent which <agent>
+ax agent install <agent> [--version <version>] [--dry-run]
+ax agent models <agent>
+ax agent run <agent> [--model <model>] [--cwd <path>] [--dry-run] [-- <native args...>]
+
+ax auth login <agent> [--dry-run]
+ax auth status <agent>
+ax auth logout <agent> [--dry-run]
+
+ax session <providers|list|info|resume>
+ax session providers
+ax session list [--source <provider>] [--workspace <path>|--all]
+                [--limit <n>] [--sort date|messages|provider]
+ax session info <session-id> [--source <provider>] [--peek|--peek-lines <n>]
+ax session resume <target-agent> <session-id> [--source <provider>]
+                  [--workspace <path>] [--dry-run]
+```
+
+Place `--json` or `--yaml` before the command for AgentX-owned results and dry-run plans. Actual install, authentication, launch, and resume commands retain native interactive output and reject structured mode rather than silently mixing protocols.
+
+```bash
+ax --json agent list
+ax --yaml session info <session-id> --source codex
+ax --json agent run codex --model gpt-5.4 --dry-run
+```
+
+## Design boundaries
+
+AgentX owns workflow coordination, not the agents themselves. It deliberately does not:
+
+- define a universal user profile or project configuration format;
+- store or proxy account credentials;
+- replace native package managers or session databases;
+- normalize destructive session operations with incompatible semantics;
+- fabricate capabilities absent from a verified native source.
+
+Read [architecture](docs/architecture.md) for the component model and [product principles](docs/product-principles.md) for the decisions behind these boundaries.
+
+## Development
+
+AgentX requires Go 1.25.
 
 ```bash
 make verify
 ./bin/ax version
 ```
 
-## Commands
+`make verify` is the repository contract: formatting, static checks, tests, protocol audits, build, and smoke checks. See [CONTRIBUTING.md](CONTRIBUTING.md) before proposing a change.
 
-The resource-first grammar is `agent <list|which|install|models|run>`, `auth login <agent>`, `auth status <agent>`, `auth logout <agent>`, and `session <providers|list|info|resume>`.
+## Security and support
 
-```bash
-# Locate installed agents and inspect their versions
-ax agent list
-ax --json agent list
-ax --yaml agent list
-ax agent which <agent>
+Do not report vulnerabilities in public issues; follow [SECURITY.md](SECURITY.md). For usage questions and confirmed bugs, see [SUPPORT.md](SUPPORT.md).
 
-# Preview or run a native package installation
-ax agent install <agent> --dry-run
-ax agent install codex --version 0.153.4
+AgentX is an independent open-source project and is not affiliated with Anthropic, OpenAI, Google, OpenCode, or Pi's maintainers. Product names belong to their respective owners.
 
-# Open the agent's native subscription OAuth flow
-ax auth login claude
-ax auth login codex
-ax auth login gemini
-ax auth login opencode
-ax auth login pi
+## License
 
-# Check native login status (Gemini reports unsupported)
-ax auth status claude
-ax --json auth status codex
-ax --yaml auth status opencode
-ax auth status pi
-
-# Open the native logout flow
-ax auth logout <agent>
-
-# Read available models from verified native sources
-ax agent models <agent>
-ax agent models opencode
-ax agent models pi
-ax --yaml agent models codex
-
-# Select a model and launch the native agent
-ax agent run <agent> --model gpt-5.4 --cwd .
-ax agent run claude --model sonnet -- --permission-mode plan
-
-# Discover, inspect, and resume native sessions without a separate CASR binary
-ax session providers
-ax session list --source codex --all --limit 20 --sort date
-ax --yaml session info <session-id> --source codex
-ax session resume claude <session-id> --source codex
-```
-
-Arguments after `--` pass directly to the native agent. `ax` does not create a Profile format or copy credentials.
-
-`--json` and `--yaml` select AgentX-owned structured results and structured error envelopes. They cover agent, model, provider, and session data, authentication status, version, plus install, auth, run, and session-resume dry-run plans. Actual agents and installers keep their native output; selecting JSON or YAML for those non-dry-run operations is rejected instead of ignored.
-
-Authentication is delegated to each agent's native flow. Claude, Codex, and OpenCode expose direct login and status commands. Pi status reads only provider IDs from the same native credential source used to filter its model list. Gemini has no reliable Agent-wide status source and reports `unsupported`. Logout delegates to each native direct or interactive flow. AgentX never accepts, stores, or prints account credentials.
-
-## Sessions
-
-Session discovery and transcript normalization are compiled into `ax`; there is no separate CASR installation or executable. The built-in readers cover the native local stores of Claude Code, Codex, Gemini CLI, OpenCode's JSON session store, and Pi. `session list` is scoped to the current workspace unless `--all` or `--workspace` is supplied.
-
-`session resume` passes a bounded transcript context to the target agent's native interactive command in the selected workspace. It does not modify private provider databases. Context is capped at 120,000 bytes, preserving the beginning and most recent history when truncation is necessary.
-
-## Model sources
-
-Model discovery through `agent models <agent>` is capability-based:
-
-- Codex reads its native `~/.codex/models_cache.json`.
-- OpenCode runs `opencode models`.
-- Pi runs `pi --list-models`.
-- Claude Code and Gemini CLI support model selection, but their installed CLIs expose no verified local model-list source. `ax agent models` reports that limitation instead of returning an invented catalog.
-
-## Debug logging
-
-Set `AX_LOG=debug` or place `--verbose` before the command. Every external command then emits a JSON record containing its raw command input, stdout, stderr, error, and exit code. Debug logs are a separate, explicitly enabled protocol and can contain sensitive native output.
-
-```bash
-AX_LOG=debug ax agent list
-ax --verbose agent models opencode
-```
-
-The evidence and decisions behind the supported lifecycle surface are recorded in [the lifecycle and protocol audit](docs/lifecycle-and-protocol-audit.md).
+[MIT](LICENSE) © 2026 ArcheMind
