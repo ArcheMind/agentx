@@ -15,15 +15,17 @@ build:
 
 smoke: build
 	./bin/ax version
-	./bin/ax list --json >/dev/null
+	./bin/ax --json list >/dev/null
+	./bin/ax --yaml list >/dev/null
 	./bin/ax install codex --dry-run >/dev/null
+	./bin/ax --yaml auth login codex --dry-run >/dev/null
 	./bin/ax run codex --model smoke-test --dry-run >/dev/null
 
 smoke-live: build
-	./bin/ax models codex --json >/dev/null
-	./bin/ax models opencode --json >/dev/null
-	./bin/ax models pi --json >/dev/null
-	AX_LOG=debug ./bin/ax list --json >/dev/null 2>&1
+	./bin/ax --json models codex >/dev/null
+	./bin/ax --json models opencode >/dev/null
+	./bin/ax --json models pi >/dev/null
+	AX_LOG=debug ./bin/ax --json list >/dev/null 2>&1
 
 verify: fmt check test smoke
 

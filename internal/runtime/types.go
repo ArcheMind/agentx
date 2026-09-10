@@ -8,36 +8,33 @@ import (
 type Capability string
 
 const (
-	CapabilityLaunch       Capability = "launch"
-	CapabilityInstall      Capability = "install"
-	CapabilityModelList    Capability = "model_list"
-	CapabilityModelSelect  Capability = "model_select"
-	CapabilitySessionList  Capability = "session_list"
-	CapabilitySessionRead  Capability = "session_read"
-	CapabilitySessionWrite Capability = "session_write"
+	CapabilityLaunch      Capability = "launch"
+	CapabilityAuthLogin   Capability = "auth_login"
+	CapabilityModelList   Capability = "model_list"
+	CapabilityModelSelect Capability = "model_select"
 )
 
 type CommandPlan struct {
-	Executable string            `json:"executable"`
-	Args       []string          `json:"args"`
-	Cwd        string            `json:"cwd,omitempty"`
-	Env        map[string]string `json:"env,omitempty"`
+	Executable string            `json:"executable" yaml:"executable"`
+	Args       []string          `json:"args" yaml:"args"`
+	Cwd        string            `json:"cwd,omitempty" yaml:"cwd,omitempty"`
+	Env        map[string]string `json:"env,omitempty" yaml:"env,omitempty"`
 }
 
 type Detection struct {
-	ID           string       `json:"id"`
-	Name         string       `json:"name"`
-	Installed    bool         `json:"installed"`
-	Path         string       `json:"path,omitempty"`
-	Version      string       `json:"version,omitempty"`
-	Capabilities []Capability `json:"capabilities"`
+	ID           string       `json:"id" yaml:"id"`
+	Name         string       `json:"name" yaml:"name"`
+	Installed    bool         `json:"installed" yaml:"installed"`
+	Path         string       `json:"path,omitempty" yaml:"path,omitempty"`
+	Version      string       `json:"version,omitempty" yaml:"version,omitempty"`
+	Capabilities []Capability `json:"capabilities" yaml:"capabilities"`
 }
 
 type Model struct {
-	ID          string `json:"id"`
-	DisplayName string `json:"display_name,omitempty"`
-	Description string `json:"description,omitempty"`
-	Source      string `json:"source"`
+	ID          string `json:"id" yaml:"id"`
+	DisplayName string `json:"display_name,omitempty" yaml:"display_name,omitempty"`
+	Description string `json:"description,omitempty" yaml:"description,omitempty"`
+	Source      string `json:"source" yaml:"source"`
 }
 
 type RunRequest struct {
@@ -54,9 +51,20 @@ type ExecuteOptions struct {
 }
 
 type CommandResult struct {
-	Stdout   string `json:"stdout"`
-	Stderr   string `json:"stderr"`
-	ExitCode int    `json:"exit_code"`
+	Stdout   string `json:"stdout" yaml:"stdout"`
+	Stderr   string `json:"stderr" yaml:"stderr"`
+	ExitCode int    `json:"exit_code" yaml:"exit_code"`
+}
+
+type AuthPlan struct {
+	Command     CommandPlan `json:"command" yaml:"command"`
+	Instruction string      `json:"instruction,omitempty" yaml:"instruction,omitempty"`
+}
+
+type Package struct {
+	ID      string
+	Name    string
+	Install PackageDriver
 }
 
 type Runner interface {
@@ -75,6 +83,10 @@ type ModelDriver interface {
 	ListModels(context.Context, Runner) ([]Model, error)
 }
 
+type AuthDriver interface {
+	PlanLogin() AuthPlan
+}
+
 type SessionDriver interface {
 	Plan(args []string) (CommandPlan, error)
 }
@@ -84,7 +96,7 @@ type Agent struct {
 	Name         string
 	Binary       string
 	Launch       LaunchDriver
-	Package      PackageDriver
 	Models       ModelDriver
+	Auth         AuthDriver
 	Capabilities []Capability
 }
