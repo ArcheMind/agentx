@@ -11,6 +11,7 @@ const (
 	CapabilityLaunch      Capability = "launch"
 	CapabilityAuthLogin   Capability = "auth_login"
 	CapabilityAuthStatus  Capability = "auth_status"
+	CapabilityAuthLogout  Capability = "auth_logout"
 	CapabilityModelList   Capability = "model_list"
 	CapabilityModelSelect Capability = "model_select"
 )
@@ -63,17 +64,15 @@ type AuthPlan struct {
 }
 
 type AuthStatus struct {
-	Agent        string `json:"agent" yaml:"agent"`
-	Supported    bool   `json:"supported" yaml:"supported"`
-	LoggedIn     bool   `json:"logged_in" yaml:"logged_in"`
-	Method       string `json:"method,omitempty" yaml:"method,omitempty"`
-	Subscription string `json:"subscription,omitempty" yaml:"subscription,omitempty"`
+	Agent     string         `json:"agent" yaml:"agent"`
+	Supported bool           `json:"supported" yaml:"supported"`
+	Providers []AuthProvider `json:"providers" yaml:"providers"`
 }
 
-type Package struct {
-	ID      string
-	Name    string
-	Install PackageDriver
+type AuthProvider struct {
+	ID           string `json:"id" yaml:"id"`
+	Method       string `json:"method,omitempty" yaml:"method,omitempty"`
+	Subscription string `json:"subscription,omitempty" yaml:"subscription,omitempty"`
 }
 
 type Runner interface {
@@ -94,7 +93,9 @@ type ModelDriver interface {
 
 type AuthDriver interface {
 	PlanLogin() AuthPlan
+	PlanLogout() AuthPlan
 	SupportsStatus() bool
+	SupportsLogout() bool
 	Status(context.Context, Runner) (AuthStatus, error)
 }
 
@@ -105,5 +106,6 @@ type Agent struct {
 	Launch       LaunchDriver
 	Models       ModelDriver
 	Auth         AuthDriver
+	Install      PackageDriver
 	Capabilities []Capability
 }

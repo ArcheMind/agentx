@@ -18,7 +18,7 @@ type CommandModels struct {
 func (d CommandModels) ListModels(ctx context.Context, runner runtime.Runner) ([]runtime.Model, error) {
 	result, err := runner.Execute(ctx, d.Plan, runtime.ExecuteOptions{})
 	if err != nil {
-		return nil, fmt.Errorf("read models: %w: %s", err, strings.TrimSpace(result.Stderr))
+		return nil, fmt.Errorf("read models: %w", err)
 	}
 	return modelsFromLines(result.Stdout, d.Plan.Executable), nil
 }

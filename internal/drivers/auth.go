@@ -12,18 +12,28 @@ import (
 )
 
 type NativeAuth struct {
-	Command       runtime.CommandPlan
-	Instruction   string
-	StatusCommand runtime.CommandPlan
-	ParseStatus   func(runtime.CommandResult, error) (runtime.AuthStatus, error)
+	Command           runtime.CommandPlan
+	Instruction       string
+	LogoutCommand     runtime.CommandPlan
+	LogoutInstruction string
+	StatusCommand     runtime.CommandPlan
+	ParseStatus       func(runtime.CommandResult, error) (runtime.AuthStatus, error)
 }
 
 func (d NativeAuth) PlanLogin() runtime.AuthPlan {
 	return runtime.AuthPlan{Command: d.Command, Instruction: d.Instruction}
 }
 
+func (d NativeAuth) PlanLogout() runtime.AuthPlan {
+	return runtime.AuthPlan{Command: d.LogoutCommand, Instruction: d.LogoutInstruction}
+}
+
 func (d NativeAuth) SupportsStatus() bool {
 	return d.StatusCommand.Executable != "" && d.ParseStatus != nil
+}
+
+func (d NativeAuth) SupportsLogout() bool {
+	return d.LogoutCommand.Executable != ""
 }
 
 func (d NativeAuth) Status(ctx context.Context, runner runtime.Runner) (runtime.AuthStatus, error) {
@@ -44,48 +54,77 @@ func parseClaudeAuthStatus(result runtime.CommandResult, executeErr error) (runt
 		return runtime.AuthStatus{}, statusParseError("claude", executeErr, err)
 	}
 	return runtime.AuthStatus{
-		Supported:    true,
-		LoggedIn:     native.LoggedIn,
-		Method:       native.AuthMethod,
-		Subscription: native.SubscriptionType,
+		Supported: true,
+		Providers: authProviders(native.LoggedIn, runtime.AuthProvider{
+			ID: "claude", Method: native.AuthMethod, Subscription: native.SubscriptionType,
+		}),
 	}, nil
 }
 
 func parseCodexAuthStatus(result runtime.CommandResult, executeErr error) (runtime.AuthStatus, error) {
 	output := strings.TrimSpace(stripANSI(result.Stdout + result.Stderr))
 	if strings.Contains(strings.ToLower(output), "not logged in") {
-		return runtime.AuthStatus{Supported: true}, nil
+		return runtime.AuthStatus{Supported: true, Providers: []runtime.AuthProvider{}}, nil
 	}
 	const prefix = "Logged in using "
 	if index := strings.Index(output, prefix); index >= 0 {
 		method := strings.TrimSpace(output[index+len(prefix):])
 		if method != "" {
-			return runtime.AuthStatus{Supported: true, LoggedIn: true, Method: method}, nil
+			return runtime.AuthStatus{Supported: true, Providers: []runtime.AuthProvider{{ID: "codex", Method: method}}}, nil
 		}
 	}
 	return runtime.AuthStatus{}, statusParseError("codex", executeErr, nil)
 }
 
-var credentialCountPattern = regexp.MustCompile(`(?m)(\d+) credentials?\s*$`)
+var openCodeCredentialPattern = regexp.MustCompile(`(?m)^●\s+(.+?)\s+(oauth|api_key|api key)\s*$`)
 
 func parseOpenCodeAuthStatus(result runtime.CommandResult, executeErr error) (runtime.AuthStatus, error) {
 	output := stripANSI(result.Stdout + result.Stderr)
-	match := credentialCountPattern.FindStringSubmatch(output)
+	credentials, _, ok := strings.Cut(output, "Environment")
+	if !ok {
+		return runtime.AuthStatus{}, statusParseError("opencode", executeErr, nil)
+	}
+	matches := openCodeCredentialPattern.FindAllStringSubmatch(credentials, -1)
+	providers := make([]runtime.AuthProvider, 0, len(matches))
+	for _, match := range matches {
+		providers = append(providers, runtime.AuthProvider{ID: strings.TrimSpace(match[1]), Method: strings.ReplaceAll(match[2], "_", " ")})
+	}
+	countPattern := regexp.MustCompile(`(?m)(\d+) credentials?\s*$`)
+	match := countPattern.FindStringSubmatch(credentials)
 	if len(match) != 2 {
 		return runtime.AuthStatus{}, statusParseError("opencode", executeErr, nil)
 	}
 	count, err := strconv.Atoi(match[1])
-	if err != nil {
+	if err != nil || count != len(providers) {
 		return runtime.AuthStatus{}, statusParseError("opencode", executeErr, err)
 	}
-	status := runtime.AuthStatus{Supported: true, LoggedIn: count > 0}
-	if count > 0 {
-		status.Method = fmt.Sprintf("%d configured credential", count)
-		if count != 1 {
-			status.Method += "s"
-		}
+	return runtime.AuthStatus{Supported: true, Providers: providers}, nil
+}
+
+type ProviderAuth struct {
+	NativeAuth
+	Providers LoggedInProviderSource
+}
+
+func (d ProviderAuth) SupportsStatus() bool { return d.Providers != nil }
+
+func (d ProviderAuth) Status(ctx context.Context, _ runtime.Runner) (runtime.AuthStatus, error) {
+	ids, err := d.Providers.ListLoggedInProviders(ctx)
+	if err != nil {
+		return runtime.AuthStatus{}, err
 	}
-	return status, nil
+	providers := make([]runtime.AuthProvider, 0, len(ids))
+	for _, id := range ids {
+		providers = append(providers, runtime.AuthProvider{ID: id})
+	}
+	return runtime.AuthStatus{Supported: true, Providers: providers}, nil
+}
+
+func authProviders(loggedIn bool, provider runtime.AuthProvider) []runtime.AuthProvider {
+	if !loggedIn {
+		return []runtime.AuthProvider{}
+	}
+	return []runtime.AuthProvider{provider}
 }
 
 var ansiPattern = regexp.MustCompile(`\x1b\[[0-9;?]*[ -/]*[@-~]`)
