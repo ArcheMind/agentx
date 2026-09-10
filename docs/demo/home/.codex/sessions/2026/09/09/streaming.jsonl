@@ -1,0 +1,2 @@
+{"timestamp":"2026-09-09T16:15:00Z","type":"session_meta","payload":{"id":"demo-streaming-parser","timestamp":"2026-09-09T16:00:00Z"}}
+{"timestamp":"2026-09-09T16:15:00Z","type":"response_item","payload":{"type":"message","role":"user","content":"Fix the streaming response parser"}}
