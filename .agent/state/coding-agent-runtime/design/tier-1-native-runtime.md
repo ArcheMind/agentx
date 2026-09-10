@@ -1,0 +1,107 @@
+# Tier 1: Native-first Runtime Design and Current Priorities
+
+Status: current design and implementation plan, subordinate to the Tier 0 principles and resources.
+
+## Positioning
+
+Build a native-first runtime shell around existing Agent CLIs. Do not introduce a user-facing configuration standard in the first version.
+
+The unified lifecycle is:
+
+```text
+discover -> inspect -> plan -> launch -> locate native session
+```
+
+The Agent's native configuration, credential store, and session store remain the source of truth.
+
+## Runtime flow
+
+```text
+CLI request
+  -> detect native executable, version, auth state, and supported capabilities
+  -> resolve a one-shot internal RuntimePlan
+  -> launch the native Agent CLI
+  -> retain enough metadata to locate and invoke native resume
+```
+
+Arguments after `--` pass through to the native CLI so the runtime does not block newly added Agent features.
+
+## Internal IR, not a project standard
+
+`RunRequest` and `RuntimePlan` are ephemeral internal representations. They are not written into a repository and do not require users to migrate native configuration.
+
+```ts
+interface RunRequest {
+  agent: string
+  cwd: string
+  requestedModel?: string
+  passthroughArgs: string[]
+  environmentOverrides: Record<string, string>
+}
+
+interface RuntimePlan {
+  executable: string
+  args: string[]
+  cwd: string
+  env: Record<string, string>
+  nativeConfigPaths: string[]
+}
+```
+
+## Orthogonal drivers
+
+Do not implement one giant `AgentAdapter` whose optional methods mix unrelated state lifecycles. Split integration by independently supported capability:
+
+```ts
+interface LaunchDriver {
+  detect(): Detection
+  version(): Version
+  capabilities(): Capabilities
+  planRun(request: RunRequest): RuntimePlan
+}
+
+interface AuthDriver {
+  status(): AuthStatus
+  login(): CommandPlan
+  logout(): CommandPlan
+}
+
+interface SessionDriver {
+  list(): SessionDescriptor[]
+  resume(id: string): CommandPlan
+}
+
+interface PackageDriver {
+  install(version?: string): CommandPlan
+  update(version?: string): CommandPlan
+  uninstall(): CommandPlan
+}
+
+interface ModelDriver {
+  listAvailable(): ModelDescriptor[]
+  select(model: string): CommandPlan
+}
+```
+
+Capability detection should follow from the drivers an Agent actually implements rather than from a separate aspirational matrix.
+
+## User-set priorities
+
+Priority is set explicitly by the user, not inferred from the uv principles:
+
+- **P1 — Locate and install:** implement through `PackageDriver` while keeping each Agent's installation mechanism inside its integration.
+- **P1 — Cross-Agent Session:** integrate CASR for canonical IR, native writing, and native resume behavior.
+- **P1 — Available models:** read the models an Agent/provider makes available and allow the user to select one through the native invocation.
+- **P2 — Multiple accounts:** integrate AISW where appropriate or use native isolated configuration/credential directories.
+
+The runtime operations `list`, `doctor`, and `run` remain part of the design vocabulary, but no implementation priority is assigned to them here.
+
+## Current design boundaries
+
+- A new Profile schema or project configuration standard
+- Central credential custody
+- MCP or Skills format conversion
+- GUI
+- A bespoke package ecosystem; `PackageDriver` delegates to the appropriate installation mechanism
+
+These boundaries do not assign priority to capabilities the user has not ranked.
