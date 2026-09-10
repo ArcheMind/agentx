@@ -11,10 +11,21 @@ import (
 func main() {
 	args := os.Args[1:]
 	debug := os.Getenv("AX_LOG") == "debug"
-	if len(args) > 0 && args[0] == "--verbose" {
-		debug = true
+	appArgs := make([]string, 0, len(args))
+	for len(args) > 0 {
+		switch args[0] {
+		case "--verbose":
+			debug = true
+		case "--json", "--yaml":
+			appArgs = append(appArgs, args[0])
+		default:
+			appArgs = append(appArgs, args...)
+			args = nil
+			continue
+		}
 		args = args[1:]
 	}
+	args = appArgs
 	application := app.New(debug, os.Stdin, os.Stdout, os.Stderr)
 	if err := application.Run(context.Background(), args); err != nil {
 		fmt.Fprintf(os.Stderr, "ax: %v\n", err)

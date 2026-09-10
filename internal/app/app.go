@@ -13,27 +13,43 @@ import (
 
 	"agentx/internal/drivers"
 	"agentx/internal/runtime"
+	"gopkg.in/yaml.v3"
 )
 
 const Version = "0.1.0"
 
 type App struct {
 	Registry drivers.Registry
+	Packages drivers.PackageRegistry
 	Runner   runtime.Runner
 	Stdin    io.Reader
 	Stdout   io.Writer
 	Stderr   io.Writer
+	Output   OutputFormat
 }
+
+type OutputFormat string
+
+const (
+	OutputText OutputFormat = "text"
+	OutputJSON OutputFormat = "json"
+	OutputYAML OutputFormat = "yaml"
+)
 
 func New(debug bool, stdin io.Reader, stdout, stderr io.Writer) App {
 	return App{
-		Registry: drivers.NewRegistry(),
-		Runner:   runtime.ExecRunner{Debug: debug, Log: stderr},
-		Stdin:    stdin, Stdout: stdout, Stderr: stderr,
+		Registry: drivers.NewRegistry(), Packages: drivers.NewPackageRegistry(),
+		Runner: runtime.ExecRunner{Debug: debug, Log: stderr},
+		Stdin:  stdin, Stdout: stdout, Stderr: stderr,
 	}
 }
 
 func (a App) Run(ctx context.Context, args []string) error {
+	output, args, err := parseOutputFormat(args)
+	if err != nil {
+		return err
+	}
+	a.Output = output
 	if len(args) == 0 {
 		a.printHelp()
 		return nil
@@ -51,6 +67,8 @@ func (a App) Run(ctx context.Context, args []string) error {
 		return a.which(args[1:])
 	case "install":
 		return a.install(ctx, args[1:])
+	case "auth":
+		return a.auth(ctx, args[1:])
 	case "models":
 		return a.models(ctx, args[1:])
 	case "run":
@@ -63,9 +81,8 @@ func (a App) Run(ctx context.Context, args []string) error {
 }
 
 func (a App) list(ctx context.Context, args []string) error {
-	jsonOutput, err := onlyJSONFlag(args)
-	if err != nil {
-		return err
+	if len(args) != 0 {
+		return fmt.Errorf("usage: ax [--json|--yaml] list")
 	}
 	detections := make([]runtime.Detection, 0)
 	for _, agent := range a.Registry.All() {
@@ -81,8 +98,8 @@ func (a App) list(ctx context.Context, args []string) error {
 		}
 		detections = append(detections, detection)
 	}
-	if jsonOutput {
-		return writeJSON(a.Stdout, detections)
+	if a.Output != OutputText {
+		return writeStructured(a.Stdout, detections, a.Output)
 	}
 	for _, item := range detections {
 		status := "not installed"
@@ -115,14 +132,11 @@ func (a App) which(args []string) error {
 
 func (a App) install(ctx context.Context, args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: ax install <agent> [--version <version>] [--dry-run]")
+		return fmt.Errorf("usage: ax [--json|--yaml] install <package> [--version <version>] [--dry-run]")
 	}
-	agent, err := a.Registry.Get(args[0])
+	item, err := a.Packages.Get(args[0])
 	if err != nil {
 		return err
-	}
-	if agent.Package == nil {
-		return fmt.Errorf("%s has no package driver", agent.Name)
 	}
 	var version string
 	dryRun := false
@@ -140,26 +154,22 @@ func (a App) install(ctx context.Context, args []string) error {
 			return fmt.Errorf("unknown install option %q", args[index])
 		}
 	}
-	plan, err := agent.Package.PlanInstall(version)
+	plan, err := item.Install.PlanInstall(version)
 	if err != nil {
 		return err
 	}
 	if dryRun {
-		return writeJSON(a.Stdout, plan)
+		return writeStructured(a.Stdout, plan, a.structuredDefault())
 	}
 	_, err = a.Runner.Execute(ctx, plan, runtime.ExecuteOptions{Interactive: true, Stdin: a.Stdin, Stdout: a.Stdout, Stderr: a.Stderr})
 	return err
 }
 
 func (a App) models(ctx context.Context, args []string) error {
-	if len(args) == 0 {
-		return fmt.Errorf("usage: ax models <agent> [--json]")
+	if len(args) != 1 {
+		return fmt.Errorf("usage: ax [--json|--yaml] models <agent>")
 	}
 	agent, err := a.Registry.Get(args[0])
-	if err != nil {
-		return err
-	}
-	jsonOutput, err := onlyJSONFlag(args[1:])
 	if err != nil {
 		return err
 	}
@@ -170,8 +180,8 @@ func (a App) models(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	if jsonOutput {
-		return writeJSON(a.Stdout, models)
+	if a.Output != OutputText {
+		return writeStructured(a.Stdout, models, a.Output)
 	}
 	for _, model := range models {
 		if model.DisplayName != "" && model.DisplayName != model.ID {
@@ -185,7 +195,7 @@ func (a App) models(ctx context.Context, args []string) error {
 
 func (a App) runAgent(ctx context.Context, args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: ax run <agent> [--model <model>] [--cwd <path>] [--dry-run] [-- <native args...>]")
+		return fmt.Errorf("usage: ax [--json|--yaml] run <agent> [--model <model>] [--cwd <path>] [--dry-run] [-- <native args...>]")
 	}
 	agent, err := a.Registry.Get(args[0])
 	if err != nil {
@@ -241,12 +251,47 @@ func (a App) runAgent(ctx context.Context, args []string) error {
 		return err
 	}
 	if dryRun {
-		return writeJSON(a.Stdout, plan)
+		return writeStructured(a.Stdout, plan, a.structuredDefault())
 	}
 	if _, err := exec.LookPath(agent.Binary); err != nil {
 		return fmt.Errorf("%s is not installed; run ax install %s", agent.Name, agent.ID)
 	}
 	result, err := a.Runner.Execute(ctx, plan, runtime.ExecuteOptions{Interactive: true, Stdin: a.Stdin, Stdout: a.Stdout, Stderr: a.Stderr})
+	if err != nil {
+		return &ExitError{Code: result.ExitCode, Err: err}
+	}
+	return nil
+}
+
+func (a App) auth(ctx context.Context, args []string) error {
+	if len(args) < 2 || args[0] != "login" {
+		return fmt.Errorf("usage: ax [--json|--yaml] auth login <agent> [--dry-run]")
+	}
+	agent, err := a.Registry.Get(args[1])
+	if err != nil {
+		return err
+	}
+	if agent.Auth == nil {
+		return fmt.Errorf("%s has no auth driver", agent.Name)
+	}
+	dryRun := false
+	for _, arg := range args[2:] {
+		if arg != "--dry-run" {
+			return fmt.Errorf("unknown auth option %q", arg)
+		}
+		dryRun = true
+	}
+	plan := agent.Auth.PlanLogin()
+	if dryRun {
+		return writeStructured(a.Stdout, plan, a.structuredDefault())
+	}
+	if _, err := exec.LookPath(agent.Binary); err != nil {
+		return fmt.Errorf("%s is not installed; run ax install %s", agent.Name, agent.ID)
+	}
+	if plan.Instruction != "" {
+		fmt.Fprintln(a.Stderr, plan.Instruction)
+	}
+	result, err := a.Runner.Execute(ctx, plan.Command, runtime.ExecuteOptions{Interactive: true, Stdin: a.Stdin, Stdout: a.Stdout, Stderr: a.Stderr})
 	if err != nil {
 		return &ExitError{Code: result.ExitCode, Err: err}
 	}
@@ -275,15 +320,17 @@ func (a App) printHelp() {
 	fmt.Fprint(a.Stdout, `agentx manages native AI coding-agent runtimes.
 
 Usage:
-  ax list [--json]
+  ax [--json|--yaml] list
   ax which <agent>
-  ax install <agent> [--version <version>] [--dry-run]
-  ax models <agent> [--json]
-  ax run <agent> [--model <model>] [--cwd <path>] [--dry-run] [-- <native args...>]
+  ax [--json|--yaml] install <package> [--version <version>] [--dry-run]
+  ax [--json|--yaml] auth login <agent> [--dry-run]
+  ax [--json|--yaml] models <agent>
+  ax [--json|--yaml] run <agent> [--model <model>] [--cwd <path>] [--dry-run] [-- <native args...>]
   ax session <providers|list|info|resume> [args...]
   ax version
 
-Agents: claude, codex, gemini, opencode, pi, casr
+Agents: claude, codex, gemini, opencode, pi
+Packages: claude, codex, gemini, opencode, pi, casr
 
 Set AX_LOG=debug or pass --verbose before the command to log raw external input,
 output, and errors as JSON on stderr.
@@ -306,21 +353,48 @@ func ExitCode(err error) int {
 	return 1
 }
 
-func onlyJSONFlag(args []string) (bool, error) {
-	jsonOutput := false
-	for _, arg := range args {
-		if arg != "--json" {
-			return false, fmt.Errorf("unknown option %q", arg)
+func parseOutputFormat(args []string) (OutputFormat, []string, error) {
+	format := OutputText
+	for len(args) > 0 {
+		var selected OutputFormat
+		switch args[0] {
+		case "--json":
+			selected = OutputJSON
+		case "--yaml":
+			selected = OutputYAML
+		default:
+			return format, args, nil
 		}
-		jsonOutput = true
+		if format != OutputText && format != selected {
+			return OutputText, nil, fmt.Errorf("--json and --yaml are mutually exclusive")
+		}
+		format = selected
+		args = args[1:]
 	}
-	return jsonOutput, nil
+	return format, args, nil
 }
 
-func writeJSON(writer io.Writer, value any) error {
-	encoder := json.NewEncoder(writer)
-	encoder.SetIndent("", "  ")
-	return encoder.Encode(value)
+func writeStructured(writer io.Writer, value any, format OutputFormat) error {
+	switch format {
+	case OutputJSON:
+		encoder := json.NewEncoder(writer)
+		encoder.SetIndent("", "  ")
+		return encoder.Encode(value)
+	case OutputYAML:
+		encoder := yaml.NewEncoder(writer)
+		encoder.SetIndent(2)
+		defer encoder.Close()
+		return encoder.Encode(value)
+	default:
+		return fmt.Errorf("unsupported structured output format %q", format)
+	}
+}
+
+func (a App) structuredDefault() OutputFormat {
+	if a.Output == OutputText {
+		return OutputJSON
+	}
+	return a.Output
 }
 
 func firstLine(value string) string {

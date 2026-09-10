@@ -13,15 +13,11 @@ type Registry struct {
 
 func NewRegistry() Registry {
 	agents := []runtime.Agent{
-		nativeAgent("claude", "Claude Code", "claude", "@anthropic-ai/claude-code", UnsupportedModels{Agent: "Claude Code"}, false),
-		nativeAgent("codex", "Codex CLI", "codex", "@openai/codex", CodexCacheModels{}, true),
-		nativeAgent("gemini", "Gemini CLI", "gemini", "@google/gemini-cli", UnsupportedModels{Agent: "Gemini CLI"}, false),
-		nativeAgent("opencode", "OpenCode", "opencode", "opencode-ai", CommandModels{Plan: runtime.CommandPlan{Executable: "opencode", Args: []string{"models"}}}, true),
-		nativeAgent("pi", "Pi Coding Agent", "pi", "@mariozechner/pi-coding-agent", CommandModels{Plan: runtime.CommandPlan{Executable: "pi", Args: []string{"--list-models"}}}, true),
-		{
-			ID: "casr", Name: "Cross Agent Session Resumer", Binary: "casr", Package: runtimePackage(CASRPackage{}),
-			Capabilities: []runtime.Capability{runtime.CapabilityInstall, runtime.CapabilitySessionList, runtime.CapabilitySessionRead, runtime.CapabilitySessionWrite},
-		},
+		nativeAgent("claude", "Claude Code", "claude", UnsupportedModels{Agent: "Claude Code"}, false, NativeAuth{Command: runtime.CommandPlan{Executable: "claude", Args: []string{"auth", "login", "--claudeai"}}}),
+		nativeAgent("codex", "Codex CLI", "codex", CodexCacheModels{}, true, NativeAuth{Command: runtime.CommandPlan{Executable: "codex", Args: []string{"login"}}}),
+		nativeAgent("gemini", "Gemini CLI", "gemini", UnsupportedModels{Agent: "Gemini CLI"}, false, NativeAuth{Command: runtime.CommandPlan{Executable: "gemini"}, Instruction: "Run /auth in Gemini and select Sign in with Google."}),
+		nativeAgent("opencode", "OpenCode", "opencode", CommandModels{Plan: runtime.CommandPlan{Executable: "opencode", Args: []string{"models"}}}, true, NativeAuth{Command: runtime.CommandPlan{Executable: "opencode", Args: []string{"auth", "login"}}}),
+		nativeAgent("pi", "Pi Coding Agent", "pi", CommandModels{Plan: runtime.CommandPlan{Executable: "pi", Args: []string{"--list-models"}}}, true, NativeAuth{Command: runtime.CommandPlan{Executable: "pi"}, Instruction: "Run /login in Pi and select the subscription provider."}),
 	}
 	items := make(map[string]runtime.Agent, len(agents))
 	for _, agent := range agents {
@@ -30,10 +26,10 @@ func NewRegistry() Registry {
 	return Registry{agents: items}
 }
 
-func nativeAgent(id, name, binary, packageName string, models runtime.ModelDriver, listsModels bool) runtime.Agent {
+func nativeAgent(id, name, binary string, models runtime.ModelDriver, listsModels bool, auth runtime.AuthDriver) runtime.Agent {
 	capabilities := []runtime.Capability{
 		runtime.CapabilityLaunch,
-		runtime.CapabilityInstall,
+		runtime.CapabilityAuthLogin,
 		runtime.CapabilityModelSelect,
 	}
 	if listsModels {
@@ -42,14 +38,10 @@ func nativeAgent(id, name, binary, packageName string, models runtime.ModelDrive
 	return runtime.Agent{
 		ID: id, Name: name, Binary: binary,
 		Launch:       NativeLaunch{Binary: binary, ModelFlag: "--model"},
-		Package:      runtimePackage(NPMPackage{Package: packageName}),
 		Models:       models,
+		Auth:         auth,
 		Capabilities: capabilities,
 	}
-}
-
-func runtimePackage(driver runtime.PackageDriver) runtime.PackageDriver {
-	return driver
 }
 
 func (r Registry) Get(id string) (runtime.Agent, error) {
