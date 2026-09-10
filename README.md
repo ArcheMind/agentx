@@ -1,6 +1,7 @@
 # agentx
 
 [![CI](https://github.com/ArcheMind/agentx/actions/workflows/ci.yml/badge.svg)](https://github.com/ArcheMind/agentx/actions/workflows/ci.yml)
+[![CI platforms](https://img.shields.io/badge/CI%20platforms-Linux%20%7C%20Windows-2ea44f)](https://github.com/ArcheMind/agentx/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/ArcheMind/agentx?display_name=tag)](https://github.com/ArcheMind/agentx/releases)
 [![License](https://img.shields.io/github/license/ArcheMind/agentx)](LICENSE)
 
