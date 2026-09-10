@@ -1,10 +1,12 @@
-# Repository Productization Priority
+# Repository Productization Requirement
 
-## Current highest priority
+Status: achieved and published. This requirement remains the product-quality baseline; no subsequent work priority is recorded here.
+
+## Governing priority
 
 Apply the established uv product philosophy to make the GitHub repository a complete, trustworthy open-source product entry point.
 
-This takes priority over expanding the runtime feature surface or implementing multiple accounts. The work includes, but is not limited to:
+This requirement took priority over expanding the runtime feature surface or implementing multiple accounts. The work included, but was not limited to:
 
 - Product positioning and narrative
 - Installation and first-run experience
@@ -13,13 +15,13 @@ This takes priority over expanding the runtime feature surface or implementing m
 - Contribution paths
 - Repository trust signals
 
-Runtime feature changes are prioritized only when they directly improve this repository-level product experience.
+During this work, runtime feature changes were prioritized only when they directly improved this repository-level product experience.
 
 ## Why
 
-The existing runtime already establishes the native-first product foundation and the principal P1 capability surface. The next adoption constraint is not abstract feature breadth; it is whether a prospective user can discover, understand, trust, install, and successfully try `agentx` from its GitHub repository with low commitment and immediate value.
+At assignment time, the existing runtime already established the native-first product foundation and the principal P1 capability surface. The next adoption constraint was not abstract feature breadth; it was whether a prospective user could discover, understand, trust, install, and successfully try `agentx` from its GitHub repository with low commitment and immediate value.
 
-This is the current application of the uv principles: own the workflow experience, reduce adoption cost, provide a clear wedge, and earn expansion through a polished entry point.
+This applied the uv principles: own the workflow experience, reduce adoption cost, provide a clear wedge, and earn expansion through a polished entry point.
 
 ## Governance
 

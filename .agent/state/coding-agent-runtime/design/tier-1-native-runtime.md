@@ -94,7 +94,7 @@ The following user-set priorities shaped the implemented v0.1.0 capability basel
 - **P1 — Available models:** read the models an Agent/provider makes available and allow the user to select one through the native invocation.
 - **Deferred — Multiple accounts:** integrate AISW where appropriate or use native isolated configuration/credential directories.
 
-These capability rankings no longer define the current work priority. The governing priority is [GitHub repository productization](../requirement/repository-productization-priority.md); runtime feature work is prioritized only when it directly serves that product entry point. The runtime operations `list`, `doctor`, and `run` remain part of the design vocabulary, but no independent implementation priority is assigned to them here.
+These capability rankings no longer define the current work priority. [GitHub repository productization](../requirement/repository-productization-priority.md) superseded them and is now an achieved product-quality baseline. No later work priority is recorded here. The runtime operations `list`, `doctor`, and `run` remain part of the design vocabulary, but no independent implementation priority is assigned to them here.
 
 ## Current design boundaries
 
