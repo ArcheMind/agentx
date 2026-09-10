@@ -14,11 +14,19 @@ The GitHub repository productization requirement is complete and published. Remo
 
 ## Release and automation
 
-**Conclusion:** GitHub release `v0.1.0` succeeded with Darwin, Linux, and Windows artifacts for both `amd64` and `arm64`, plus checksums. CI, CodeQL, and Release workflows completed successfully. Dependabot is enabled; its first pull requests upgrading `actions/checkout`, `actions/setup-go`, and GoReleaser actions all passed checks and were squash-merged.
+**Conclusion:** GitHub release `v0.1.1` succeeded and `main` is pushed. The release has seven assets: Darwin, Linux, and Windows artifacts for both `amd64` and `arm64`, plus checksums. CI, CodeQL, and Release workflows completed successfully. Dependabot is enabled; its first pull requests upgrading `actions/checkout`, `actions/setup-go`, and GoReleaser actions all passed checks and were squash-merged.
 
 **Why:** Installation artifacts, repeatable releases, continuous verification, security analysis, and dependency-maintenance automation are live rather than documented aspirations.
 
 **Files:** `.github/workflows/`, `.github/dependabot.yml`, `.goreleaser.yml`
+
+## Windows installation and Agent management validation
+
+**Conclusion:** Windows currently has release configuration and manually downloadable ZIP artifacts, but `install.sh` explicitly rejects Windows, so no Windows shell installer is provided. CI now defines Linux, macOS, and Windows coverage. Windows CI was added in local-main commit `2448a89`: `verify-windows` runs on `windows-latest` with PowerShell, executes `go vet`, `go test`, and the dedicated audit tests, then builds and runs `ax.exe`. It covers `version`, JSON/YAML `agent list`, dry-run `agent install`, auth, and run operations, plus `session providers`. macOS CI was added in local-main commit `9d03dec`: `verify-macos` runs `make verify` on `macos-latest` and confirms that it leaves no generated diff; the README platform badge now states Linux | macOS | Windows. Neither the Windows nor macOS runner has yet executed remotely, and both commits remain unpushed, so their native behavior remains pending the first successful workflow run. The Agent-management implementation (`list`, `which`, and `install`) uses Go command/path primitives and has no identified POSIX-only code path. The 2026-09-10 local verification passed `make check`, `make test`, `make audit`, and `make smoke`; snapshot release generation could not be run because GoReleaser was not installed.
+
+**Why:** Artifact availability and cross-platform-looking implementation do not establish a supported platform workflow without native execution. The local-main CI jobs create repeatable Windows and macOS coverage, but their results cannot be claimed before they are pushed and GitHub runs them successfully. The passing local suite establishes current Linux-side regression coverage only.
+
+**Files:** `install.sh`, `.goreleaser.yml`, `internal/drivers/package.go`, `internal/drivers/registry.go`, `.github/workflows/ci.yml`, `README.md`, `Makefile`
 
 ## GitHub settings
 
@@ -26,9 +34,3 @@ The GitHub repository productization requirement is complete and published. Remo
 - Whether GitHub private vulnerability reporting is enabled has not been verified.
 
 Private vulnerability reporting is an external repository setting, not a missing repository file. Do not represent it as complete without fresh verification.
-
-## Local and remote history divergence
-
-Local `main` contains parallel-task commit `b060ac6` (`docs(backlog): plan DSH support`). Consequently, local `main` is ahead by that commit and behind the remote Dependabot merge commits. The productization task intentionally did not merge, push, rebase, or rewrite this divergence in order to protect the parallel work.
-
-Before the next Git write, preserve `b060ac6`, fetch, inspect both histories, and reconcile them deliberately under the repository's Git/worktree SOP.

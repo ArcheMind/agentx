@@ -36,8 +36,8 @@ func (r ExecRunner) Execute(ctx context.Context, plan CommandPlan, options Execu
 	var stderr bytes.Buffer
 	if options.Interactive {
 		cmd.Stdin = options.Stdin
-		cmd.Stdout = io.MultiWriter(options.Stdout, &stdout)
-		cmd.Stderr = io.MultiWriter(options.Stderr, &stderr)
+		cmd.Stdout = options.Stdout
+		cmd.Stderr = options.Stderr
 	} else {
 		cmd.Stdout = &stdout
 		cmd.Stderr = &stderr

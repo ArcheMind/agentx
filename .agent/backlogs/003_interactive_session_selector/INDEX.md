@@ -1,12 +1,35 @@
 # Interactive Session Selector and Demo Redesign
 
-Status: planned for a new session.
+Status: reopened for terminal-height handling. Commits `139f85b` and `146fda7` completed the original grouped-selector and discovery work, and `make verify` passed, but the selector has no vertical viewport.
+
+## Reopened defect
+
+Source inspection after a real one-page overflow report confirmed that the selector is a raw-terminal renderer rather than a viewport TUI. It uses `golang.org/x/term` raw mode, `bufio` byte parsing, a flattened selection index, and whole-view ANSI `ESC[nA`/`ESC[J` redraw based on `lineCount`. It does not inspect terminal height and has no viewport, scrolling, pagination, or selected-row follow.
+
+The limit is ten sessions per provider. Across the five registered session providers, Current can contain fifty entries and Global another fifty; Global entries consume two lines each. The worst case is about 150 content rows plus headings, so the selector cannot fit a common terminal height. This is a design and implementation omission rather than a usage problem.
+
+## Completion outcome
+
+- Bare `ax` now has one selector with non-selectable `Current workspace` and `Global` headings and one cursor that crosses the group boundary.
+- Global excludes sessions already shown for the current workspace. Either empty section shows `No recent sessions`; both empty returns an explicit error.
+- Enter confirms, while `q`, `Q`, Escape, and Ctrl-C cancel. CRLF rendering keeps ANSI redraw correct in raw terminal mode.
+- Native session stores remain read-only, and the existing bounded normalized resume handoff remains in use.
+- The re-recorded GIF selects a sanitized Codex source session and offers Claude and OpenCode targets, choosing Claude in the primary path. VHS sets an explicit neutral light-gray foreground.
+- Tests cover cross-boundary movement, empty groups, cancellation, and Global de-duplication. The README describes and embeds the redesigned interaction.
+- The follow-up in `146fda7` replaced two full session-list parses with one bounded `Service.RecentGroups` discovery pass, shows loading before the scan, and defers full transcript loading until selection.
+- Discovery returns recent-first Current and Global groups capped at ten sessions per provider. Titles skip known injected Codex context, truncation is rune-safe, times are local and friendly, and Global rows show compact workspace context.
+- The 96-column selector layout avoids wrapping and accounts correctly for two-line rows during redraw. The refreshed README GIF passed multi-frame visual inspection.
+
+## Follow-up diagnosis resolved
+
+On the user's machine, 751 Codex JSONL files totaled about 928 MB. The first grouped implementation parsed the complete provider session set twice before rendering, causing bare `ax` to appear hung. It also selected injected `AGENTS.md` context as Codex titles and truncated multibyte titles by byte. Commit `146fda7` resolves these verified causes through bounded metadata discovery, injected-context filtering, and rune-safe shortening.
 
 ## User-reported problems
 
 1. Session selection does not match the intended interaction. Current-workspace and global sessions should appear as two visibly separated lists inside one selector. Up/down navigation must move through every selectable session and cross the boundary between the two groups.
 2. The published GIF renders the terminal text as red, producing an incorrect and distracting visual result.
 3. The demo exposes only one target Agent (`opencode`), so it fails to communicate AgentX's cross-Agent workflow and the value of choosing a target.
+4. The selector renders every candidate at once and does not adapt to terminal height, so a normal terminal cannot show the complete interaction.
 
 ## Product intent
 
@@ -37,6 +60,9 @@ The implementation should first consider subtracting the standalone scope-select
 
 - `internal/app/app.go`
 - `internal/app/app_test.go`
+- `internal/sessions/recent.go`
+- `internal/sessions/service.go`
+- `internal/sessions/service_test.go`
 - Session list grouping or view-model code introduced by the redesign
 - `README.md`
 - `docs/demo.tape`
@@ -56,3 +82,6 @@ The implementation should first consider subtracting the standalone scope-select
 - No private native data appears in the Tape, fixtures, generated GIF, or repository history.
 - README describes and displays the redesigned interaction.
 - `make verify` passes.
+- Bare `ax` renders a loading state promptly and does not fully parse all transcripts before showing recent candidates.
+- Session titles remain distinctive and valid UTF-8, and the selector stays stable at 96 columns.
+- The selector detects available terminal height, renders a bounded viewport, and keeps the selected session visible while navigating within and across groups.
