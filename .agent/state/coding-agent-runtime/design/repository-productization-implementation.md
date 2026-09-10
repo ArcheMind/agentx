@@ -20,12 +20,12 @@ The GitHub repository productization requirement is complete and published. Remo
 
 **Files:** `.github/workflows/`, `.github/dependabot.yml`, `.goreleaser.yml`
 
-## Remaining GitHub settings
+## GitHub settings
 
-- `main` branch protection is not active. Creation was attempted but GitHub sudo-mode secondary authentication blocked the operation.
+- `main` branch protection is active; the user manually completed the repository setting.
 - Whether GitHub private vulnerability reporting is enabled has not been verified.
 
-These are external repository settings, not missing repository files. Do not represent either setting as complete without fresh verification.
+Private vulnerability reporting is an external repository setting, not a missing repository file. Do not represent it as complete without fresh verification.
 
 ## Local and remote history divergence
 
