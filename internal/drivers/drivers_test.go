@@ -2,6 +2,7 @@ package drivers
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -23,9 +24,9 @@ func TestRegistryContainsSupportedAgents(t *testing.T) {
 	}
 }
 
-func TestPackageRegistryContainsCASR(t *testing.T) {
+func TestPackageRegistryContainsOnlyAgents(t *testing.T) {
 	registry := NewPackageRegistry()
-	want := []string{"casr", "claude", "codex", "gemini", "opencode", "pi"}
+	want := []string{"claude", "codex", "gemini", "opencode", "pi"}
 	all := registry.All()
 	got := make([]string, 0, len(all))
 	for _, item := range all {
@@ -57,6 +58,108 @@ func TestNativeAuthPlansUseAgentOAuthFlows(t *testing.T) {
 			t.Fatalf("%s auth plan = %#v, want %#v", id, got, expected)
 		}
 	}
+}
+
+func TestNativeAuthStatusCommands(t *testing.T) {
+	want := map[string]runtime.CommandPlan{
+		"claude":   {Executable: "claude", Args: []string{"auth", "status", "--json"}},
+		"codex":    {Executable: "codex", Args: []string{"login", "status"}},
+		"opencode": {Executable: "opencode", Args: []string{"auth", "list"}},
+	}
+	registry := NewRegistry()
+	for id, expected := range want {
+		agent, err := registry.Get(id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		auth, ok := agent.Auth.(NativeAuth)
+		if !ok {
+			t.Fatalf("%s auth driver has type %T", id, agent.Auth)
+		}
+		if !reflect.DeepEqual(auth.StatusCommand, expected) {
+			t.Fatalf("%s status command = %#v, want %#v", id, auth.StatusCommand, expected)
+		}
+	}
+}
+
+func TestNativeAuthStatusParsers(t *testing.T) {
+	tests := []struct {
+		name   string
+		parser func(runtime.CommandResult, error) (runtime.AuthStatus, error)
+		result runtime.CommandResult
+		want   runtime.AuthStatus
+	}{
+		{
+			name:   "claude",
+			parser: parseClaudeAuthStatus,
+			result: runtime.CommandResult{Stdout: `{"loggedIn":true,"authMethod":"claude.ai","email":"private@example.com","orgId":"private","subscriptionType":"max"}`},
+			want:   runtime.AuthStatus{Supported: true, LoggedIn: true, Method: "claude.ai", Subscription: "max"},
+		},
+		{
+			name:   "codex logged in",
+			parser: parseCodexAuthStatus,
+			result: runtime.CommandResult{Stdout: "Logged in using ChatGPT\n"},
+			want:   runtime.AuthStatus{Supported: true, LoggedIn: true, Method: "ChatGPT"},
+		},
+		{
+			name:   "codex logged out",
+			parser: parseCodexAuthStatus,
+			result: runtime.CommandResult{Stderr: "Not logged in\n", ExitCode: 1},
+			want:   runtime.AuthStatus{Supported: true},
+		},
+		{
+			name:   "opencode",
+			parser: parseOpenCodeAuthStatus,
+			result: runtime.CommandResult{Stdout: "\x1b[0mCredentials\n1 credentials\nEnvironment\n4 environment variables\n"},
+			want:   runtime.AuthStatus{Supported: true, LoggedIn: true, Method: "1 configured credential"},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var executeErr error
+			if test.result.ExitCode != 0 {
+				executeErr = errors.New("native command exited")
+			}
+			got, err := test.parser(test.result, executeErr)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(got, test.want) {
+				t.Fatalf("status = %#v, want %#v", got, test.want)
+			}
+		})
+	}
+}
+
+func TestAuthStatusCapabilitiesMatchNativeSupport(t *testing.T) {
+	registry := NewRegistry()
+	for _, id := range []string{"claude", "codex", "opencode"} {
+		agent, err := registry.Get(id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !agent.Auth.SupportsStatus() || !containsCapability(agent.Capabilities, runtime.CapabilityAuthStatus) {
+			t.Fatalf("%s should support auth status", id)
+		}
+	}
+	for _, id := range []string{"gemini", "pi"} {
+		agent, err := registry.Get(id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if agent.Auth.SupportsStatus() || containsCapability(agent.Capabilities, runtime.CapabilityAuthStatus) {
+			t.Fatalf("%s should not support auth status", id)
+		}
+	}
+}
+
+func containsCapability(capabilities []runtime.Capability, target runtime.Capability) bool {
+	for _, capability := range capabilities {
+		if capability == target {
+			return true
+		}
+	}
+	return false
 }
 
 func TestNPMPackagePlanUsesArgumentBoundaries(t *testing.T) {
@@ -96,12 +199,5 @@ func TestCodexCacheModels(t *testing.T) {
 	}
 	if len(models) != 1 || models[0].ID != "gpt-test" || models[0].Source != path {
 		t.Fatalf("models = %#v", models)
-	}
-}
-
-func TestCASRRejectsUnknownSubcommand(t *testing.T) {
-	_, err := (CASRSessions{}).Plan([]string{"delete", "session"})
-	if err == nil {
-		t.Fatal("expected unsupported command error")
 	}
 }

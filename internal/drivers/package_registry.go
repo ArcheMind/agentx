@@ -18,7 +18,6 @@ func NewPackageRegistry() PackageRegistry {
 		{ID: "gemini", Name: "Gemini CLI", Install: NPMPackage{Package: "@google/gemini-cli"}},
 		{ID: "opencode", Name: "OpenCode", Install: NPMPackage{Package: "opencode-ai"}},
 		{ID: "pi", Name: "Pi Coding Agent", Install: NPMPackage{Package: "@mariozechner/pi-coding-agent"}},
-		{ID: "casr", Name: "Cross Agent Session Resumer", Install: CASRPackage{}},
 	}
 	items := make(map[string]runtime.Package, len(packages))
 	for _, item := range packages {

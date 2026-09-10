@@ -13,10 +13,10 @@ type Registry struct {
 
 func NewRegistry() Registry {
 	agents := []runtime.Agent{
-		nativeAgent("claude", "Claude Code", "claude", UnsupportedModels{Agent: "Claude Code"}, false, NativeAuth{Command: runtime.CommandPlan{Executable: "claude", Args: []string{"auth", "login", "--claudeai"}}}),
-		nativeAgent("codex", "Codex CLI", "codex", CodexCacheModels{}, true, NativeAuth{Command: runtime.CommandPlan{Executable: "codex", Args: []string{"login"}}}),
+		nativeAgent("claude", "Claude Code", "claude", UnsupportedModels{Agent: "Claude Code"}, false, NativeAuth{Command: runtime.CommandPlan{Executable: "claude", Args: []string{"auth", "login", "--claudeai"}}, StatusCommand: runtime.CommandPlan{Executable: "claude", Args: []string{"auth", "status", "--json"}}, ParseStatus: parseClaudeAuthStatus}),
+		nativeAgent("codex", "Codex CLI", "codex", CodexCacheModels{}, true, NativeAuth{Command: runtime.CommandPlan{Executable: "codex", Args: []string{"login"}}, StatusCommand: runtime.CommandPlan{Executable: "codex", Args: []string{"login", "status"}}, ParseStatus: parseCodexAuthStatus}),
 		nativeAgent("gemini", "Gemini CLI", "gemini", UnsupportedModels{Agent: "Gemini CLI"}, false, NativeAuth{Command: runtime.CommandPlan{Executable: "gemini"}, Instruction: "Run /auth in Gemini and select Sign in with Google."}),
-		nativeAgent("opencode", "OpenCode", "opencode", CommandModels{Plan: runtime.CommandPlan{Executable: "opencode", Args: []string{"models"}}}, true, NativeAuth{Command: runtime.CommandPlan{Executable: "opencode", Args: []string{"auth", "login"}}}),
+		nativeAgent("opencode", "OpenCode", "opencode", CommandModels{Plan: runtime.CommandPlan{Executable: "opencode", Args: []string{"models"}}}, true, NativeAuth{Command: runtime.CommandPlan{Executable: "opencode", Args: []string{"auth", "login"}}, StatusCommand: runtime.CommandPlan{Executable: "opencode", Args: []string{"auth", "list"}}, ParseStatus: parseOpenCodeAuthStatus}),
 		nativeAgent("pi", "Pi Coding Agent", "pi", CommandModels{Plan: runtime.CommandPlan{Executable: "pi", Args: []string{"--list-models"}}}, true, NativeAuth{Command: runtime.CommandPlan{Executable: "pi"}, Instruction: "Run /login in Pi and select the subscription provider."}),
 	}
 	items := make(map[string]runtime.Agent, len(agents))
@@ -34,6 +34,9 @@ func nativeAgent(id, name, binary string, models runtime.ModelDriver, listsModel
 	}
 	if listsModels {
 		capabilities = append(capabilities, runtime.CapabilityModelList)
+	}
+	if auth.SupportsStatus() {
+		capabilities = append(capabilities, runtime.CapabilityAuthStatus)
 	}
 	return runtime.Agent{
 		ID: id, Name: name, Binary: binary,

@@ -20,6 +20,7 @@ smoke: build
 	./bin/ax install codex --dry-run >/dev/null
 	./bin/ax --yaml auth login codex --dry-run >/dev/null
 	./bin/ax run codex --model smoke-test --dry-run >/dev/null
+	./bin/ax --json session providers >/dev/null
 
 smoke-live: build
 	./bin/ax --json models codex >/dev/null

@@ -9,10 +9,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"agentx/internal/drivers"
 	"agentx/internal/runtime"
+	"agentx/internal/sessions"
 	"gopkg.in/yaml.v3"
 )
 
@@ -21,6 +23,7 @@ const Version = "0.1.0"
 type App struct {
 	Registry drivers.Registry
 	Packages drivers.PackageRegistry
+	Sessions sessions.Service
 	Runner   runtime.Runner
 	Stdin    io.Reader
 	Stdout   io.Writer
@@ -39,8 +42,9 @@ const (
 func New(debug bool, stdin io.Reader, stdout, stderr io.Writer) App {
 	return App{
 		Registry: drivers.NewRegistry(), Packages: drivers.NewPackageRegistry(),
-		Runner: runtime.ExecRunner{Debug: debug, Log: stderr},
-		Stdin:  stdin, Stdout: stdout, Stderr: stderr,
+		Sessions: sessions.New(),
+		Runner:   runtime.ExecRunner{Debug: debug, Log: stderr},
+		Stdin:    stdin, Stdout: stdout, Stderr: stderr,
 	}
 }
 
@@ -264,8 +268,8 @@ func (a App) runAgent(ctx context.Context, args []string) error {
 }
 
 func (a App) auth(ctx context.Context, args []string) error {
-	if len(args) < 2 || args[0] != "login" {
-		return fmt.Errorf("usage: ax [--json|--yaml] auth login <agent> [--dry-run]")
+	if len(args) < 2 {
+		return authUsageError()
 	}
 	agent, err := a.Registry.Get(args[1])
 	if err != nil {
@@ -273,6 +277,26 @@ func (a App) auth(ctx context.Context, args []string) error {
 	}
 	if agent.Auth == nil {
 		return fmt.Errorf("%s has no auth driver", agent.Name)
+	}
+	if args[0] == "status" {
+		if len(args) != 2 {
+			return fmt.Errorf("usage: ax [--json|--yaml] auth status <agent>")
+		}
+		if !agent.Auth.SupportsStatus() {
+			return a.writeAuthStatus(runtime.AuthStatus{Agent: agent.ID, Supported: false})
+		}
+		if _, err := exec.LookPath(agent.Binary); err != nil {
+			return fmt.Errorf("%s is not installed; run ax install %s", agent.Name, agent.ID)
+		}
+		status, err := agent.Auth.Status(ctx, a.Runner)
+		if err != nil {
+			return err
+		}
+		status.Agent = agent.ID
+		return a.writeAuthStatus(status)
+	}
+	if args[0] != "login" {
+		return authUsageError()
 	}
 	dryRun := false
 	for _, arg := range args[2:] {
@@ -298,22 +322,265 @@ func (a App) auth(ctx context.Context, args []string) error {
 	return nil
 }
 
+func authUsageError() error {
+	return fmt.Errorf("usage: ax [--json|--yaml] auth login <agent> [--dry-run] | ax [--json|--yaml] auth status <agent>")
+}
+
+func (a App) writeAuthStatus(status runtime.AuthStatus) error {
+	if a.Output != OutputText {
+		return writeStructured(a.Stdout, status, a.Output)
+	}
+	if !status.Supported {
+		fmt.Fprintf(a.Stdout, "%s\tunsupported\n", status.Agent)
+		return nil
+	}
+	if !status.LoggedIn {
+		fmt.Fprintf(a.Stdout, "%s\tnot logged in\n", status.Agent)
+		return nil
+	}
+	details := []string{}
+	if status.Method != "" {
+		details = append(details, status.Method)
+	}
+	if status.Subscription != "" {
+		details = append(details, status.Subscription)
+	}
+	fmt.Fprintf(a.Stdout, "%s\tlogged in", status.Agent)
+	if len(details) > 0 {
+		fmt.Fprintf(a.Stdout, " (%s)", strings.Join(details, ", "))
+	}
+	fmt.Fprintln(a.Stdout)
+	return nil
+}
+
 func (a App) sessions(ctx context.Context, args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: ax session <providers|list|info|resume> [args...]")
+		return sessionUsageError()
 	}
-	if _, err := exec.LookPath("casr"); err != nil {
-		return fmt.Errorf("casr is not installed; run ax install casr")
+	switch args[0] {
+	case "providers":
+		if len(args) != 1 {
+			return fmt.Errorf("usage: ax [--json|--yaml] session providers")
+		}
+		providers := a.Sessions.Providers()
+		if a.Output != OutputText {
+			return writeStructured(a.Stdout, providers, a.Output)
+		}
+		for _, provider := range providers {
+			status := "not installed"
+			if provider.Installed {
+				status = "installed"
+			}
+			fmt.Fprintf(a.Stdout, "%-10s %-13s %s\n", provider.ID, status, provider.Root)
+		}
+		return nil
+	case "list":
+		return a.sessionList(args[1:])
+	case "info":
+		return a.sessionInfo(args[1:])
+	case "resume":
+		return a.sessionResume(ctx, args[1:])
+	default:
+		return sessionUsageError()
 	}
-	plan, err := (drivers.CASRSessions{}).Plan(args)
+}
+
+func (a App) sessionList(args []string) error {
+	options := sessions.ListOptions{Limit: 10, Sort: "date"}
+	for index := 0; index < len(args); index++ {
+		switch args[index] {
+		case "--provider":
+			index++
+			if index >= len(args) {
+				return fmt.Errorf("--provider requires a value")
+			}
+			options.Provider = args[index]
+		case "--workspace":
+			index++
+			if index >= len(args) {
+				return fmt.Errorf("--workspace requires a value")
+			}
+			options.Workspace = args[index]
+		case "--all":
+			options.All = true
+		case "--limit":
+			index++
+			if index >= len(args) {
+				return fmt.Errorf("--limit requires a value")
+			}
+			limit, err := strconv.Atoi(args[index])
+			if err != nil || limit < 0 {
+				return fmt.Errorf("--limit must be a non-negative integer")
+			}
+			options.Limit = limit
+		case "--sort":
+			index++
+			if index >= len(args) {
+				return fmt.Errorf("--sort requires a value")
+			}
+			options.Sort = args[index]
+		default:
+			return fmt.Errorf("unknown session list option %q", args[index])
+		}
+	}
+	if options.All && options.Workspace != "" {
+		return fmt.Errorf("--all and --workspace are mutually exclusive")
+	}
+	items, err := a.Sessions.List(options)
 	if err != nil {
 		return err
+	}
+	if a.Output != OutputText {
+		return writeStructured(a.Stdout, items, a.Output)
+	}
+	for _, item := range items {
+		fmt.Fprintf(a.Stdout, "%-10s %-36s %5d  %s\n", item.Provider, item.ID, item.MessageCount, item.Title)
+	}
+	return nil
+}
+
+func (a App) sessionInfo(args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("usage: ax [--json|--yaml] session info <session-id> [--source <provider>] [--peek] [--peek-lines <n>]")
+	}
+	id := args[0]
+	var source string
+	peekLines := 0
+	for index := 1; index < len(args); index++ {
+		switch args[index] {
+		case "--source":
+			index++
+			if index >= len(args) {
+				return fmt.Errorf("--source requires a value")
+			}
+			source = args[index]
+		case "--peek":
+			peekLines = 5
+		case "--peek-lines":
+			index++
+			if index >= len(args) {
+				return fmt.Errorf("--peek-lines requires a value")
+			}
+			value, err := strconv.Atoi(args[index])
+			if err != nil || value < 0 {
+				return fmt.Errorf("--peek-lines must be a non-negative integer")
+			}
+			peekLines = value
+		default:
+			return fmt.Errorf("unknown session info option %q", args[index])
+		}
+	}
+	detail, err := a.Sessions.Info(id, source)
+	if err != nil {
+		return err
+	}
+	if a.Output != OutputText {
+		return writeStructured(a.Stdout, detail, a.Output)
+	}
+	fmt.Fprintf(a.Stdout, "ID: %s\nProvider: %s\n", detail.ID, detail.Provider)
+	if detail.Title != "" {
+		fmt.Fprintf(a.Stdout, "Title: %s\n", detail.Title)
+	}
+	if detail.Workspace != "" {
+		fmt.Fprintf(a.Stdout, "Workspace: %s\n", detail.Workspace)
+	}
+	fmt.Fprintf(a.Stdout, "Messages: %d\nUpdated: %s\nSource: %s\n", detail.MessageCount, detail.UpdatedAt, detail.Source)
+	if peekLines > len(detail.Messages) {
+		peekLines = len(detail.Messages)
+	}
+	if peekLines > 0 {
+		fmt.Fprintln(a.Stdout, "\nTranscript tail:")
+		for _, message := range detail.Messages[len(detail.Messages)-peekLines:] {
+			fmt.Fprintf(a.Stdout, "[%s] %s\n", message.Role, singleLine(message.Content, 200))
+		}
+	}
+	return nil
+}
+
+func (a App) sessionResume(ctx context.Context, args []string) error {
+	if len(args) < 2 {
+		return fmt.Errorf("usage: ax [--json|--yaml] session resume <target-agent> <session-id> [--source <provider>] [--workspace <path>] [--dry-run]")
+	}
+	agent, err := a.Registry.Get(args[0])
+	if err != nil {
+		return err
+	}
+	id := args[1]
+	var source, workspace string
+	dryRun := false
+	for index := 2; index < len(args); index++ {
+		switch args[index] {
+		case "--source":
+			index++
+			if index >= len(args) {
+				return fmt.Errorf("--source requires a value")
+			}
+			source = args[index]
+		case "--workspace":
+			index++
+			if index >= len(args) {
+				return fmt.Errorf("--workspace requires a value")
+			}
+			workspace = args[index]
+		case "--dry-run":
+			dryRun = true
+		default:
+			return fmt.Errorf("unknown session resume option %q", args[index])
+		}
+	}
+	detail, err := a.Sessions.Info(id, source)
+	if err != nil {
+		return err
+	}
+	if workspace == "" {
+		workspace = detail.Workspace
+	}
+	if workspace == "" {
+		workspace, err = os.Getwd()
+		if err != nil {
+			return fmt.Errorf("read working directory: %w", err)
+		}
+	}
+	workspace, err = filepath.Abs(workspace)
+	if err != nil {
+		return fmt.Errorf("resolve workspace: %w", err)
+	}
+	info, err := os.Stat(workspace)
+	if err != nil || !info.IsDir() {
+		return fmt.Errorf("session workspace %s is not an accessible directory", workspace)
+	}
+	prompt := sessions.ResumePrompt(detail)
+	request := runtime.RunRequest{Cwd: workspace, PassthroughArgs: []string{prompt}}
+	if agent.ID == "opencode" {
+		request.PassthroughArgs = []string{"--prompt", prompt}
+	}
+	plan, err := agent.Launch.PlanRun(request)
+	if err != nil {
+		return err
+	}
+	if dryRun {
+		return writeStructured(a.Stdout, plan, a.structuredDefault())
+	}
+	if _, err := exec.LookPath(agent.Binary); err != nil {
+		return fmt.Errorf("%s is not installed; run ax install %s", agent.Name, agent.ID)
 	}
 	result, err := a.Runner.Execute(ctx, plan, runtime.ExecuteOptions{Interactive: true, Stdin: a.Stdin, Stdout: a.Stdout, Stderr: a.Stderr})
 	if err != nil {
 		return &ExitError{Code: result.ExitCode, Err: err}
 	}
 	return nil
+}
+
+func sessionUsageError() error {
+	return fmt.Errorf("usage: ax [--json|--yaml] session <providers|list|info|resume> [args...]")
+}
+
+func singleLine(value string, max int) string {
+	value = strings.Join(strings.Fields(value), " ")
+	if len(value) <= max {
+		return value
+	}
+	return value[:max-1] + "…"
 }
 
 func (a App) printHelp() {
@@ -324,13 +591,14 @@ Usage:
   ax which <agent>
   ax [--json|--yaml] install <package> [--version <version>] [--dry-run]
   ax [--json|--yaml] auth login <agent> [--dry-run]
+  ax [--json|--yaml] auth status <agent>
   ax [--json|--yaml] models <agent>
   ax [--json|--yaml] run <agent> [--model <model>] [--cwd <path>] [--dry-run] [-- <native args...>]
-  ax session <providers|list|info|resume> [args...]
+  ax [--json|--yaml] session <providers|list|info|resume> [args...]
   ax version
 
 Agents: claude, codex, gemini, opencode, pi
-Packages: claude, codex, gemini, opencode, pi, casr
+Packages: claude, codex, gemini, opencode, pi
 
 Set AX_LOG=debug or pass --verbose before the command to log raw external input,
 output, and errors as JSON on stderr.
