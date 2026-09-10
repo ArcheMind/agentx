@@ -60,7 +60,8 @@ Arguments after `--` go directly to the native agent:
 
 ```bash
 ax claude -- --permission-mode plan
-ax dsh -- web --no-open
+ax dsh -- --profile headless "review this change"
+ax dsh -- --profile acp
 ```
 
 ## Manage agents
@@ -81,6 +82,11 @@ ax auth status codex
 
 # Inspect models when the agent exposes a verified source
 ax agent models codex
+ax agent models dsh
+
+# Configure DSH credentials through its native Models page, then inspect status
+ax auth login dsh
+ax auth status dsh
 ```
 
 ## Explicit session commands
@@ -119,7 +125,7 @@ The design is inspired by [uv](https://github.com/astral-sh/uv): preserve establ
 | --- | --- | --- | --- | --- | --- | --- |
 | Claude Code | Yes | Yes | Yes | No verified source | Yes | Yes |
 | Codex CLI | Yes | Yes | Yes | Native cache | Yes | Yes |
-| DeepSeek Harness | Yes | Unsupported | Unsupported | No verified source | Unsupported | Unsupported |
+| DeepSeek Harness | Yes | Web UI | Provider credential | Bundled catalog | Native profile config | Unsupported |
 | Gemini CLI | Yes | Interactive | Unsupported | No verified source | Yes | Yes |
 | OpenCode | Yes | Yes | Provider list | Native command | Yes | Yes |
 | Pi | Yes | Interactive | Provider list | Native command + auth filter | Yes | Yes |
