@@ -9,6 +9,12 @@
 `agentx` is a native-first runtime manager for AI coding-agent CLIs. Its command is `ax`. It discovers, installs, authenticates, inspects, launches, and resumes Claude Code, Codex CLI, Gemini CLI, OpenCode, and Pi without replacing their configuration, credentials, or session stores.
 
 ```console
+$ ax codex --model gpt-5.4
+```
+
+Run `ax` without arguments to choose a recent session from the current workspace or every workspace, then choose the target agent and model.
+
+```console
 $ ax agent list
 claude     /usr/local/bin/claude (2.1.206)
 codex      /usr/local/bin/codex (codex-cli 0.154.0)
@@ -16,7 +22,6 @@ gemini     not installed
 opencode   /usr/local/bin/opencode (0.5.27)
 pi         /usr/local/bin/pi (0.84.4)
 
-$ ax agent run codex --model gpt-5.4 --cwd .
 ```
 
 ## Why agentx
@@ -68,6 +73,17 @@ ax agent models codex
 ax agent run codex --model gpt-5.4 --cwd .
 ```
 
+## Daily shortcuts
+
+Launch any supported agent directly:
+
+```bash
+ax codex --model gpt-5.4
+ax claude -- --permission-mode plan
+```
+
+Run `ax` with no arguments to interactively select either current-workspace or all-workspace sessions, a target agent, and a model. The session is resumed through the same bounded transcript handoff as `ax session resume`.
+
 Arguments after `--` are passed directly to the native agent:
 
 ```bash
@@ -112,6 +128,9 @@ ax agent which <agent>
 ax agent install <agent> [--version <version>] [--dry-run]
 ax agent models <agent>
 ax agent run <agent> [--model <model>] [--cwd <path>] [--dry-run] [-- <native args...>]
+ax <agent> [--model <model>] [--cwd <path>] [--dry-run] [-- <native args...>]
+
+ax  # interactive session resume: current/all sessions, agent, model
 
 ax auth login <agent> [--dry-run]
 ax auth status <agent>

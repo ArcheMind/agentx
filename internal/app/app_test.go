@@ -1,6 +1,7 @@
 package app
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"fmt"
@@ -118,6 +119,40 @@ func TestAgentResourceGrammar(t *testing.T) {
 	}
 	if err := application.Run(context.Background(), []string{"install", "codex", "--dry-run"}); err == nil {
 		t.Fatal("expected removed action-leading command to fail")
+	}
+}
+
+func TestAgentShortcutUsesRunGrammar(t *testing.T) {
+	var stdout bytes.Buffer
+	application := New(false, strings.NewReader(""), &stdout, &bytes.Buffer{})
+	if err := application.Run(context.Background(), []string{"codex", "--model", "gpt-5.4", "--dry-run"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, expected := range []string{`"executable": "codex"`, `"args": [`, `"--model"`, `"gpt-5.4"`} {
+		if !strings.Contains(stdout.String(), expected) {
+			t.Fatalf("shortcut plan %q does not contain %q", stdout.String(), expected)
+		}
+	}
+}
+
+func TestChooseRejectsInvalidSelection(t *testing.T) {
+	var stdout bytes.Buffer
+	application := New(false, strings.NewReader("3\n"), &stdout, &bytes.Buffer{})
+	if _, err := application.choose(bufio.NewScanner(application.Stdin), "Choose:\n", []string{"one", "two"}); err == nil || !strings.Contains(err.Error(), "1 to 2") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestBareAXStartsInteractiveSessionResume(t *testing.T) {
+	var stdout bytes.Buffer
+	application := New(false, strings.NewReader("1\n"), &stdout, &bytes.Buffer{})
+	application.Sessions = sessions.Service{HomeDir: t.TempDir()}
+	err := application.Run(context.Background(), nil)
+	if err == nil || !strings.Contains(err.Error(), "no recent sessions found") {
+		t.Fatalf("error = %v", err)
+	}
+	if !strings.Contains(stdout.String(), "Current workspace") || !strings.Contains(stdout.String(), "All workspaces") {
+		t.Fatalf("interactive output = %q", stdout.String())
 	}
 }
 
