@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"agentx/internal/runtime"
+	"github.com/ArcheMind/agentx/internal/runtime"
 )
 
 type CommandModels struct {

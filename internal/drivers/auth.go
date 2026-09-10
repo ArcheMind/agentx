@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"strings"
 
-	"agentx/internal/runtime"
+	"github.com/ArcheMind/agentx/internal/runtime"
 )
 
 type NativeAuth struct {

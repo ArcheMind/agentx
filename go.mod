@@ -1,4 +1,4 @@
-module agentx
+module github.com/ArcheMind/agentx
 
 go 1.25
 

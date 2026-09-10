@@ -12,13 +12,13 @@ import (
 	"strconv"
 	"strings"
 
-	"agentx/internal/drivers"
-	"agentx/internal/runtime"
-	"agentx/internal/sessions"
+	"github.com/ArcheMind/agentx/internal/drivers"
+	"github.com/ArcheMind/agentx/internal/runtime"
+	"github.com/ArcheMind/agentx/internal/sessions"
 	"gopkg.in/yaml.v3"
 )
 
-const Version = "0.1.0"
+var Version = "0.1.0"
 
 type App struct {
 	Registry drivers.Registry

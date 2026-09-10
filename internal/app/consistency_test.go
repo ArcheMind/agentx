@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"agentx/internal/drivers"
-	"agentx/internal/runtime"
+	"github.com/ArcheMind/agentx/internal/drivers"
+	"github.com/ArcheMind/agentx/internal/runtime"
 )
 
 func TestCrossLayerConsistency(t *testing.T) {

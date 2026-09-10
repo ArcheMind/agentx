@@ -1,0 +1,34 @@
+name: Feature request
+description: Propose a focused improvement backed by a real coding-agent workflow.
+title: "feat: "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: friction
+    attributes:
+      label: Workflow friction
+      description: What task is difficult today, and which native agents are involved?
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Native evidence
+      description: Link or paste the relevant native CLI help, documented protocol, or stable local source.
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Smallest useful outcome
+      description: Describe the smallest independently useful AgentX behavior.
+    validations:
+      required: true
+  - type: textarea
+    id: ownership
+    attributes:
+      label: Ownership boundaries
+      description: Which configuration, credentials, or data must remain owned by the native agent?
+    validations:
+      required: true

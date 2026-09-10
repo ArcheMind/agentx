@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"sort"
 
-	"agentx/internal/runtime"
+	"github.com/ArcheMind/agentx/internal/runtime"
 )
 
 type Registry struct {
