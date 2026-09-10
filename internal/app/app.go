@@ -630,10 +630,12 @@ func (a App) resumeSession(ctx context.Context, agent runtime.Agent, detail sess
 
 func (a App) interactiveResume(ctx context.Context) error {
 	reader := bufio.NewReader(a.Stdin)
+	fmt.Fprint(a.Stdout, "Loading recent sessions...\r")
 	groups, err := a.recentSessionGroups()
 	if err != nil {
 		return err
 	}
+	fmt.Fprint(a.Stdout, "\x1b[2K\r")
 	selected, err := a.chooseSession(reader, groups)
 	if err != nil {
 		return err
@@ -738,10 +740,11 @@ func sessionUsageError() error {
 
 func singleLine(value string, max int) string {
 	value = strings.Join(strings.Fields(value), " ")
-	if len(value) <= max {
+	runes := []rune(value)
+	if len(runes) <= max {
 		return value
 	}
-	return value[:max-1] + "…"
+	return string(runes[:max-1]) + "…"
 }
 
 func (a App) printHelp() {

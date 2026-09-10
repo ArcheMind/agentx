@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ArcheMind/agentx/internal/runtime"
 	"github.com/ArcheMind/agentx/internal/sessions"
@@ -158,7 +159,7 @@ func TestBareAXStartsInteractiveSessionResume(t *testing.T) {
 
 func TestSessionSelectorMovesAcrossGroupBoundary(t *testing.T) {
 	current := sessions.Summary{ID: "current", Provider: "codex", Title: "Current work"}
-	global := sessions.Summary{ID: "global", Provider: "claude", Title: "Other work"}
+	global := sessions.Summary{ID: "global", Provider: "claude", Workspace: "/work/other", Title: "Other work"}
 	groups := []sessionGroup{
 		{Heading: "Current workspace", Items: []sessions.Summary{current}},
 		{Heading: "Global", Items: []sessions.Summary{global}},
@@ -174,6 +175,9 @@ func TestSessionSelectorMovesAcrossGroupBoundary(t *testing.T) {
 	}
 	if !strings.Contains(stdout.String(), "Current workspace") || !strings.Contains(stdout.String(), "Global") {
 		t.Fatalf("selector output = %q", stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "↳ /work/other") {
+		t.Fatalf("selector output does not show global workspace: %q", stdout.String())
 	}
 }
 
@@ -264,6 +268,39 @@ func TestRecentSessionGroupsExcludeCurrentSessionsFromGlobal(t *testing.T) {
 	}
 	if len(groups[1].Items) != 1 || groups[1].Items[0].ID != "global-id" {
 		t.Fatalf("global group = %#v", groups)
+	}
+}
+
+func TestSessionPresentationUsesLocalTimeWorkspaceAndUnicode(t *testing.T) {
+	location := time.FixedZone("PDT", -7*60*60)
+	now := time.Date(2026, time.September, 10, 16, 0, 0, 0, location)
+	for _, test := range []struct {
+		value string
+		want  string
+	}{
+		{value: "2026-09-10T22:23:23.05Z", want: "Today 15:23"},
+		{value: "2026-09-09T20:03:54Z", want: "Yesterday 13:03"},
+		{value: "2026-08-21T19:30:00Z", want: "Aug 21 12:30"},
+		{value: "2025-09-10T19:30:00Z", want: "Sep 10 2025"},
+	} {
+		if got := displaySessionTime(test.value, now); got != test.want {
+			t.Fatalf("displaySessionTime(%q) = %q, want %q", test.value, got, test.want)
+		}
+	}
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspace := filepath.Join(home, "work", "company", "project")
+	if got := displayWorkspace(workspace, 40); got != filepath.Join("~", "work", "company", "project") {
+		t.Fatalf("displayWorkspace = %q", got)
+	}
+	if got := displayWorkspace("", 40); got != "(workspace unknown)" {
+		t.Fatalf("empty workspace = %q", got)
+	}
+	if got := singleLine("你好世界", 3); got != "你好…" {
+		t.Fatalf("singleLine = %q", got)
 	}
 }
 
