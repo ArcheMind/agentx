@@ -63,6 +63,7 @@ interface LaunchDriver {
 interface AuthDriver {
   status(): AuthStatus
   login(): CommandPlan
+  logout(): CommandPlan
 }
 
 interface SessionDriver {
@@ -82,7 +83,7 @@ interface ModelDriver {
 }
 ```
 
-Capability detection should follow from the drivers an Agent actually implements rather than from a separate aspirational matrix. The current product surface intentionally does not promise auth logout or package update/uninstall; driver boundaries describe implemented operations, not a requirement for lifecycle symmetry.
+Capability detection should follow from the drivers an Agent actually implements rather than from a separate aspirational matrix. Each Agent owns its install driver; there is no separate package registry. The current product surface supports verified native auth logout but intentionally does not promise package update/uninstall; driver boundaries describe implemented operations, not a requirement for lifecycle symmetry.
 
 ## User-set priorities
 
