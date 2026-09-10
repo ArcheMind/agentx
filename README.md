@@ -6,7 +6,7 @@
 
 **One native workflow for every coding agent you already use.**
 
-`agentx` is a native-first runtime manager for AI coding-agent CLIs. Its command is `ax`. It discovers, installs, authenticates, inspects, launches, and resumes Claude Code, Codex CLI, Gemini CLI, OpenCode, and Pi without replacing their configuration, credentials, or session stores.
+`agentx` is a native-first runtime manager for AI coding-agent CLIs. Its command is `ax`. It discovers, installs, authenticates, inspects, launches, and resumes Claude Code, Codex CLI, Gemini CLI, OpenCode, and Pi; DeepSeek Harness is supported for its verified discovery, installation, and launch surface. AgentX does not replace their configuration, credentials, or session stores.
 
 ```console
 $ ax codex --model gpt-5.4
@@ -18,6 +18,7 @@ Run `ax` without arguments to choose a recent session from the current workspace
 $ ax agent list
 claude     /usr/local/bin/claude (2.1.206)
 codex      /usr/local/bin/codex (codex-cli 0.154.0)
+dsh        not installed
 gemini     not installed
 opencode   /usr/local/bin/opencode (0.5.27)
 pi         /usr/local/bin/pi (0.84.4)
@@ -114,6 +115,7 @@ AgentX reads native session stores but never modifies them. Resume passes a boun
 | --- | --- | --- | --- | --- | --- | --- |
 | Claude Code | Yes | Yes | Yes | No verified source | Yes | Yes |
 | Codex CLI | Yes | Yes | Yes | Native cache | Yes | Yes |
+| DeepSeek Harness | Yes | Unsupported | Unsupported | No verified source | Unsupported | Unsupported |
 | Gemini CLI | Yes | Interactive | Unsupported | No verified source | Yes | Yes |
 | OpenCode | Yes | Yes | Provider list | Native command | Yes | Yes |
 | Pi | Yes | Interactive | Provider list | Native command + auth filter | Yes | Yes |

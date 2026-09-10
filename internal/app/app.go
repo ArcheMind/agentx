@@ -782,7 +782,7 @@ Usage:
 Running ax without arguments starts an interactive session resume. The ax <agent>
 shortcut launches an installed agent directly.
 
-Agents: claude, codex, gemini, opencode, pi
+Agents: claude, codex, dsh, gemini, opencode, pi
 
 Set AX_LOG=debug or pass --verbose before the command to log raw external input,
 output, and errors as JSON on stderr.
