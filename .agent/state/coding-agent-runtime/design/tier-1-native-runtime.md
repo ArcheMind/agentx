@@ -1,4 +1,4 @@
-# Tier 1: Native-first Runtime Design and Current Priorities
+# Tier 1: Native-first Runtime Design and Capability Baseline
 
 Status: current design and implementation plan, subordinate to the Tier 0 principles and resources.
 
@@ -85,16 +85,16 @@ interface ModelDriver {
 
 Capability detection should follow from the drivers an Agent actually implements rather than from a separate aspirational matrix. Each Agent owns its install driver; there is no separate package registry. The current product surface supports verified native auth logout but intentionally does not promise package update/uninstall; driver boundaries describe implemented operations, not a requirement for lifecycle symmetry.
 
-## User-set priorities
+## Runtime capability baseline
 
-Priority is set explicitly by the user, not inferred from the uv principles:
+The following user-set priorities shaped the implemented v0.1.0 capability baseline:
 
 - **P1 — Locate and install:** implement through `PackageDriver` while keeping each Agent's installation mechanism inside its integration.
 - **P1 — Cross-Agent Session:** implement session discovery and bounded normalized transcript handoff inside `ax`; invoke native resume commands without writing private Agent databases.
 - **P1 — Available models:** read the models an Agent/provider makes available and allow the user to select one through the native invocation.
-- **P2 — Multiple accounts:** integrate AISW where appropriate or use native isolated configuration/credential directories.
+- **Deferred — Multiple accounts:** integrate AISW where appropriate or use native isolated configuration/credential directories.
 
-The runtime operations `list`, `doctor`, and `run` remain part of the design vocabulary, but no implementation priority is assigned to them here.
+These capability rankings no longer define the current work priority. The governing priority is [GitHub repository productization](../requirement/repository-productization-priority.md); runtime feature work is prioritized only when it directly serves that product entry point. The runtime operations `list`, `doctor`, and `run` remain part of the design vocabulary, but no independent implementation priority is assigned to them here.
 
 ## Current design boundaries
 
