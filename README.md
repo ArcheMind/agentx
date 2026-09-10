@@ -6,36 +6,21 @@
 
 **One native workflow for every coding agent you already use.**
 
-`agentx` is a native-first runtime manager for AI coding-agent CLIs. Its command is `ax`. It discovers, installs, authenticates, inspects, launches, and resumes Claude Code, Codex CLI, Gemini CLI, OpenCode, and Pi; DeepSeek Harness is supported for its verified discovery, installation, and launch surface. AgentX does not replace their configuration, credentials, or session stores.
+Start a coding agent:
 
 ```console
-$ ax codex --model gpt-5.4
+$ ax codex
 ```
 
-Run `ax` without arguments to choose a recent session from the current workspace or every workspace, then choose the target agent and model.
+Resume recent work:
 
 ```console
-$ ax agent list
-claude     /usr/local/bin/claude (2.1.206)
-codex      /usr/local/bin/codex (codex-cli 0.154.0)
-dsh        not installed
-gemini     not installed
-opencode   /usr/local/bin/opencode (0.5.27)
-pi         /usr/local/bin/pi (0.84.4)
-
+$ ax
 ```
 
-## Why agentx
+`ax` first asks whether to show sessions from the current workspace or all workspaces. Choose a recent session, a target agent, and, when supported, a model; AgentX then continues through that agent's native CLI.
 
-Coding agents are good native tools. The fragmented workflow around them is not.
-
-- **Keep native ownership.** AgentX does not invent a profile format, copy credentials, or rewrite private session databases.
-- **Adopt one command at a time.** Use discovery, installation, model selection, launching, or sessions independently.
-- **See the plan first.** Mutating operations support `--dry-run`; AgentX-owned results support JSON and YAML.
-- **Move between agents.** Inspect five native session formats and resume useful context in a different agent.
-- **Fail honestly.** If an agent exposes no verified model or authentication source, AgentX says so instead of inventing data.
-
-The design is inspired by [uv](https://github.com/astral-sh/uv): make the first useful action cheap, preserve established standards, and unify the workflow rather than claiming ownership of every underlying format.
+`agentx` is a native-first runtime manager for Claude Code, Codex CLI, DeepSeek Harness, Gemini CLI, OpenCode, and Pi. It uses their existing executables, configuration, credentials, and session stores as the source of truth.
 
 ## Install
 
@@ -55,45 +40,52 @@ go install github.com/ArcheMind/agentx/cmd/ax@latest
 
 Prebuilt archives for macOS, Linux, and Windows are available on the [releases page](https://github.com/ArcheMind/agentx/releases). See [installation](docs/installation.md) for version pinning, verification, Windows setup, and source builds.
 
-## Start in 60 seconds
+## Start
 
 ```bash
-# See what is already available
+# Start a new Codex session in the current directory
+ax codex
+
+# Or resume recent work interactively
+ax
+```
+
+Select a model or working directory when starting directly:
+
+```bash
+ax codex --model gpt-5.4 --cwd .
+```
+
+Arguments after `--` go directly to the native agent:
+
+```bash
+ax claude -- --permission-mode plan
+ax dsh -- web --no-open
+```
+
+## Manage agents
+
+The resource-oriented commands cover setup and inspection without changing the daily launch path.
+
+```bash
+# Discover native agents already on PATH
 ax agent list
 
-# Preview an installation, then perform it
+# Preview installation, then install through the verified native package
 ax agent install codex --dry-run
 ax agent install codex
 
-# Use the agent's native subscription login
+# Use native authentication
 ax auth login codex
 ax auth status codex
 
-# Inspect verified native models and launch
+# Inspect models when the agent exposes a verified source
 ax agent models codex
-ax agent run codex --model gpt-5.4 --cwd .
 ```
 
-## Daily shortcuts
+## Explicit session commands
 
-Launch any supported agent directly:
-
-```bash
-ax codex --model gpt-5.4
-ax claude -- --permission-mode plan
-```
-
-Run `ax` with no arguments to interactively select either current-workspace or all-workspace sessions, a target agent, and a model. The session is resumed through the same bounded transcript handoff as `ax session resume`.
-
-Arguments after `--` are passed directly to the native agent:
-
-```bash
-ax agent run claude --model sonnet -- --permission-mode plan
-```
-
-## Cross-agent sessions
-
-Session discovery and transcript normalization are built into `ax`; there is no companion service or database.
+Bare `ax` is the normal resume flow. Use the session commands when you need exact filters, inspection, or a non-interactive target.
 
 ```bash
 # Sessions default to the current workspace
@@ -109,6 +101,18 @@ ax session resume claude <session-id> --source codex
 
 AgentX reads native session stores but never modifies them. Resume passes a bounded normalized transcript to the target agent's native interactive command.
 
+## Why agentx
+
+Coding agents are good native tools. The fragmented workflow around them is not.
+
+- **Make the first action cheap.** Start an agent or recover recent work without navigating a command hierarchy.
+- **Keep native ownership.** AgentX does not invent a profile format, copy credentials, or rewrite private session databases.
+- **Adopt one command at a time.** Use launching, recovery, discovery, installation, authentication, or model inspection independently.
+- **See the plan first.** Mutating operations support `--dry-run`; AgentX-owned results support JSON and YAML.
+- **Fail honestly.** If an agent exposes no verified model, authentication, or session source, AgentX says so instead of inventing data.
+
+The design is inspired by [uv](https://github.com/astral-sh/uv): preserve established standards, remove friction from the common path, and expand from immediately useful workflows.
+
 ## Supported agents
 
 | Agent | Install | Login | Auth status | Model list | Model select | Sessions |
@@ -122,17 +126,17 @@ AgentX reads native session stores but never modifies them. Resume passes a boun
 
 The exact native versions and evidence behind this table live in the [lifecycle and protocol audit](docs/lifecycle-and-protocol-audit.md).
 
-## Command map
+## Command reference
 
 ```text
+ax
+ax <agent> [--model <model>] [--cwd <path>] [--dry-run] [-- <native args...>]
+
 ax agent list
 ax agent which <agent>
 ax agent install <agent> [--version <version>] [--dry-run]
 ax agent models <agent>
 ax agent run <agent> [--model <model>] [--cwd <path>] [--dry-run] [-- <native args...>]
-ax <agent> [--model <model>] [--cwd <path>] [--dry-run] [-- <native args...>]
-
-ax  # interactive session resume: current/all sessions, agent, model
 
 ax auth login <agent> [--dry-run]
 ax auth status <agent>
@@ -152,7 +156,7 @@ Place `--json` or `--yaml` before the command for AgentX-owned results and dry-r
 ```bash
 ax --json agent list
 ax --yaml session info <session-id> --source codex
-ax --json agent run codex --model gpt-5.4 --dry-run
+ax --json codex --model gpt-5.4 --dry-run
 ```
 
 ## Design boundaries
