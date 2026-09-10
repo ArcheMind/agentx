@@ -138,21 +138,132 @@ func TestAgentShortcutUsesRunGrammar(t *testing.T) {
 func TestChooseRejectsInvalidSelection(t *testing.T) {
 	var stdout bytes.Buffer
 	application := New(false, strings.NewReader("3\n"), &stdout, &bytes.Buffer{})
-	if _, err := application.choose(bufio.NewScanner(application.Stdin), "Choose:\n", []string{"one", "two"}); err == nil || !strings.Contains(err.Error(), "1 to 2") {
+	if _, err := application.choose(bufio.NewReader(application.Stdin), "Choose:\n", []string{"one", "two"}); err == nil || !strings.Contains(err.Error(), "1 to 2") {
 		t.Fatalf("error = %v", err)
 	}
 }
 
 func TestBareAXStartsInteractiveSessionResume(t *testing.T) {
 	var stdout bytes.Buffer
-	application := New(false, strings.NewReader("1\n"), &stdout, &bytes.Buffer{})
+	application := New(false, strings.NewReader(""), &stdout, &bytes.Buffer{})
 	application.Sessions = sessions.Service{HomeDir: t.TempDir()}
 	err := application.Run(context.Background(), nil)
 	if err == nil || !strings.Contains(err.Error(), "no recent sessions found") {
 		t.Fatalf("error = %v", err)
 	}
-	if !strings.Contains(stdout.String(), "Current workspace") || !strings.Contains(stdout.String(), "All workspaces") {
+	if !strings.Contains(stdout.String(), "Current workspace") || !strings.Contains(stdout.String(), "Global") {
 		t.Fatalf("interactive output = %q", stdout.String())
+	}
+}
+
+func TestSessionSelectorMovesAcrossGroupBoundary(t *testing.T) {
+	current := sessions.Summary{ID: "current", Provider: "codex", Title: "Current work"}
+	global := sessions.Summary{ID: "global", Provider: "claude", Title: "Other work"}
+	groups := []sessionGroup{
+		{Heading: "Current workspace", Items: []sessions.Summary{current}},
+		{Heading: "Global", Items: []sessions.Summary{global}},
+	}
+	var stdout bytes.Buffer
+	application := New(false, strings.NewReader("\x1b[B\r"), &stdout, &bytes.Buffer{})
+	selected, err := application.chooseSession(bufio.NewReader(application.Stdin), groups)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if selected.ID != global.ID {
+		t.Fatalf("selected = %#v, want global session", selected)
+	}
+	if !strings.Contains(stdout.String(), "Current workspace") || !strings.Contains(stdout.String(), "Global") {
+		t.Fatalf("selector output = %q", stdout.String())
+	}
+}
+
+func TestSessionSelectorHandlesEmptySections(t *testing.T) {
+	t.Run("current workspace empty", func(t *testing.T) {
+		global := sessions.Summary{ID: "global", Provider: "codex"}
+		groups := []sessionGroup{
+			{Heading: "Current workspace"},
+			{Heading: "Global", Items: []sessions.Summary{global}},
+		}
+		var stdout bytes.Buffer
+		application := New(false, strings.NewReader("\r"), &stdout, &bytes.Buffer{})
+		selected, err := application.chooseSession(bufio.NewReader(application.Stdin), groups)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if selected.ID != global.ID || !strings.Contains(stdout.String(), "No recent sessions") {
+			t.Fatalf("selected = %#v, output = %q", selected, stdout.String())
+		}
+	})
+
+	t.Run("global empty", func(t *testing.T) {
+		current := sessions.Summary{ID: "current", Provider: "codex"}
+		groups := []sessionGroup{
+			{Heading: "Current workspace", Items: []sessions.Summary{current}},
+			{Heading: "Global"},
+		}
+		application := New(false, strings.NewReader("\r"), &bytes.Buffer{}, &bytes.Buffer{})
+		selected, err := application.chooseSession(bufio.NewReader(application.Stdin), groups)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if selected.ID != current.ID {
+			t.Fatalf("selected = %#v", selected)
+		}
+	})
+
+	t.Run("both empty", func(t *testing.T) {
+		groups := []sessionGroup{{Heading: "Current workspace"}, {Heading: "Global"}}
+		application := New(false, strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{})
+		_, err := application.chooseSession(bufio.NewReader(application.Stdin), groups)
+		if err == nil || !strings.Contains(err.Error(), "current workspace or globally") {
+			t.Fatalf("error = %v", err)
+		}
+	})
+}
+
+func TestSessionSelectorCanBeCancelled(t *testing.T) {
+	groups := []sessionGroup{{Heading: "Current workspace", Items: []sessions.Summary{{ID: "current", Provider: "codex"}}}}
+	application := New(false, strings.NewReader("q"), &bytes.Buffer{}, &bytes.Buffer{})
+	_, err := application.chooseSession(bufio.NewReader(application.Stdin), groups)
+	if err == nil || !strings.Contains(err.Error(), "cancelled") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestRecentSessionGroupsExcludeCurrentSessionsFromGlobal(t *testing.T) {
+	home := t.TempDir()
+	currentWorkspace := filepath.Join(t.TempDir(), "current")
+	globalWorkspace := filepath.Join(t.TempDir(), "global")
+	if err := os.MkdirAll(currentWorkspace, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(currentWorkspace)
+
+	writeCodexSession := func(name, id, workspace, updated string) {
+		t.Helper()
+		path := filepath.Join(home, ".codex", "sessions", "2026", "09", "10", name+".jsonl")
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		content := fmt.Sprintf("{\"type\":\"session_meta\",\"timestamp\":%q,\"payload\":{\"id\":%q,\"cwd\":%q}}\n{\"type\":\"response_item\",\"timestamp\":%q,\"payload\":{\"type\":\"message\",\"role\":\"user\",\"content\":\"work\"}}", updated, id, workspace, updated)
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeCodexSession("current", "current-id", currentWorkspace, "2026-09-10T12:00:00Z")
+	writeCodexSession("global", "global-id", globalWorkspace, "2026-09-10T11:00:00Z")
+
+	application := New(false, strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{})
+	application.Sessions = sessions.Service{HomeDir: home}
+	groups, err := application.recentSessionGroups()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(groups) != 2 || len(groups[0].Items) != 1 || groups[0].Items[0].ID != "current-id" {
+		t.Fatalf("current group = %#v", groups)
+	}
+	if len(groups[1].Items) != 1 || groups[1].Items[0].ID != "global-id" {
+		t.Fatalf("global group = %#v", groups)
 	}
 }
 
