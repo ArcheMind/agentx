@@ -32,51 +32,156 @@ func (a App) recentSessionGroups() ([]sessionGroup, error) {
 	}, nil
 }
 
+type contentRow struct {
+	text      string
+	itemIndex int // selectable item index; -1 for structural rows
+}
+
+func buildContentRows(groups []sessionGroup, now time.Time) []contentRow {
+	var rows []contentRow
+	itemIndex := 0
+	for _, group := range groups {
+		rows = append(rows, contentRow{text: "", itemIndex: -1})
+		rows = append(rows, contentRow{text: group.Heading, itemIndex: -1})
+		if len(group.Items) == 0 {
+			rows = append(rows, contentRow{text: "  No recent sessions", itemIndex: -1})
+			continue
+		}
+		for _, item := range group.Items {
+			title := item.Title
+			if title == "" {
+				title = item.ID
+			}
+			updated := displaySessionTime(item.UpdatedAt, now)
+			text := fmt.Sprintf("%-8s  %-18s  %s", item.Provider, updated, singleLine(title, 52))
+			rows = append(rows, contentRow{text: text, itemIndex: itemIndex})
+			if group.Heading == "Global" {
+				detail := fmt.Sprintf("            ↳ %s", displayWorkspace(item.Workspace, 72))
+				rows = append(rows, contentRow{text: detail, itemIndex: -1})
+			}
+			itemIndex++
+		}
+	}
+	return rows
+}
+
+func selectedRowRange(rows []contentRow, selected int) (int, int) {
+	for i, r := range rows {
+		if r.itemIndex == selected {
+			last := i
+			if i+1 < len(rows) && rows[i+1].itemIndex < 0 && strings.HasPrefix(rows[i+1].text, "            ↳") {
+				last = i + 1
+			}
+			return i, last
+		}
+	}
+	return 0, 0
+}
+
+func terminalHeight(input io.Reader) int {
+	file, ok := input.(*os.File)
+	if !ok || !term.IsTerminal(int(file.Fd())) {
+		return 0
+	}
+	_, height, err := term.GetSize(int(file.Fd()))
+	if err != nil {
+		return 0
+	}
+	return height
+}
+
 func (a App) chooseSession(reader *bufio.Reader, groups []sessionGroup) (sessions.Summary, error) {
 	items := make([]sessions.Summary, 0)
 	for _, group := range groups {
 		items = append(items, group.Items...)
 	}
 
-	selected := 0
-	lineCount := 0
 	now := time.Now()
+	rows := buildContentRows(groups, now)
+
+	selected := 0
+	viewStart := 0
+	lineCount := 0
+	termH := a.termHeight
+	if termH == 0 {
+		termH = terminalHeight(a.Stdin)
+	}
+
+	const headerLines = 2
+
 	render := func(clear bool) {
 		if clear {
 			fmt.Fprintf(a.Stdout, "\x1b[%dA\r\x1b[J", lineCount)
 		}
-		lineCount = 2
+		lineCount = headerLines
 		fmt.Fprint(a.Stdout, "Choose a recent session:\r\n")
 		fmt.Fprint(a.Stdout, "Use ↑/↓ to move, Enter to select, q to cancel.\r\n")
-		itemIndex := 0
-		for _, group := range groups {
-			fmt.Fprintf(a.Stdout, "\r\n%s\r\n", group.Heading)
-			lineCount += 2
-			if len(group.Items) == 0 {
-				fmt.Fprint(a.Stdout, "  No recent sessions\r\n")
-				lineCount++
-				continue
+
+		visStart := 0
+		visEnd := len(rows)
+
+		if termH > 0 && len(rows) > termH-headerLines {
+			height := termH - headerLines - 2
+			if height < 1 {
+				height = 1
 			}
-			for _, item := range group.Items {
+			selFirst, selLast := selectedRowRange(rows, selected)
+			if selFirst < viewStart {
+				viewStart = selFirst
+			}
+			if selLast >= viewStart+height {
+				viewStart = selLast - height + 1
+			}
+			if viewStart < 0 {
+				viewStart = 0
+			}
+			if viewStart+height > len(rows) {
+				viewStart = len(rows) - height
+				if viewStart < 0 {
+					viewStart = 0
+				}
+			}
+			visStart = viewStart
+			visEnd = viewStart + height
+			if visEnd > len(rows) {
+				visEnd = len(rows)
+			}
+		}
+
+		hiddenAbove := 0
+		for _, r := range rows[:visStart] {
+			if r.itemIndex >= 0 {
+				hiddenAbove++
+			}
+		}
+		hiddenBelow := 0
+		for _, r := range rows[visEnd:] {
+			if r.itemIndex >= 0 {
+				hiddenBelow++
+			}
+		}
+
+		if hiddenAbove > 0 {
+			fmt.Fprintf(a.Stdout, "  ↑ %d more\r\n", hiddenAbove)
+			lineCount++
+		}
+
+		for _, row := range rows[visStart:visEnd] {
+			if row.itemIndex >= 0 {
 				marker := "  "
-				if itemIndex == selected {
+				if row.itemIndex == selected {
 					marker = "> "
 				}
-				title := item.Title
-				if title == "" {
-					title = item.ID
-				}
-				updated := displaySessionTime(item.UpdatedAt, now)
-				if group.Heading == "Global" {
-					fmt.Fprintf(a.Stdout, "%s%-8s  %-18s  %s\r\n", marker, item.Provider, updated, singleLine(title, 52))
-					fmt.Fprintf(a.Stdout, "            ↳ %s\r\n", displayWorkspace(item.Workspace, 72))
-					lineCount++
-				} else {
-					fmt.Fprintf(a.Stdout, "%s%-8s  %-18s  %s\r\n", marker, item.Provider, updated, singleLine(title, 52))
-				}
-				lineCount++
-				itemIndex++
+				fmt.Fprintf(a.Stdout, "%s%s\r\n", marker, row.text)
+			} else {
+				fmt.Fprintf(a.Stdout, "%s\r\n", row.text)
 			}
+			lineCount++
+		}
+
+		if hiddenBelow > 0 {
+			fmt.Fprintf(a.Stdout, "  ↓ %d more\r\n", hiddenBelow)
+			lineCount++
 		}
 	}
 

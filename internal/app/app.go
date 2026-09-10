@@ -22,13 +22,14 @@ import (
 var Version = "0.1.0"
 
 type App struct {
-	Registry drivers.Registry
-	Sessions sessions.Service
-	Runner   runtime.Runner
-	Stdin    io.Reader
-	Stdout   io.Writer
-	Stderr   io.Writer
-	Output   OutputFormat
+	Registry   drivers.Registry
+	Sessions   sessions.Service
+	Runner     runtime.Runner
+	Stdin      io.Reader
+	Stdout     io.Writer
+	Stderr     io.Writer
+	Output     OutputFormat
+	termHeight int
 }
 
 type OutputFormat string
