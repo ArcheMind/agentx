@@ -17,7 +17,7 @@ func NewRegistry() Registry {
 		nativeAgent("codex", "Codex CLI", "codex", CodexCacheModels{}, true, NativeAuth{Command: runtime.CommandPlan{Executable: "codex", Args: []string{"login"}}, StatusCommand: runtime.CommandPlan{Executable: "codex", Args: []string{"login", "status"}}, ParseStatus: parseCodexAuthStatus}),
 		nativeAgent("gemini", "Gemini CLI", "gemini", UnsupportedModels{Agent: "Gemini CLI"}, false, NativeAuth{Command: runtime.CommandPlan{Executable: "gemini"}, Instruction: "Run /auth in Gemini and select Sign in with Google."}),
 		nativeAgent("opencode", "OpenCode", "opencode", CommandModels{Plan: runtime.CommandPlan{Executable: "opencode", Args: []string{"models"}}}, true, NativeAuth{Command: runtime.CommandPlan{Executable: "opencode", Args: []string{"auth", "login"}}, StatusCommand: runtime.CommandPlan{Executable: "opencode", Args: []string{"auth", "list"}}, ParseStatus: parseOpenCodeAuthStatus}),
-		nativeAgent("pi", "Pi Coding Agent", "pi", CommandModels{Plan: runtime.CommandPlan{Executable: "pi", Args: []string{"--list-models"}}}, true, NativeAuth{Command: runtime.CommandPlan{Executable: "pi"}, Instruction: "Run /login in Pi and select the subscription provider."}),
+		nativeAgent("pi", "Pi Coding Agent", "pi", PiModels{Plan: runtime.CommandPlan{Executable: "pi", Args: []string{"--list-models"}}}, true, NativeAuth{Command: runtime.CommandPlan{Executable: "pi"}, Instruction: "Run /login in Pi and select the subscription provider."}),
 	}
 	items := make(map[string]runtime.Agent, len(agents))
 	for _, agent := range agents {
