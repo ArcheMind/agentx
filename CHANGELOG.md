@@ -4,6 +4,13 @@ All notable changes to AgentX are documented here. The format follows [Keep a Ch
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-09-10
+
+### Added
+
+- DeepSeek Harness model discovery, credential-status reporting, and native Web UI credential setup entrypoint.
+- Documentation for DeepSeek Harness profiles and native configuration ownership.
+
 ## [0.1.0] - 2026-09-10
 
 ### Added
@@ -16,4 +23,5 @@ All notable changes to AgentX are documented here. The format follows [Keep a Ch
 - Consistency audit covering CLI grammar, documentation, capabilities, and drivers.
 
 [Unreleased]: https://github.com/ArcheMind/agentx/compare/v0.1.0...HEAD
+[0.1.1]: https://github.com/ArcheMind/agentx/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/ArcheMind/agentx/releases/tag/v0.1.0
