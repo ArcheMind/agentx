@@ -21,6 +21,8 @@ $ ax
 
 `ax` first asks whether to show sessions from the current workspace or all workspaces. Choose a recent session, a target agent, and, when supported, a model; AgentX then continues through that agent's native CLI.
 
+![Interactive session resume demo](docs/assets/interactive-resume.gif)
+
 `agentx` is a native-first runtime manager for Claude Code, Codex CLI, DeepSeek Harness, Gemini CLI, OpenCode, and Pi. It uses their existing executables, configuration, credentials, and session stores as the source of truth.
 
 ## Install
@@ -188,6 +190,8 @@ make verify
 ```
 
 `make verify` is the repository contract: formatting, static checks, tests, protocol audits, build, and smoke checks. See [CONTRIBUTING.md](CONTRIBUTING.md) before proposing a change.
+
+Regenerate the terminal demo with `vhs docs/demo.tape`.
 
 ## Security and support
 
