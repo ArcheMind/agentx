@@ -1,12 +1,10 @@
 # Interactive Session Selector and Demo Redesign
 
-Status: reopened for terminal-height handling. Commits `139f85b` and `146fda7` completed the original grouped-selector and discovery work, and `make verify` passed, but the selector has no vertical viewport.
+Status: done. Commits `139f85b`, `146fda7`, and `0d4fa5e` completed grouped selector, bounded discovery, and viewport scrolling. All completion criteria met.
 
-## Reopened defect
+## Viewport defect (resolved)
 
-Source inspection after a real one-page overflow report confirmed that the selector is a raw-terminal renderer rather than a viewport TUI. It uses `golang.org/x/term` raw mode, `bufio` byte parsing, a flattened selection index, and whole-view ANSI `ESC[nA`/`ESC[J` redraw based on `lineCount`. It does not inspect terminal height and has no viewport, scrolling, pagination, or selected-row follow.
-
-The limit is ten sessions per provider. Across the five registered session providers, Current can contain fifty entries and Global another fifty; Global entries consume two lines each. The worst case is about 150 content rows plus headings, so the selector cannot fit a common terminal height. This is a design and implementation omission rather than a usage problem.
+Commit `0d4fa5e` added viewport scrolling: `contentRow`/`buildContentRows()` pre-compute a flat row list, `terminalHeight()` detects terminal size, `viewStart` tracks the scroll offset, and `selectedRowRange()` ensures the selected item stays visible. Scroll indicators show hidden session counts above/below.
 
 ## Completion outcome
 

@@ -16,11 +16,19 @@ Codex title discovery skips injected context beginning with `# AGENTS.md instruc
 
 Session times render in local friendly form: Today, Yesterday, month/day within the current year, and a year-bearing form across years. Global entries show a compact workspace on a second line; missing workspace is explicitly `unknown`. Layout and redraw line accounting avoid wrapping at 96 columns.
 
-## Known vertical layout defect
+## Viewport architecture (resolved vertical layout defect)
 
-The selector is not a viewport-based TUI. `internal/app/session_selector.go` enters `golang.org/x/term` raw mode, parses arrow-key bytes through `bufio`, keeps one flattened selection index, and redraws by moving up the complete previous `lineCount` with ANSI `ESC[nA` before clearing with `ESC[J`. Rendering does not call `term.GetSize` and has no terminal-height input, viewport, scrolling, pagination, or selected-row-follow behavior.
+Commit `0d4fa5e` replaced the unbounded ANSI redraw with a viewport-based renderer.
 
-`recentSessionsPerProvider` is ten. With the five providers in `internal/sessions/recent.go`, Current can contain fifty sessions and Global another fifty; each Global entry occupies two lines. The worst-case selector therefore emits about 150 content rows plus headings and instructions. This necessarily exceeds a common terminal height. The user's observed one-page overflow is a design and implementation omission, not incorrect usage.
+**Rendering and layout decoupled**: a `contentRow` struct and `buildContentRows()` function pre-compute all content (headings, empty-state lines, session rows, Global workspace detail lines) into a flat list built once per render cycle. Selection index maps into this flat list via `selectedRowRange()`, which returns start/end rows for the selected item (including multi-line Global detail).
+
+**Terminal height detection**: `terminalHeight()` calls `term.GetSize` on Stdin. Non-terminal environments return 0, interpreted as unlimited height (test-compatible).
+
+**Viewport scrolling**: `chooseSession()` maintains a `viewStart` offset. Each render cycle calls `selectedRowRange()` and adjusts `viewStart` so the selected item (including Global detail lines) stays within the visible window. Viewport height = termH - 2 (header) - 2 (scroll indicators).
+
+**Scroll indicators**: `up N more` / `down N more` appear when selectable sessions are hidden above/below the viewport. Counts reflect hidden sessions only (structural rows excluded).
+
+**Test injection**: `App` has an unexported `termHeight int` field for deterministic viewport testing without a real terminal.
 
 ## Why
 
@@ -30,7 +38,7 @@ The bounded discovery path addresses a verified production-scale failure: the us
 
 ## Verification
 
-Tests cover recent discovery, bare-`ax` empty behavior, cross-boundary movement, each singly empty group, both groups empty, cancellation, Global de-duplication, titles, time and workspace presentation, UTF-8 truncation, and redraw layout. The implementation handoff reports `make verify` passing for commit `146fda7`; the updated GIF also passed multi-frame visual inspection.
+Tests cover recent discovery, bare-`ax` empty behavior, cross-boundary movement, each singly empty group, both groups empty, cancellation, Global de-duplication, titles, time and workspace presentation, UTF-8 truncation, redraw layout, and viewport behavior. Viewport tests (`TestSessionSelectorViewport`: overflow bottom indicator, scroll follow, content-fits-no-indicator; `TestSelectedRowRangeIncludesGlobalDetail`) verify scrolling and indicator correctness. The implementation handoff reports `make verify` passing for commit `0d4fa5e`.
 
 ## Files
 
