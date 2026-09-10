@@ -63,18 +63,17 @@ interface LaunchDriver {
 interface AuthDriver {
   status(): AuthStatus
   login(): CommandPlan
-  logout(): CommandPlan
 }
 
 interface SessionDriver {
+  providers(): SessionProvider[]
   list(): SessionDescriptor[]
+  info(id: string): SessionDescriptor
   resume(id: string): CommandPlan
 }
 
 interface PackageDriver {
   install(version?: string): CommandPlan
-  update(version?: string): CommandPlan
-  uninstall(): CommandPlan
 }
 
 interface ModelDriver {
@@ -83,14 +82,14 @@ interface ModelDriver {
 }
 ```
 
-Capability detection should follow from the drivers an Agent actually implements rather than from a separate aspirational matrix.
+Capability detection should follow from the drivers an Agent actually implements rather than from a separate aspirational matrix. The current product surface intentionally does not promise auth logout or package update/uninstall; driver boundaries describe implemented operations, not a requirement for lifecycle symmetry.
 
 ## User-set priorities
 
 Priority is set explicitly by the user, not inferred from the uv principles:
 
 - **P1 — Locate and install:** implement through `PackageDriver` while keeping each Agent's installation mechanism inside its integration.
-- **P1 — Cross-Agent Session:** integrate CASR for canonical IR, native writing, and native resume behavior.
+- **P1 — Cross-Agent Session:** implement session discovery and bounded normalized transcript handoff inside `ax`; invoke native resume commands without writing private Agent databases.
 - **P1 — Available models:** read the models an Agent/provider makes available and allow the user to select one through the native invocation.
 - **P2 — Multiple accounts:** integrate AISW where appropriate or use native isolated configuration/credential directories.
 
