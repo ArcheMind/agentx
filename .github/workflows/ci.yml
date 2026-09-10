@@ -31,3 +31,33 @@ jobs:
         run: make verify
       - name: Check generated diff
         run: git diff --exit-code
+
+  verify-windows:
+    name: Verify Windows
+    runs-on: windows-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Test
+        shell: pwsh
+        run: |
+          go vet ./...
+          go test ./...
+          go test ./internal/app ./internal/drivers -run 'Consistency|Capabilities|Grammar|Terminology|Structured'
+      - name: Smoke test ax.exe
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force bin | Out-Null
+          go build -trimpath -o bin/ax.exe ./cmd/ax
+          & .\bin\ax.exe version
+          & .\bin\ax.exe --json agent list
+          & .\bin\ax.exe --yaml agent list
+          & .\bin\ax.exe agent install codex --dry-run
+          & .\bin\ax.exe --yaml auth login codex --dry-run
+          & .\bin\ax.exe agent run codex --model smoke-test --dry-run
+          & .\bin\ax.exe --json session providers
