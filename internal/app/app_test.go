@@ -378,6 +378,38 @@ func TestSessionPresentationUsesLocalTimeWorkspaceAndUnicode(t *testing.T) {
 	}
 }
 
+func TestSessionRowsPutBoundedWorkspaceBeforeTitle(t *testing.T) {
+	now := time.Date(2026, time.September, 10, 16, 0, 0, 0, time.UTC)
+	groups := []sessionGroup{
+		{
+			Heading: "Global",
+			Items: []sessions.Summary{{
+				Provider:  "codex",
+				UpdatedAt: "invalid timestamp that is too long",
+				Workspace: filepath.Join(string(filepath.Separator), "work", "company", "very-long-project-name"),
+				Title:     strings.Repeat("title", 12),
+			}},
+		},
+	}
+
+	rows := buildContentRows(groups, now)
+	if len(rows) != 3 {
+		t.Fatalf("rows = %#v", rows)
+	}
+	row := rows[2].text
+	workspace := displayWorkspace(groups[0].Items[0].Workspace, 20)
+	title := singleLine(groups[0].Items[0].Title, 45)
+	if !strings.Contains(row, workspace+"  "+title) {
+		t.Fatalf("row does not put workspace before title: %q", row)
+	}
+	if !strings.HasPrefix(workspace, "…") || !strings.HasSuffix(workspace, "long-project-name") {
+		t.Fatalf("workspace = %q, want suffix-preserving truncation", workspace)
+	}
+	if len([]rune(row)) != 94 {
+		t.Fatalf("row width = %d, want 94 before selection marker: %q", len([]rune(row)), row)
+	}
+}
+
 func TestSessionListUsesSourceTerminology(t *testing.T) {
 	application := New(false, strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{})
 	application.Sessions = sessions.Service{HomeDir: t.TempDir()}
