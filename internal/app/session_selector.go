@@ -53,11 +53,14 @@ func buildContentRows(groups []sessionGroup, now time.Time) []contentRow {
 				title = item.ID
 			}
 			updated := displaySessionTime(item.UpdatedAt, now)
+			if duration := displaySessionDuration(item.StartedAt, item.UpdatedAt); duration != "" {
+				updated += " " + duration
+			}
 			if group.Heading == "Global" {
-				text := fmt.Sprintf("%-8s  %-15s  %-20s  %s", item.Provider, updated, displayWorkspace(item.Workspace, 20), singleLine(title, 45))
+				text := fmt.Sprintf("%-8s  %-25s  %-20s  %s", item.Provider, updated, displayWorkspace(item.Workspace, 20), singleLine(title, 35))
 				rows = append(rows, contentRow{text: text, itemIndex: itemIndex})
 			} else {
-				text := fmt.Sprintf("%-8s  %-15s  %s", item.Provider, updated, singleLine(title, 67))
+				text := fmt.Sprintf("%-8s  %-25s  %s", item.Provider, updated, singleLine(title, 57))
 				rows = append(rows, contentRow{text: text, itemIndex: itemIndex})
 			}
 			itemIndex++
@@ -292,6 +295,29 @@ func displaySessionTime(value string, now time.Time) string {
 		return parsed.Format("Jan 2 15:04")
 	}
 	return parsed.Format("Jan 2 2006")
+}
+
+func displaySessionDuration(startedAt, updatedAt string) string {
+	started, startErr := time.Parse(time.RFC3339Nano, startedAt)
+	updated, updateErr := time.Parse(time.RFC3339Nano, updatedAt)
+	if startErr != nil || updateErr != nil || updated.Before(started) {
+		return ""
+	}
+	duration := updated.Sub(started)
+	if duration < time.Minute {
+		return fmt.Sprintf("(%ds)", int(duration/time.Second))
+	}
+	if duration < time.Hour {
+		return fmt.Sprintf("(%dm)", int(duration/time.Minute))
+	}
+	if duration < 24*time.Hour {
+		return fmt.Sprintf("(%dh %02dm)", int(duration/time.Hour), int(duration/time.Minute)%60)
+	}
+	days := int(duration / (24 * time.Hour))
+	if days > 999 {
+		return "(999d+)"
+	}
+	return fmt.Sprintf("(%dd %02dh)", days, int(duration/time.Hour)%24)
 }
 
 func sameCalendarDay(left, right time.Time) bool {
