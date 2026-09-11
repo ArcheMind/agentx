@@ -31,7 +31,7 @@ func TestNativeAuthPlansUseAgentOAuthFlows(t *testing.T) {
 		"dsh":      {Executable: "dsh", Args: []string{"web"}},
 		"gemini":   {Executable: "gemini"},
 		"opencode": {Executable: "opencode", Args: []string{"auth", "login"}},
-		"pi":       {Executable: "pi"},
+		"pi":       {Executable: "node", Args: []string{"<Pi SDK login adapter>"}},
 	}
 	registry := NewRegistry()
 	for id, expected := range want {

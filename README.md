@@ -148,7 +148,7 @@ The design is inspired by [uv](https://github.com/astral-sh/uv): preserve establ
 | DeepSeek Harness | Yes | Web UI | Provider credential | Bundled catalog | Native profile config | Unsupported |
 | Gemini CLI | Yes | Interactive | Unsupported | No verified source | Yes | Yes |
 | OpenCode | Yes | Yes | Provider list | Native command | Yes | Yes |
-| Pi | Yes | Interactive | Provider list | Native command + auth filter | Yes | Yes |
+| Pi | Yes | Provider selector | Provider list | Native command + auth filter | Yes | Yes |
 
 The exact native versions and evidence behind this table live in the [lifecycle and protocol audit](docs/lifecycle-and-protocol-audit.md).
 

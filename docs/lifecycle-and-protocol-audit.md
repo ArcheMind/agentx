@@ -16,7 +16,7 @@ DSH's bundled DeepSeek catalog supplies model discovery. Its local credential pr
 | Codex | supported | supported, single account | supported | `codex login`, `codex login status`, and `codex logout` |
 | Gemini | supported, interactive | unsupported | supported, interactive | interactive `/auth` and `/logout`; no Agent-wide status command in CLI help |
 | OpenCode | supported | supported, provider list | supported | `opencode auth` lists `login`, `list`, and `logout` |
-| Pi | supported, interactive | supported, stored-provider list | supported, interactive | interactive `/login` and `/logout`; native `auth.json` provider keys are also the model filter source |
+| Pi | supported, SDK OAuth provider selector | supported, stored-provider list | supported, interactive | Pi SDK `ModelRuntime.login()` writes native `auth.json`; interactive `/logout` remains native |
 
 `AuthStatus.providers` is always a list. A single-account Agent returns zero or one entry; multi-provider Agents return one entry per configured provider. Status never returns credentials. Pi deliberately reports stored native providers only: environment readiness can be checked provider-by-provider with native `pi auth check`, but Pi exposes no stable command that enumerates every possible provider without credentials.
 

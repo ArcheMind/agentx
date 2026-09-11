@@ -365,7 +365,17 @@ func (a App) auth(ctx context.Context, args []string) error {
 	if plan.Instruction != "" {
 		fmt.Fprintln(a.Stderr, plan.Instruction)
 	}
-	result, err := a.Runner.Execute(ctx, plan.Command, runtime.ExecuteOptions{Interactive: true, Stdin: a.Stdin, Stdout: a.Stdout, Stderr: a.Stderr})
+	options := runtime.ExecuteOptions{Interactive: true, Stdin: a.Stdin, Stdout: a.Stdout, Stderr: a.Stderr}
+	var result runtime.CommandResult
+	if args[0] == "login" {
+		if executor, ok := agent.Auth.(drivers.LoginExecutor); ok {
+			result, err = executor.Login(ctx, a.Runner, options)
+		} else {
+			result, err = a.Runner.Execute(ctx, plan.Command, options)
+		}
+	} else {
+		result, err = a.Runner.Execute(ctx, plan.Command, options)
+	}
 	if err != nil {
 		return &ExitError{Code: result.ExitCode, Err: err}
 	}
