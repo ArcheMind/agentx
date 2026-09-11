@@ -53,13 +53,12 @@ func buildContentRows(groups []sessionGroup, now time.Time) []contentRow {
 				title = item.ID
 			}
 			updated := displaySessionTime(item.UpdatedAt, now)
+			label := singleLine(title, 52)
 			if group.Heading == "Global" {
-				text := fmt.Sprintf("%-8s  %-18s  %-30s  %s", item.Provider, updated, singleLine(title, 30), displayWorkspace(item.Workspace, 28))
-				rows = append(rows, contentRow{text: text, itemIndex: itemIndex})
-			} else {
-				text := fmt.Sprintf("%-8s  %-18s  %s", item.Provider, updated, singleLine(title, 52))
-				rows = append(rows, contentRow{text: text, itemIndex: itemIndex})
+				label = singleLine(title, 32) + " · " + displayWorkspace(item.Workspace, 28)
 			}
+			text := fmt.Sprintf("%-8s  %-18s  %s", item.Provider, updated, label)
+			rows = append(rows, contentRow{text: text, itemIndex: itemIndex})
 			itemIndex++
 		}
 	}
