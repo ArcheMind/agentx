@@ -35,16 +35,30 @@ func (a App) recentSessionGroups(includeSubagents bool) ([]sessionGroup, error) 
 type contentRow struct {
 	text      string
 	itemIndex int // selectable item index; -1 for structural rows
+	kind      contentRowKind
+	provider  string
+	updated   string
+	workspace string
+	title     string
 }
+
+type contentRowKind int
+
+const (
+	contentRowPlain contentRowKind = iota
+	contentRowHeading
+	contentRowEmpty
+	contentRowSession
+)
 
 func buildContentRows(groups []sessionGroup, now time.Time) []contentRow {
 	var rows []contentRow
 	itemIndex := 0
 	for _, group := range groups {
 		rows = append(rows, contentRow{text: "", itemIndex: -1})
-		rows = append(rows, contentRow{text: group.Heading, itemIndex: -1})
+		rows = append(rows, contentRow{text: group.Heading, itemIndex: -1, kind: contentRowHeading})
 		if len(group.Items) == 0 {
-			rows = append(rows, contentRow{text: "  No recent sessions", itemIndex: -1})
+			rows = append(rows, contentRow{text: "  No recent sessions", itemIndex: -1, kind: contentRowEmpty})
 			continue
 		}
 		for _, item := range group.Items {
@@ -58,10 +72,16 @@ func buildContentRows(groups []sessionGroup, now time.Time) []contentRow {
 			}
 			if group.Heading == "Global" {
 				text := fmt.Sprintf("%-8s  %-25s  %-20s  %s", item.Provider, updated, displayWorkspace(item.Workspace, 20), singleLine(title, 35))
-				rows = append(rows, contentRow{text: text, itemIndex: itemIndex})
+				rows = append(rows, contentRow{
+					text: text, itemIndex: itemIndex, kind: contentRowSession,
+					provider: item.Provider, updated: updated, workspace: displayWorkspace(item.Workspace, 20), title: singleLine(title, 35),
+				})
 			} else {
 				text := fmt.Sprintf("%-8s  %-25s  %s", item.Provider, updated, singleLine(title, 57))
-				rows = append(rows, contentRow{text: text, itemIndex: itemIndex})
+				rows = append(rows, contentRow{
+					text: text, itemIndex: itemIndex, kind: contentRowSession,
+					provider: item.Provider, updated: updated, title: singleLine(title, 57),
+				})
 			}
 			itemIndex++
 		}
@@ -108,7 +128,7 @@ func (a App) chooseSession(reader *bufio.Reader, groups []sessionGroup) (session
 func (a App) chooseOptions(reader *bufio.Reader, title string, options []string) (int, error) {
 	rows := make([]contentRow, len(options))
 	for index, option := range options {
-		rows[index] = contentRow{text: option, itemIndex: index}
+		rows[index] = contentRow{text: option, itemIndex: index, provider: option}
 	}
 	return a.chooseInteractive(reader, title, rows, len(options), errors.New("no options available"))
 }
@@ -129,8 +149,8 @@ func (a App) chooseInteractive(reader *bufio.Reader, title string, rows []conten
 			fmt.Fprintf(a.Stdout, "\x1b[%dA\r\x1b[J", lineCount)
 		}
 		lineCount = headerLines
-		fmt.Fprintf(a.Stdout, "%s\r\n", title)
-		fmt.Fprint(a.Stdout, "Use ↑/↓ or j/k to move, Enter to select, q to cancel.\r\n")
+		fmt.Fprintf(a.Stdout, "%s\r\n", colorize(a.Color, ansiBold, title))
+		fmt.Fprintf(a.Stdout, "%s\r\n", colorize(a.Color, ansiDim, "Use ↑/↓ or j/k to move, Enter to select, q to cancel."))
 
 		visStart := 0
 		visEnd := len(rows)
@@ -177,7 +197,7 @@ func (a App) chooseInteractive(reader *bufio.Reader, title string, rows []conten
 		}
 
 		if hiddenAbove > 0 {
-			fmt.Fprintf(a.Stdout, "  ↑ %d more\r\n", hiddenAbove)
+			fmt.Fprintf(a.Stdout, "%s\r\n", colorize(a.Color, ansiDim, fmt.Sprintf("  ↑ %d more", hiddenAbove)))
 			lineCount++
 		}
 
@@ -187,15 +207,15 @@ func (a App) chooseInteractive(reader *bufio.Reader, title string, rows []conten
 				if row.itemIndex == selected {
 					marker = "> "
 				}
-				fmt.Fprintf(a.Stdout, "%s%s\r\n", marker, row.text)
+				fmt.Fprintf(a.Stdout, "%s%s\r\n", styledMarker(marker, row, a.Color), styledContentRow(row, row.itemIndex == selected, a.Color))
 			} else {
-				fmt.Fprintf(a.Stdout, "%s\r\n", row.text)
+				fmt.Fprintf(a.Stdout, "%s\r\n", styledContentRow(row, false, a.Color))
 			}
 			lineCount++
 		}
 
 		if hiddenBelow > 0 {
-			fmt.Fprintf(a.Stdout, "  ↓ %d more\r\n", hiddenBelow)
+			fmt.Fprintf(a.Stdout, "%s\r\n", colorize(a.Color, ansiDim, fmt.Sprintf("  ↓ %d more", hiddenBelow)))
 			lineCount++
 		}
 	}
@@ -234,6 +254,45 @@ func (a App) chooseInteractive(reader *bufio.Reader, title string, rows []conten
 			fmt.Fprint(a.Stdout, "\r\n")
 			return 0, errors.New("interactive session resume cancelled")
 		}
+	}
+}
+
+func styledMarker(marker string, row contentRow, color bool) string {
+	if marker == "  " {
+		return marker
+	}
+	style := agentColor(row.provider)
+	if style == "" {
+		style = ansiCyan
+	}
+	return colorize(color, style+ansiBold, marker)
+}
+
+func styledContentRow(row contentRow, selected, color bool) string {
+	switch row.kind {
+	case contentRowHeading:
+		return colorize(color, ansiBold, row.text)
+	case contentRowEmpty:
+		return colorize(color, ansiDim, row.text)
+	case contentRowSession:
+		provider := colorize(color, agentColor(row.provider), fmt.Sprintf("%-8s", row.provider))
+		updated := colorize(color, ansiDim, fmt.Sprintf("%-25s", row.updated))
+		titleStyle := ""
+		if selected {
+			titleStyle = ansiBold
+		}
+		title := colorize(color && titleStyle != "", titleStyle, row.title)
+		if row.workspace == "" {
+			return fmt.Sprintf("%s  %s  %s", provider, updated, title)
+		}
+		workspace := colorize(color, ansiDim, fmt.Sprintf("%-20s", row.workspace))
+		return fmt.Sprintf("%s  %s  %s  %s", provider, updated, workspace, title)
+	default:
+		style := agentColor(row.provider)
+		if selected {
+			style += ansiBold
+		}
+		return colorize(color && style != "", style, row.text)
 	}
 }
 

@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"os"
 	"os/exec"
 	"strings"
 
@@ -139,35 +138,6 @@ func hasCapability(capabilities []runtime.Capability, expected runtime.Capabilit
 		}
 	}
 	return false
-}
-
-const (
-	ansiReset  = "\x1b[0m"
-	ansiBold   = "\x1b[1m"
-	ansiDim    = "\x1b[2m"
-	ansiRed    = "\x1b[31m"
-	ansiGreen  = "\x1b[32m"
-	ansiYellow = "\x1b[33m"
-	ansiCyan   = "\x1b[36m"
-)
-
-func colorEnabled(writer io.Writer) bool {
-	if os.Getenv("NO_COLOR") != "" || os.Getenv("TERM") == "dumb" {
-		return false
-	}
-	file, ok := writer.(*os.File)
-	if !ok {
-		return false
-	}
-	info, err := file.Stat()
-	return err == nil && info.Mode()&os.ModeCharDevice != 0
-}
-
-func colorize(enabled bool, color, value string) string {
-	if !enabled {
-		return value
-	}
-	return color + value + ansiReset
 }
 
 func writeOverviewTree(writer io.Writer, result overviewResult, color bool) error {
