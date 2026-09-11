@@ -19,7 +19,7 @@ Resume recent work:
 $ ax
 ```
 
-`ax` shows recent top-level sessions in one keyboard-navigable selector, with separate `Current workspace` and `Global` sections. Times use your local timezone, and Global entries include their working directory. Move through every session with the arrow keys, press Enter to select one, then choose a target agent and, when supported, a model. AgentX continues through that agent's native CLI. Pass `--include-subagents` to include provider sessions identified as child Agent work.
+`ax` shows recent top-level sessions in one keyboard-navigable selector, with separate `Current workspace` and `Global` sections. Times use your local timezone, and Global entries include their working directory. Move through every session, agent, and model with the arrow keys or `j`/`k`, press Enter to select, or press `q` to cancel. AgentX continues through the selected agent's native CLI. Pass `--include-subagents` to include provider sessions identified as child Agent work.
 
 ![Interactive session resume demo](docs/assets/interactive-resume.gif)
 

@@ -258,11 +258,18 @@ func TestAgentShortcutUsesRunGrammar(t *testing.T) {
 	}
 }
 
-func TestChooseRejectsInvalidSelection(t *testing.T) {
+func TestOptionSelectorSupportsVimKeys(t *testing.T) {
 	var stdout bytes.Buffer
-	application := New(false, strings.NewReader("3\n"), &stdout, &bytes.Buffer{})
-	if _, err := application.choose(bufio.NewReader(application.Stdin), "Choose:\n", []string{"one", "two"}); err == nil || !strings.Contains(err.Error(), "1 to 2") {
-		t.Fatalf("error = %v", err)
+	application := New(false, strings.NewReader("jjk\r"), &stdout, &bytes.Buffer{})
+	selected, err := application.chooseOptions(bufio.NewReader(application.Stdin), "Choose:", []string{"one", "two", "three"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if selected != 1 {
+		t.Fatalf("selected = %d, want 1", selected)
+	}
+	if !strings.Contains(stdout.String(), "j/k") || strings.Contains(stdout.String(), "1. one") {
+		t.Fatalf("selector output = %q", stdout.String())
 	}
 }
 
@@ -317,7 +324,7 @@ func TestSessionSelectorMovesAcrossGroupBoundary(t *testing.T) {
 		{Heading: "Global", Items: []sessions.Summary{global}},
 	}
 	var stdout bytes.Buffer
-	application := New(false, strings.NewReader("\x1b[B\r"), &stdout, &bytes.Buffer{})
+	application := New(false, strings.NewReader("j\r"), &stdout, &bytes.Buffer{})
 	selected, err := application.chooseSession(bufio.NewReader(application.Stdin), groups)
 	if err != nil {
 		t.Fatal(err)

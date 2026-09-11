@@ -98,7 +98,22 @@ func (a App) chooseSession(reader *bufio.Reader, groups []sessionGroup) (session
 
 	now := time.Now()
 	rows := buildContentRows(groups, now)
+	selected, err := a.chooseInteractive(reader, "Choose a recent session:", rows, len(items), errors.New("no recent sessions found in the current workspace or globally"))
+	if err != nil {
+		return sessions.Summary{}, err
+	}
+	return items[selected], nil
+}
 
+func (a App) chooseOptions(reader *bufio.Reader, title string, options []string) (int, error) {
+	rows := make([]contentRow, len(options))
+	for index, option := range options {
+		rows[index] = contentRow{text: option, itemIndex: index}
+	}
+	return a.chooseInteractive(reader, title, rows, len(options), errors.New("no options available"))
+}
+
+func (a App) chooseInteractive(reader *bufio.Reader, title string, rows []contentRow, itemCount int, emptyErr error) (int, error) {
 	selected := 0
 	viewStart := 0
 	lineCount := 0
@@ -114,8 +129,8 @@ func (a App) chooseSession(reader *bufio.Reader, groups []sessionGroup) (session
 			fmt.Fprintf(a.Stdout, "\x1b[%dA\r\x1b[J", lineCount)
 		}
 		lineCount = headerLines
-		fmt.Fprint(a.Stdout, "Choose a recent session:\r\n")
-		fmt.Fprint(a.Stdout, "Use ↑/↓ to move, Enter to select, q to cancel.\r\n")
+		fmt.Fprintf(a.Stdout, "%s\r\n", title)
+		fmt.Fprint(a.Stdout, "Use ↑/↓ or j/k to move, Enter to select, q to cancel.\r\n")
 
 		visStart := 0
 		visEnd := len(rows)
@@ -186,20 +201,20 @@ func (a App) chooseSession(reader *bufio.Reader, groups []sessionGroup) (session
 	}
 
 	render(false)
-	if len(items) == 0 {
-		return sessions.Summary{}, errors.New("no recent sessions found in the current workspace or globally")
+	if itemCount == 0 {
+		return 0, emptyErr
 	}
 
 	restore, err := makeRaw(a.Stdin)
 	if err != nil {
-		return sessions.Summary{}, err
+		return 0, err
 	}
 	defer restore()
 
 	for {
 		key, err := readSelectionKey(reader)
 		if err != nil {
-			return sessions.Summary{}, err
+			return 0, err
 		}
 		switch key {
 		case selectionUp:
@@ -208,16 +223,16 @@ func (a App) chooseSession(reader *bufio.Reader, groups []sessionGroup) (session
 				render(true)
 			}
 		case selectionDown:
-			if selected < len(items)-1 {
+			if selected < itemCount-1 {
 				selected++
 				render(true)
 			}
 		case selectionConfirm:
 			fmt.Fprint(a.Stdout, "\r\n")
-			return items[selected], nil
+			return selected, nil
 		case selectionCancel:
 			fmt.Fprint(a.Stdout, "\r\n")
-			return sessions.Summary{}, errors.New("interactive session resume cancelled")
+			return 0, errors.New("interactive session resume cancelled")
 		}
 	}
 }
@@ -243,6 +258,10 @@ func readSelectionKey(reader *bufio.Reader) (selectionKey, error) {
 	switch value {
 	case '\r', '\n':
 		return selectionConfirm, nil
+	case 'k', 'K':
+		return selectionUp, nil
+	case 'j', 'J':
+		return selectionDown, nil
 	case 'q', 'Q', 3:
 		return selectionCancel, nil
 	case 27:

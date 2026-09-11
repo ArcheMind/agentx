@@ -4,6 +4,8 @@
 
 Bare `ax` uses one grouped session selector on `main`. Commit `139f85b` introduced the grouped interaction; commit `146fda7` replaced its expensive startup path with bounded recent-session discovery; commit `bfd4c89` added provider-aware sub-Agent classification and filtering. `Current workspace` and `Global` render as non-selectable headings, while a single flattened selection index lets Up/Down move across their boundary and Enter select the highlighted session. `q`, `Q`, Escape, and Ctrl-C cancel. Each discovered summary is classified into exactly one group by whether its workspace matches the current workspace; a Current item is not subsequently considered for Global.
 
+The session, Agent, and model steps now use the same redrawn, heuristic keyboard chooser. Up/Down and `j`/`k` move the highlighted item; Enter accepts it; `q`, Escape, and Ctrl-C cancel. The former numbered Agent/model prompts and the model free-text fallback have been removed, so the interaction no longer changes input style after session selection.
+
 Each empty group renders `No recent sessions`; when both are empty, selection ends with `no recent sessions found in the current workspace or globally`. Rendering writes CRLF and uses a line-counted ANSI redraw after movement so raw terminal mode does not staircase output.
 
 The selector only chooses a summary from the native read-only session service. Full transcript parsing is deferred until the selected session is loaded through `Info`; no selector state or alternate session store was introduced.
@@ -54,6 +56,8 @@ The first-valid-`session_meta` rule fixes Codex child rollouts that carry both c
 
 Removing the separate scope prompt makes workspace scope orthogonal to selection. The mutually exclusive workspace classification places each discovered summary in Current or Global, while flattening only selectable rows preserves section presentation and gives keyboard movement one continuous state space. The shared provider-aware filter keeps child execution sessions out of the primary recent-work surface without making them inaccessible by explicit ID. No selector-level identity- or title-based merge combines distinct native sessions.
 
+The same chooser across the three sequential decisions removes a stateful input-mode switch: users navigate every known option with the same spatial controls, including familiar Vim-style `j`/`k` bindings.
+
 The bounded discovery path addresses a verified production-scale failure: the user's machine had 751 Codex JSONL files totaling about 928 MB, while the previous implementation fully parsed all providers twice before first render. The title filtering and rune-safe shortening address the observed injected, indistinguishable titles and malformed UTF-8 output. The session span helps distinguish otherwise similar summaries using native temporal metadata; file size was measured and rejected as an unreliable activity signal.
 
 ## Verification
@@ -71,3 +75,4 @@ Tests cover recent discovery, native and Claude-derived start timestamps, bare-`
 - `README.md`
 - `docs/troubleshooting.md`
 - `docs/assets/interactive-resume.gif`
+- `docs/demo.tape`

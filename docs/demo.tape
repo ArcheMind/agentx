@@ -38,10 +38,10 @@ Sleep 900ms
 Enter
 Wait+Screen /Choose an agent:/
 Sleep 1.4s
-Type "1"
+Type "j"
 Sleep 300ms
 Enter
-Wait+Screen /Model for claude/
+Wait+Screen /Choose a model:/
 Sleep 1.2s
 Enter
 Wait+Screen /Cross-Agent session handed off/
