@@ -29,6 +29,7 @@ type App struct {
 	Stdout     io.Writer
 	Stderr     io.Writer
 	Output     OutputFormat
+	Color      bool
 	termHeight int
 }
 
@@ -46,6 +47,7 @@ func New(debug bool, stdin io.Reader, stdout, stderr io.Writer) App {
 		Sessions: sessions.New(),
 		Runner:   runtime.ExecRunner{Debug: debug, Log: stderr},
 		Stdin:    stdin, Stdout: stdout, Stderr: stderr,
+		Color: colorEnabled(stdout),
 	}
 }
 
