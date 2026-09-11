@@ -378,9 +378,18 @@ func TestSessionPresentationUsesLocalTimeWorkspaceAndUnicode(t *testing.T) {
 	}
 }
 
-func TestSessionRowsPutBoundedWorkspaceBeforeTitle(t *testing.T) {
+func TestSessionRowsUseWorkspaceColumnOnlyForGlobal(t *testing.T) {
 	now := time.Date(2026, time.September, 10, 16, 0, 0, 0, time.UTC)
 	groups := []sessionGroup{
+		{
+			Heading: "Current workspace",
+			Items: []sessions.Summary{{
+				Provider:  "claude",
+				UpdatedAt: "2026-09-10T15:00:00Z",
+				Workspace: "/work/current",
+				Title:     strings.Repeat("current", 10),
+			}},
+		},
 		{
 			Heading: "Global",
 			Items: []sessions.Summary{{
@@ -393,20 +402,29 @@ func TestSessionRowsPutBoundedWorkspaceBeforeTitle(t *testing.T) {
 	}
 
 	rows := buildContentRows(groups, now)
-	if len(rows) != 3 {
+	if len(rows) != 6 {
 		t.Fatalf("rows = %#v", rows)
 	}
-	row := rows[2].text
-	workspace := displayWorkspace(groups[0].Items[0].Workspace, 20)
-	title := singleLine(groups[0].Items[0].Title, 45)
-	if !strings.Contains(row, workspace+"  "+title) {
-		t.Fatalf("row does not put workspace before title: %q", row)
+	currentRow := rows[2].text
+	currentTitle := singleLine(groups[0].Items[0].Title, 67)
+	if strings.Contains(currentRow, groups[0].Items[0].Workspace) || !strings.HasSuffix(currentRow, currentTitle) {
+		t.Fatalf("current row should omit workspace column: %q", currentRow)
+	}
+	if len([]rune(currentRow)) != 94 {
+		t.Fatalf("current row width = %d, want 94 before selection marker: %q", len([]rune(currentRow)), currentRow)
+	}
+
+	globalRow := rows[5].text
+	workspace := displayWorkspace(groups[1].Items[0].Workspace, 20)
+	globalTitle := singleLine(groups[1].Items[0].Title, 45)
+	if !strings.Contains(globalRow, workspace+"  "+globalTitle) {
+		t.Fatalf("global row does not put workspace before title: %q", globalRow)
 	}
 	if !strings.HasPrefix(workspace, "…") || !strings.HasSuffix(workspace, "long-project-name") {
 		t.Fatalf("workspace = %q, want suffix-preserving truncation", workspace)
 	}
-	if len([]rune(row)) != 94 {
-		t.Fatalf("row width = %d, want 94 before selection marker: %q", len([]rune(row)), row)
+	if len([]rune(globalRow)) != 94 {
+		t.Fatalf("global row width = %d, want 94 before selection marker: %q", len([]rune(globalRow)), globalRow)
 	}
 }
 
