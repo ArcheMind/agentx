@@ -17,7 +17,7 @@ type RecentGroups struct {
 	Global  []Summary
 }
 
-func (s Service) RecentGroups(workspace string, limit int) (RecentGroups, error) {
+func (s Service) RecentGroups(workspace string, limit int, includeSubagents bool) (RecentGroups, error) {
 	if limit <= 0 {
 		return RecentGroups{}, fmt.Errorf("recent session limit must be positive")
 	}
@@ -32,7 +32,7 @@ func (s Service) RecentGroups(workspace string, limit int) (RecentGroups, error)
 
 	var all []Summary
 	for _, spec := range providerSpecs {
-		items, err := recentProviderSummaries(spec, s.HomeDir)
+		items, err := recentProviderSummaries(spec, s.HomeDir, includeSubagents)
 		if err != nil {
 			return RecentGroups{}, fmt.Errorf("load %s session summaries: %w", spec.id, err)
 		}
@@ -44,6 +44,9 @@ func (s Service) RecentGroups(workspace string, limit int) (RecentGroups, error)
 	currentCounts := make(map[string]int)
 	globalCounts := make(map[string]int)
 	for _, item := range all {
+		if item.IsSubagent && !includeSubagents {
+			continue
+		}
 		if matchesWorkspaceSummary(item, workspace) {
 			if currentCounts[item.Provider] < limit {
 				currentCounts[item.Provider]++
@@ -59,10 +62,15 @@ func (s Service) RecentGroups(workspace string, limit int) (RecentGroups, error)
 	return result, nil
 }
 
-func recentProviderSummaries(spec providerSpec, home string) ([]Summary, error) {
+func recentProviderSummaries(spec providerSpec, home string, includeSubagents bool) ([]Summary, error) {
 	switch spec.id {
 	case "claude":
-		return recentJSONLSummaries(filepath.Join(home, ".claude", "projects", "*", "*.jsonl"), recentClaudeSummary)
+		items, err := recentJSONLSummaries(filepath.Join(home, ".claude", "projects", "*", "*.jsonl"), recentClaudeSummary)
+		if err != nil || !includeSubagents {
+			return items, err
+		}
+		children, err := recentJSONLSummaries(filepath.Join(home, ".claude", "projects", "*", "*", "subagents", "*.jsonl"), recentClaudeSummary)
+		return append(items, children...), err
 	case "codex":
 		return recentJSONLSummaries(filepath.Join(home, ".codex", "sessions", "*", "*", "*", "*.jsonl"), recentCodexSummary)
 	case "pi":
@@ -104,6 +112,12 @@ func recentClaudeSummary(path string) (Summary, bool, error) {
 	item := Summary{Provider: "claude", Source: path, UpdatedAt: recentFileTimestamp(path)}
 	err := scanJSONL(path, func(record map[string]any) bool {
 		kind := stringValue(record["type"])
+		if sidechain, _ := record["isSidechain"].(bool); sidechain {
+			item.IsSubagent = true
+			if agentID := stringValue(record["agentId"]); agentID != "" {
+				item.ID = agentID
+			}
+		}
 		if item.StartedAt == "" {
 			item.StartedAt = timeValue(record["timestamp"])
 		}
@@ -130,10 +144,11 @@ func recentCodexSummary(path string) (Summary, bool, error) {
 	err := scanJSONL(path, func(record map[string]any) bool {
 		kind := stringValue(record["type"])
 		payload, _ := record["payload"].(map[string]any)
-		if kind == "session_meta" {
+		if kind == "session_meta" && item.ID == "" {
 			item.ID = firstNonEmpty(stringValue(payload["id"]), stringValue(payload["session_id"]))
 			item.Workspace = stringValue(payload["cwd"])
 			item.StartedAt = timeValue(payload["timestamp"])
+			item.IsSubagent = codexSubagentSource(payload["source"])
 		}
 		if kind == "response_item" && stringValue(payload["type"]) == "message" && stringValue(payload["role"]) == "user" && item.Title == "" {
 			content := flattenContent(payload["content"])
@@ -243,7 +258,7 @@ func recentOpenCodeSummaries(home string) ([]Summary, error) {
 		if json.Unmarshal(data, &info) != nil {
 			continue
 		}
-		item := Summary{ID: stringValue(info["id"]), Provider: "opencode", Title: stringValue(info["title"]), Source: path}
+		item := Summary{ID: stringValue(info["id"]), Provider: "opencode", IsSubagent: stringValue(info["parentID"]) != "", Title: stringValue(info["title"]), Source: path}
 		if times, ok := info["time"].(map[string]any); ok {
 			item.StartedAt = timeValue(times["created"])
 			item.UpdatedAt = timeValue(times["updated"])

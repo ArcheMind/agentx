@@ -279,6 +279,36 @@ func TestBareAXStartsInteractiveSessionResume(t *testing.T) {
 	}
 }
 
+func TestInteractiveResumeCanIncludeSubagents(t *testing.T) {
+	home := t.TempDir()
+	workspace := t.TempDir()
+	t.Chdir(workspace)
+	path := filepath.Join(home, ".codex", "sessions", "2026", "09", "11", "child.jsonl")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	fixture := fmt.Sprintf("{\"type\":\"session_meta\",\"timestamp\":\"2026-09-11T10:00:00Z\",\"payload\":{\"id\":\"child-id\",\"cwd\":%q,\"source\":{\"subagent\":{}}}}\n{\"type\":\"response_item\",\"timestamp\":\"2026-09-11T10:01:00Z\",\"payload\":{\"type\":\"message\",\"role\":\"user\",\"content\":\"child task\"}}", workspace)
+	if err := os.WriteFile(path, []byte(fixture), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	application := New(false, strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{})
+	application.Sessions = sessions.Service{HomeDir: home}
+	if err := application.Run(context.Background(), nil); err == nil || !strings.Contains(err.Error(), "no recent sessions") {
+		t.Fatalf("default error = %v", err)
+	}
+
+	var stdout bytes.Buffer
+	application = New(false, strings.NewReader("q"), &stdout, &bytes.Buffer{})
+	application.Sessions = sessions.Service{HomeDir: home}
+	if err := application.Run(context.Background(), []string{"--include-subagents"}); err == nil || !strings.Contains(err.Error(), "cancelled") {
+		t.Fatalf("included error = %v", err)
+	}
+	if !strings.Contains(stdout.String(), "child task") {
+		t.Fatalf("selector output = %q", stdout.String())
+	}
+}
+
 func TestSessionSelectorMovesAcrossGroupBoundary(t *testing.T) {
 	current := sessions.Summary{ID: "current", Provider: "codex", Title: "Current work"}
 	global := sessions.Summary{ID: "global", Provider: "claude", Workspace: "/work/other", Title: "Other work"}
@@ -455,7 +485,7 @@ func TestRecentSessionGroupsExcludeCurrentSessionsFromGlobal(t *testing.T) {
 
 	application := New(false, strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{})
 	application.Sessions = sessions.Service{HomeDir: home}
-	groups, err := application.recentSessionGroups()
+	groups, err := application.recentSessionGroups(false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -575,6 +605,31 @@ func TestSessionListUsesSourceTerminology(t *testing.T) {
 	application.Sessions = sessions.Service{HomeDir: t.TempDir()}
 	if err := application.Run(context.Background(), []string{"session", "list", "--source", "pi", "--all"}); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestSessionListCanIncludeSubagents(t *testing.T) {
+	home := t.TempDir()
+	path := filepath.Join(home, ".codex", "sessions", "2026", "09", "11", "child.jsonl")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	fixture := `{"type":"session_meta","timestamp":"2026-09-11T10:00:00Z","payload":{"id":"child-id","cwd":"/work","source":{"subagent":{}}}}` + "\n" +
+		`{"type":"response_item","timestamp":"2026-09-11T10:01:00Z","payload":{"type":"message","role":"user","content":"child task"}}`
+	if err := os.WriteFile(path, []byte(fixture), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout bytes.Buffer
+	application := New(false, strings.NewReader(""), &stdout, &bytes.Buffer{})
+	application.Sessions = sessions.Service{HomeDir: home}
+	if err := application.Run(context.Background(), []string{"--json", "session", "list", "--source", "codex", "--all", "--include-subagents"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, expected := range []string{`"id": "child-id"`, `"is_subagent": true`} {
+		if !strings.Contains(stdout.String(), expected) {
+			t.Fatalf("JSON %q does not contain %q", stdout.String(), expected)
+		}
 	}
 }
 

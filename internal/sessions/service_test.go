@@ -132,7 +132,7 @@ func TestCodexSummarySkipsInjectedContextAndPreservesUTF8(t *testing.T) {
 		`{"type":"response_item","timestamp":"2026-09-10T20:00:03Z","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"done"}]}}`,
 	}, "\n"))
 
-	groups, err := (Service{HomeDir: home}).RecentGroups(workspace, 10)
+	groups, err := (Service{HomeDir: home}).RecentGroups(workspace, 10, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -163,12 +163,92 @@ func TestClaudeRecentSummaryCapturesStartedAt(t *testing.T) {
 		`{"type":"assistant","sessionId":"claude-id","timestamp":"2026-09-10T20:05:00Z","message":{"role":"assistant","content":"done"}}`,
 	}, "\n"))
 
-	groups, err := (Service{HomeDir: home}).RecentGroups(workspace, 10)
+	groups, err := (Service{HomeDir: home}).RecentGroups(workspace, 10, false)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(groups.Current) != 1 || groups.Current[0].StartedAt != "2026-09-10T20:00:00Z" {
 		t.Fatalf("recent groups = %#v", groups)
+	}
+}
+
+func TestSubagentSessionsAreFilteredByDefault(t *testing.T) {
+	home := t.TempDir()
+	workspace := t.TempDir()
+
+	writeFixture(t, filepath.Join(home, ".codex", "sessions", "2026", "09", "10", "root.jsonl"), strings.Join([]string{
+		fmt.Sprintf(`{"type":"session_meta","timestamp":"2026-09-10T20:00:00Z","payload":{"id":"codex-root","cwd":%q,"timestamp":"2026-09-10T20:00:00Z","source":"cli"}}`, workspace),
+		`{"type":"response_item","timestamp":"2026-09-10T20:01:00Z","payload":{"type":"message","role":"user","content":"root work"}}`,
+	}, "\n"))
+	writeFixture(t, filepath.Join(home, ".codex", "sessions", "2026", "09", "10", "child.jsonl"), strings.Join([]string{
+		fmt.Sprintf(`{"type":"session_meta","timestamp":"2026-09-10T21:00:00Z","payload":{"id":"codex-child","cwd":%q,"timestamp":"2026-09-10T21:00:00Z","source":{"subagent":{"thread_spawn":{"parent_thread_id":"codex-root"}}}}}`, workspace),
+		fmt.Sprintf(`{"type":"session_meta","timestamp":"2026-09-10T21:00:00Z","payload":{"id":"codex-root","cwd":%q,"timestamp":"2026-09-10T20:00:00Z","source":"cli"}}`, workspace),
+		`{"type":"response_item","timestamp":"2026-09-10T21:01:00Z","payload":{"type":"message","role":"user","content":"child work"}}`,
+	}, "\n"))
+	writeFixture(t, filepath.Join(home, ".claude", "projects", "project", "parent", "subagents", "agent-claude-child.jsonl"),
+		fmt.Sprintf(`{"type":"user","sessionId":"claude-root","agentId":"claude-child","isSidechain":true,"cwd":%q,"timestamp":"2026-09-10T22:00:00Z","message":{"content":"claude child"}}`, workspace))
+	geminiDir := filepath.Join(home, ".gemini", "tmp", "project")
+	writeFixture(t, filepath.Join(geminiDir, ".project_root"), workspace)
+	writeFixture(t, filepath.Join(geminiDir, "chats", "session-gemini-child.json"),
+		`{"sessionId":"gemini-child","kind":"subagent","startTime":"2026-09-10T23:00:00Z","lastUpdated":"2026-09-10T23:01:00Z","messages":[{"type":"user","content":"gemini child","timestamp":"2026-09-10T23:00:00Z"}]}`)
+	openCodeRoot := filepath.Join(home, ".local", "share", "opencode", "project", "project", "storage", "session")
+	writeFixture(t, filepath.Join(openCodeRoot, "info", "opencode-child.json"),
+		`{"id":"opencode-child","parentID":"opencode-root","title":"opencode child","time":{"created":1789081200000,"updated":1789081260000}}`)
+	writeFixture(t, filepath.Join(openCodeRoot, "message", "opencode-child", "message.json"),
+		fmt.Sprintf(`{"id":"message","sessionID":"opencode-child","role":"user","path":{"cwd":%q},"time":{"created":1789081200000}}`, workspace))
+	writeFixture(t, filepath.Join(openCodeRoot, "part", "opencode-child", "message", "part.json"),
+		`{"type":"text","text":"opencode child"}`)
+
+	service := Service{HomeDir: home}
+	items, err := service.List(ListOptions{All: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 || items[0].ID != "codex-root" {
+		t.Fatalf("default sessions = %#v", items)
+	}
+
+	items, err = service.List(ListOptions{All: true, IncludeSubagents: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]bool{
+		"codex-root": false, "codex-child": true, "claude-child": true,
+		"gemini-child": true, "opencode-child": true,
+	}
+	if len(items) != len(want) {
+		t.Fatalf("included sessions = %#v", items)
+	}
+	for _, item := range items {
+		if expected, ok := want[item.ID]; !ok || item.IsSubagent != expected {
+			t.Fatalf("session = %#v", item)
+		}
+	}
+
+	groups, err := service.RecentGroups(workspace, 10, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(groups.Current) != 1 || groups.Current[0].ID != "codex-root" {
+		t.Fatalf("default recent sessions = %#v", groups)
+	}
+	groups, err = service.RecentGroups(workspace, 10, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(groups.Current) != len(want) {
+		t.Fatalf("included recent sessions = %#v", groups)
+	}
+
+	detail, err := service.Info("codex-child", "codex")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if detail.ID != "codex-child" || !detail.IsSubagent {
+		t.Fatalf("codex child detail = %#v", detail)
+	}
+	if _, err := service.Info("codex-root", "codex"); err != nil {
+		t.Fatalf("codex root should remain unambiguous: %v", err)
 	}
 }
 

@@ -40,6 +40,8 @@ ax session list --workspace /path/to/project
 
 Use `ax session providers` to see the native roots AgentX inspects.
 
+Child Agent sessions are hidden from discovery by default. Pass `--include-subagents` to bare `ax` or `ax session list` when you need to inspect them.
+
 ## A native command fails
 
 AgentX preserves the native command's exit behavior. Enable the debug protocol to record the raw external command plan and result:

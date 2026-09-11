@@ -33,6 +33,7 @@ type Message struct {
 type Summary struct {
 	ID           string `json:"id" yaml:"id"`
 	Provider     string `json:"provider" yaml:"provider"`
+	IsSubagent   bool   `json:"is_subagent,omitempty" yaml:"is_subagent,omitempty"`
 	Workspace    string `json:"workspace,omitempty" yaml:"workspace,omitempty"`
 	Title        string `json:"title,omitempty" yaml:"title,omitempty"`
 	StartedAt    string `json:"started_at,omitempty" yaml:"started_at,omitempty"`
@@ -47,11 +48,12 @@ type Detail struct {
 }
 
 type ListOptions struct {
-	Provider  string
-	Workspace string
-	All       bool
-	Limit     int
-	Sort      string
+	Provider         string
+	Workspace        string
+	All              bool
+	IncludeSubagents bool
+	Limit            int
+	Sort             string
 }
 
 type Service struct {
@@ -111,6 +113,9 @@ func (s Service) List(options ListOptions) ([]Summary, error) {
 			return nil, fmt.Errorf("load %s sessions: %w", spec.id, err)
 		}
 		for _, detail := range details {
+			if detail.IsSubagent && !options.IncludeSubagents {
+				continue
+			}
 			if workspace != "" && !matchesWorkspace(detail, workspace) {
 				continue
 			}
@@ -242,15 +247,29 @@ func providerSpecByID(id string) *providerSpec {
 }
 
 func loadClaude(home string) ([]Detail, error) {
-	pattern := filepath.Join(home, ".claude", "projects", "*", "*.jsonl")
-	return loadJSONLGlob(pattern, parseClaude)
+	root, err := loadJSONLGlob(filepath.Join(home, ".claude", "projects", "*", "*.jsonl"), parseClaude)
+	if err != nil {
+		return nil, err
+	}
+	children, err := loadJSONLGlob(filepath.Join(home, ".claude", "projects", "*", "*", "subagents", "*.jsonl"), parseClaude)
+	if err != nil {
+		return nil, err
+	}
+	details := append(root, children...)
+	sortDetails(details)
+	return details, nil
 }
 
 func parseClaude(path string, records []map[string]any) (Detail, bool) {
 	detail := newDetail("claude", path)
 	for _, record := range records {
 		kind := stringValue(record["type"])
-		if detail.ID == "" {
+		if sidechain, _ := record["isSidechain"].(bool); sidechain {
+			detail.IsSubagent = true
+			if agentID := stringValue(record["agentId"]); agentID != "" {
+				detail.ID = agentID
+			}
+		} else if detail.ID == "" {
 			detail.ID = stringValue(record["sessionId"])
 		}
 		if detail.Workspace == "" {
@@ -277,9 +296,12 @@ func parseCodex(path string, records []map[string]any) (Detail, bool) {
 		kind := stringValue(record["type"])
 		payload, _ := record["payload"].(map[string]any)
 		if kind == "session_meta" {
-			detail.ID = firstNonEmpty(stringValue(payload["id"]), stringValue(payload["session_id"]))
-			detail.Workspace = stringValue(payload["cwd"])
-			detail.StartedAt = timeValue(payload["timestamp"])
+			if detail.ID == "" {
+				detail.ID = firstNonEmpty(stringValue(payload["id"]), stringValue(payload["session_id"]))
+				detail.Workspace = stringValue(payload["cwd"])
+				detail.StartedAt = timeValue(payload["timestamp"])
+				detail.IsSubagent = codexSubagentSource(payload["source"])
+			}
 			continue
 		}
 		if kind != "response_item" || stringValue(payload["type"]) != "message" {
@@ -312,6 +334,7 @@ func loadGemini(home string) ([]Detail, error) {
 		}
 		detail := newDetail("gemini", path)
 		detail.ID = stringValue(record["sessionId"])
+		detail.IsSubagent = stringValue(record["kind"]) == "subagent"
 		detail.Title = stringValue(record["summary"])
 		detail.StartedAt = timeValue(record["startTime"])
 		detail.UpdatedAt = timeValue(record["lastUpdated"])
@@ -389,6 +412,7 @@ func loadOpenCode(home string) ([]Detail, error) {
 		}
 		detail := newDetail("opencode", path)
 		detail.ID = stringValue(info["id"])
+		detail.IsSubagent = stringValue(info["parentID"]) != ""
 		detail.Title = stringValue(info["title"])
 		if times, ok := info["time"].(map[string]any); ok {
 			detail.StartedAt = timeValue(times["created"])
@@ -492,6 +516,12 @@ func readJSONL(path string) ([]map[string]any, error) {
 
 func newDetail(provider, source string) Detail {
 	return Detail{Summary: Summary{Provider: provider, Source: source}}
+}
+
+func codexSubagentSource(value any) bool {
+	source, _ := value.(map[string]any)
+	_, ok := source["subagent"]
+	return ok
 }
 
 func appendMessage(detail *Detail, role, content, timestamp string) {
