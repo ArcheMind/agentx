@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/ArcheMind/agentx/internal/app"
 	"github.com/ArcheMind/agentx/internal/runtime"
@@ -22,13 +23,41 @@ func main() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	application := app.New(false, os.Stdin, os.Stdout, os.Stderr)
+	application := app.New(false, &demoInput{keys: []demoKey{
+		{value: "j", pause: 700 * time.Millisecond},
+		{value: "\r", pause: 500 * time.Millisecond},
+		{value: "j", pause: 700 * time.Millisecond},
+		{value: "\r", pause: 300 * time.Millisecond},
+		{value: "j", pause: 600 * time.Millisecond},
+	}}, os.Stdout, os.Stderr)
+	application.Color = true
 	application.Sessions = sessions.Service{HomeDir: filepath.Join(demoDirectory, "home")}
 	application.Runner = demoRunner{}
 	if err := application.Run(context.Background(), os.Args[1:]); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
+}
+
+type demoInput struct {
+	keys []demoKey
+}
+
+type demoKey struct {
+	value string
+	pause time.Duration
+}
+
+func (input *demoInput) Read(buffer []byte) (int, error) {
+	if len(input.keys) == 0 {
+		for {
+			time.Sleep(time.Hour)
+		}
+	}
+	key := input.keys[0]
+	input.keys = input.keys[1:]
+	time.Sleep(key.pause)
+	return copy(buffer, key.value), nil
 }
 
 type demoRunner struct{}
