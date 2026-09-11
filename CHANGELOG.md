@@ -4,6 +4,18 @@ All notable changes to AgentX are documented here. The format follows [Keep a Ch
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-09-10
+
+### Added
+
+- Interactive, viewport-based session selection with grouped current-workspace and global sessions.
+- Linux, macOS, and Windows CI coverage.
+- Documentation and a recorded demo for interactive session resume workflows.
+
+### Changed
+
+- Faster session browsing with compact, single-line workspace context for global sessions.
+
 ## [0.1.1] - 2026-09-10
 
 ### Added
@@ -22,6 +34,7 @@ All notable changes to AgentX are documented here. The format follows [Keep a Ch
 - Structured errors and opt-in raw external-call debug logging.
 - Consistency audit covering CLI grammar, documentation, capabilities, and drivers.
 
-[Unreleased]: https://github.com/ArcheMind/agentx/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/ArcheMind/agentx/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/ArcheMind/agentx/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/ArcheMind/agentx/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/ArcheMind/agentx/releases/tag/v0.1.0
