@@ -14,7 +14,7 @@
 - [Design index](design/INDEX.md)
   - [Native-first runtime design and capability baseline](design/tier-1-native-runtime.md)
   - [Verified v0.1.0 implementation](design/v0.1.0-implementation.md)
-  - [Interactive session selector and bounded recent discovery](design/interactive-session-selector-implementation.md)
+  - [Interactive session selector, bounded recent discovery, and known Codex continuation identity defect](design/interactive-session-selector-implementation.md)
   - [Verified repository productization and release state](design/repository-productization-implementation.md)
 
 ## Usage

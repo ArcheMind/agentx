@@ -8,4 +8,4 @@ After selecting a session, choose one of the installed target Agents and then a 
 
 `Global` contains summaries whose workspace is classified outside the current workspace. Each discovered summary is assigned to Current or Global, not both. If one group is empty it remains visible as `No recent sessions`. If both groups are empty, `ax` exits with an explicit no-recent-sessions error.
 
-Rows with the same provider, displayed minute, and title can represent different native sessions. The selector preserves distinct session IDs but does not display those IDs or semantically merge sessions with identical visible metadata.
+Rows with the same provider, displayed minute, and title can represent different native sessions. There is also a known Codex continuation defect: when a JSONL file contains multiple top-level `session_meta` records, bounded discovery can retain the first ID while full loading overwrites it with a later embedded old ID. Different files may then collapse to one ID and fail as ambiguous even with `--source codex`; the selector does not display enough identity information to distinguish this case visually.
