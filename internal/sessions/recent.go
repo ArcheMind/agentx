@@ -104,6 +104,9 @@ func recentClaudeSummary(path string) (Summary, bool, error) {
 	item := Summary{Provider: "claude", Source: path, UpdatedAt: recentFileTimestamp(path)}
 	err := scanJSONL(path, func(record map[string]any) bool {
 		kind := stringValue(record["type"])
+		if item.StartedAt == "" {
+			item.StartedAt = timeValue(record["timestamp"])
+		}
 		if item.ID == "" {
 			item.ID = stringValue(record["sessionId"])
 		}

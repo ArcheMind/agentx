@@ -139,6 +139,9 @@ func TestCodexSummarySkipsInjectedContextAndPreservesUTF8(t *testing.T) {
 	if len(groups.Current) != 1 || groups.Current[0].Title != "修复中文标题并提高会话加载速度" {
 		t.Fatalf("recent groups = %#v", groups)
 	}
+	if groups.Current[0].StartedAt != "2026-09-10T20:00:00Z" {
+		t.Fatalf("recent session started at = %q", groups.Current[0].StartedAt)
+	}
 	items, err := (Service{HomeDir: home}).List(ListOptions{Workspace: workspace, Limit: 10, Sort: "date"})
 	if err != nil {
 		t.Fatal(err)
@@ -148,6 +151,24 @@ func TestCodexSummarySkipsInjectedContextAndPreservesUTF8(t *testing.T) {
 	}
 	if got := oneLine("你好世界", 3); got != "你好…" {
 		t.Fatalf("oneLine = %q", got)
+	}
+}
+
+func TestClaudeRecentSummaryCapturesStartedAt(t *testing.T) {
+	home := t.TempDir()
+	workspace := t.TempDir()
+	path := filepath.Join(home, ".claude", "projects", "project", "session.jsonl")
+	writeFixture(t, path, strings.Join([]string{
+		fmt.Sprintf(`{"type":"user","sessionId":"claude-id","cwd":%q,"timestamp":"2026-09-10T20:00:00Z","message":{"role":"user","content":"work"}}`, workspace),
+		`{"type":"assistant","sessionId":"claude-id","timestamp":"2026-09-10T20:05:00Z","message":{"role":"assistant","content":"done"}}`,
+	}, "\n"))
+
+	groups, err := (Service{HomeDir: home}).RecentGroups(workspace, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(groups.Current) != 1 || groups.Current[0].StartedAt != "2026-09-10T20:00:00Z" {
+		t.Fatalf("recent groups = %#v", groups)
 	}
 }
 

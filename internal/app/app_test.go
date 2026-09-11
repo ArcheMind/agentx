@@ -361,6 +361,22 @@ func TestSessionPresentationUsesLocalTimeWorkspaceAndUnicode(t *testing.T) {
 			t.Fatalf("displaySessionTime(%q) = %q, want %q", test.value, got, test.want)
 		}
 	}
+	for _, test := range []struct {
+		started string
+		updated string
+		want    string
+	}{
+		{started: "2026-09-10T15:00:00Z", updated: "2026-09-10T15:00:08Z", want: "(8s)"},
+		{started: "2026-09-10T15:00:00Z", updated: "2026-09-10T15:42:00Z", want: "(42m)"},
+		{started: "2026-09-10T15:00:00Z", updated: "2026-09-10T16:07:00Z", want: "(1h 07m)"},
+		{started: "2026-09-07T13:00:00Z", updated: "2026-09-10T15:00:00Z", want: "(3d 02h)"},
+		{started: "", updated: "2026-09-10T15:00:00Z", want: ""},
+		{started: "2026-09-10T16:00:00Z", updated: "2026-09-10T15:00:00Z", want: ""},
+	} {
+		if got := displaySessionDuration(test.started, test.updated); got != test.want {
+			t.Fatalf("displaySessionDuration(%q, %q) = %q, want %q", test.started, test.updated, got, test.want)
+		}
+	}
 
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -385,6 +401,7 @@ func TestSessionRowsUseWorkspaceColumnOnlyForGlobal(t *testing.T) {
 			Heading: "Current workspace",
 			Items: []sessions.Summary{{
 				Provider:  "claude",
+				StartedAt: "2026-09-10T14:00:00Z",
 				UpdatedAt: "2026-09-10T15:00:00Z",
 				Workspace: "/work/current",
 				Title:     strings.Repeat("current", 10),
@@ -406,9 +423,12 @@ func TestSessionRowsUseWorkspaceColumnOnlyForGlobal(t *testing.T) {
 		t.Fatalf("rows = %#v", rows)
 	}
 	currentRow := rows[2].text
-	currentTitle := singleLine(groups[0].Items[0].Title, 67)
+	currentTitle := singleLine(groups[0].Items[0].Title, 57)
 	if strings.Contains(currentRow, groups[0].Items[0].Workspace) || !strings.HasSuffix(currentRow, currentTitle) {
 		t.Fatalf("current row should omit workspace column: %q", currentRow)
+	}
+	if !strings.Contains(currentRow, "Today 15:00 (1h 00m)") {
+		t.Fatalf("current row should include session duration in the time column: %q", currentRow)
 	}
 	if len([]rune(currentRow)) != 94 {
 		t.Fatalf("current row width = %d, want 94 before selection marker: %q", len([]rune(currentRow)), currentRow)
@@ -416,7 +436,7 @@ func TestSessionRowsUseWorkspaceColumnOnlyForGlobal(t *testing.T) {
 
 	globalRow := rows[5].text
 	workspace := displayWorkspace(groups[1].Items[0].Workspace, 20)
-	globalTitle := singleLine(groups[1].Items[0].Title, 45)
+	globalTitle := singleLine(groups[1].Items[0].Title, 35)
 	if !strings.Contains(globalRow, workspace+"  "+globalTitle) {
 		t.Fatalf("global row does not put workspace before title: %q", globalRow)
 	}
