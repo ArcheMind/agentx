@@ -14,17 +14,17 @@ The selector only chooses a summary from the native read-only session service. F
 
 Codex title discovery skips injected context beginning with `# AGENTS.md instructions` or `<environment_context>`. Display shortening in `oneLine` and `singleLine` operates on runes, so multibyte UTF-8 titles are not split.
 
-Session times render in local friendly form: Today, Yesterday, month/day within the current year, and a year-bearing form across years. Global entries show a compact workspace on a second line; missing workspace is explicitly `unknown`. Layout and redraw line accounting avoid wrapping at 96 columns.
+Session times render in local friendly form: Today, Yesterday, month/day within the current year, and a year-bearing form across years. Both Current and Global entries are single-line rows; Global rows inline a truncated workspace label (28 chars) alongside the title (30 chars). Missing workspace is explicitly `unknown`. Layout and redraw line accounting avoid wrapping at 96 columns.
 
 ## Viewport architecture (resolved vertical layout defect)
 
 Commit `0d4fa5e` replaced the unbounded ANSI redraw with a viewport-based renderer.
 
-**Rendering and layout decoupled**: a `contentRow` struct and `buildContentRows()` function pre-compute all content (headings, empty-state lines, session rows, Global workspace detail lines) into a flat list built once per render cycle. Selection index maps into this flat list via `selectedRowRange()`, which returns start/end rows for the selected item (including multi-line Global detail).
+**Rendering and layout decoupled**: a `contentRow` struct and `buildContentRows()` function pre-compute all content (headings, empty-state lines, session rows) into a flat list built once per render cycle. Every item -- Current or Global -- is a single row. Selection index maps into this flat list via `selectedRowRange()`, which returns (i, i) for the selected item.
 
 **Terminal height detection**: `terminalHeight()` calls `term.GetSize` on Stdin. Non-terminal environments return 0, interpreted as unlimited height (test-compatible).
 
-**Viewport scrolling**: `chooseSession()` maintains a `viewStart` offset. Each render cycle calls `selectedRowRange()` and adjusts `viewStart` so the selected item (including Global detail lines) stays within the visible window. Viewport height = termH - 2 (header) - 2 (scroll indicators).
+**Viewport scrolling**: `chooseSession()` maintains a `viewStart` offset. Each render cycle calls `selectedRowRange()` and adjusts `viewStart` so the selected item stays within the visible window. Viewport height = termH - 2 (header) - 2 (scroll indicators).
 
 **Scroll indicators**: `up N more` / `down N more` appear when selectable sessions are hidden above/below the viewport. Counts reflect hidden sessions only (structural rows excluded).
 
@@ -38,7 +38,7 @@ The bounded discovery path addresses a verified production-scale failure: the us
 
 ## Verification
 
-Tests cover recent discovery, bare-`ax` empty behavior, cross-boundary movement, each singly empty group, both groups empty, cancellation, Global de-duplication, titles, time and workspace presentation, UTF-8 truncation, redraw layout, and viewport behavior. Viewport tests (`TestSessionSelectorViewport`: overflow bottom indicator, scroll follow, content-fits-no-indicator; `TestSelectedRowRangeIncludesGlobalDetail`) verify scrolling and indicator correctness. The implementation handoff reports `make verify` passing for commit `0d4fa5e`.
+Tests cover recent discovery, bare-`ax` empty behavior, cross-boundary movement, each singly empty group, both groups empty, cancellation, Global de-duplication, titles, time and workspace presentation, UTF-8 truncation, redraw layout, and viewport behavior. Viewport tests (`TestSessionSelectorViewport`: overflow bottom indicator, scroll follow, content-fits-no-indicator) verify scrolling and indicator correctness.
 
 ## Files
 
