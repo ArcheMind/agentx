@@ -14,7 +14,7 @@ The selector only chooses a summary from the native read-only session service. F
 
 Codex title discovery skips injected context beginning with `# AGENTS.md instructions` or `<environment_context>`. Display shortening in `oneLine` and `singleLine` operates on runes, so multibyte UTF-8 titles are not split.
 
-Session times render in local friendly form: Today, Yesterday, month/day within the current year, and a year-bearing form across years. Both Current and Global entries are single-line rows with columns ordered provider, time, workspace, title. Time is limited to 15 characters. Workspace is the third column, limited to 20 characters, and left-truncated so the path suffix remains visible; Current-workspace rows leave it empty and Global rows show `unknown` when unavailable. Title is the final column and is limited to 45 characters. Layout and redraw line accounting avoid wrapping at 96 columns.
+Session times render in local friendly form: Today, Yesterday, month/day within the current year, and a year-bearing form across years, limited to 15 characters. Current-workspace entries are single-line provider, time, title rows; they neither create nor reserve a workspace column, and their title is limited to 67 characters. Global entries are single-line provider, time, workspace, title rows. Workspace is the third column, limited to 20 characters, and left-truncated so the path suffix remains visible; missing workspace displays `unknown`. The final Global title is limited to 45 characters. Layout and redraw line accounting avoid wrapping at 96 columns.
 
 ## Viewport architecture (resolved vertical layout defect)
 
