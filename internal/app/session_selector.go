@@ -53,11 +53,11 @@ func buildContentRows(groups []sessionGroup, now time.Time) []contentRow {
 				title = item.ID
 			}
 			updated := displaySessionTime(item.UpdatedAt, now)
-			label := singleLine(title, 52)
+			workspace := ""
 			if group.Heading == "Global" {
-				label = singleLine(title, 32) + " · " + displayWorkspace(item.Workspace, 28)
+				workspace = displayWorkspace(item.Workspace, 20)
 			}
-			text := fmt.Sprintf("%-8s  %-18s  %s", item.Provider, updated, label)
+			text := fmt.Sprintf("%-8s  %-15s  %-20s  %s", item.Provider, updated, workspace, singleLine(title, 45))
 			rows = append(rows, contentRow{text: text, itemIndex: itemIndex})
 			itemIndex++
 		}
@@ -278,7 +278,7 @@ func makeRaw(input io.Reader) (func(), error) {
 func displaySessionTime(value string, now time.Time) string {
 	parsed, err := time.Parse(time.RFC3339Nano, value)
 	if err != nil {
-		return singleLine(value, 18)
+		return singleLine(value, 15)
 	}
 	parsed = parsed.In(now.Location())
 	if sameCalendarDay(parsed, now) {
