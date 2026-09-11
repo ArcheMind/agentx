@@ -19,6 +19,7 @@ build:
 
 smoke: build
 	./bin/ax version
+	./bin/ax --yaml list >/dev/null
 	./bin/ax --json agent list >/dev/null
 	./bin/ax --yaml agent list >/dev/null
 	./bin/ax agent install codex --dry-run >/dev/null
