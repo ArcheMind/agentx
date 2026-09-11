@@ -92,6 +92,56 @@ func TestAuthStatusTextOutput(t *testing.T) {
 	}
 }
 
+func TestOverviewTreeOutput(t *testing.T) {
+	result := overviewResult{Agents: []agentOverview{
+		{
+			ID: "codex", Name: "Codex CLI", Installed: true, Path: "/usr/local/bin/codex", Version: "codex-cli 0.108.0",
+			Auth:   authOverview{Supported: true, Providers: []runtime.AuthProvider{{ID: "codex", Method: "ChatGPT"}}},
+			Models: modelsOverview{Supported: true, Items: []runtime.Model{{ID: "gpt-5.4", DisplayName: "GPT-5.4"}}},
+		},
+		{
+			ID: "gemini", Name: "Gemini CLI",
+			Auth:   authOverview{Providers: []runtime.AuthProvider{}},
+			Models: modelsOverview{Items: []runtime.Model{}},
+		},
+	}}
+	var stdout bytes.Buffer
+	if err := writeOverviewTree(&stdout, result); err != nil {
+		t.Fatal(err)
+	}
+	for _, expected := range []string{
+		"agents\n├── codex — Codex CLI",
+		"│   ├── auth",
+		"│   │   └── codex: logged in (ChatGPT)",
+		"│   └── models",
+		"│       └── gpt-5.4 — GPT-5.4",
+		"└── gemini — Gemini CLI",
+		"    ├── auth: unsupported",
+		"    └── models: unsupported",
+	} {
+		if !strings.Contains(stdout.String(), expected) {
+			t.Fatalf("tree %q does not contain %q", stdout.String(), expected)
+		}
+	}
+}
+
+func TestOverviewYAMLOutput(t *testing.T) {
+	result := overviewResult{Agents: []agentOverview{{
+		ID: "codex", Name: "Codex CLI", Installed: true,
+		Auth:   authOverview{Supported: true, Providers: []runtime.AuthProvider{}},
+		Models: modelsOverview{Supported: true, Items: []runtime.Model{}, Error: "model source unavailable"},
+	}}}
+	var stdout bytes.Buffer
+	if err := writeStructured(&stdout, result, OutputYAML); err != nil {
+		t.Fatal(err)
+	}
+	for _, expected := range []string{"agents:", "id: codex", "auth:", "providers: []", "models:", "items: []", "error: model source unavailable"} {
+		if !strings.Contains(stdout.String(), expected) {
+			t.Fatalf("YAML %q does not contain %q", stdout.String(), expected)
+		}
+	}
+}
+
 func TestStructuredOutputRejectsNativePassthrough(t *testing.T) {
 	application := New(false, strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{})
 	err := application.Run(context.Background(), []string{"--json", "agent", "install", "codex"})

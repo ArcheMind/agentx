@@ -74,6 +74,8 @@ func (a App) Run(ctx context.Context, args []string) error {
 		}
 		fmt.Fprintf(a.Stdout, "agentx %s\n", Version)
 		return nil
+	case "list":
+		return a.overview(ctx, args[1:])
 	case "agent":
 		return a.agent(ctx, args[1:])
 	case "auth":
@@ -118,17 +120,7 @@ func (a App) list(ctx context.Context, args []string) error {
 	}
 	detections := make([]runtime.Detection, 0)
 	for _, agent := range a.Registry.All() {
-		detection := runtime.Detection{ID: agent.ID, Name: agent.Name, Capabilities: agent.Capabilities}
-		path, lookupErr := exec.LookPath(agent.Binary)
-		if lookupErr == nil {
-			detection.Installed = true
-			detection.Path = path
-			result, versionErr := a.Runner.Execute(ctx, runtime.CommandPlan{Executable: path, Args: []string{"--version"}}, runtime.ExecuteOptions{})
-			if versionErr == nil {
-				detection.Version = firstLine(result.Stdout + result.Stderr)
-			}
-		}
-		detections = append(detections, detection)
+		detections = append(detections, a.detectAgent(ctx, agent))
 	}
 	if a.Output != OutputText {
 		return writeStructured(a.Stdout, detections, a.Output)
@@ -754,6 +746,7 @@ func (a App) printHelp() {
 Usage:
   ax
   ax <agent> [--model <model>] [--cwd <path>] [--dry-run] [-- <native args...>]
+  ax [--json|--yaml] list
   ax [--json|--yaml] agent list
   ax agent which <agent>
   ax [--json|--yaml] agent install <agent> [--version <version>] [--dry-run]

@@ -72,6 +72,10 @@ ax dsh -- --profile acp
 The resource-oriented commands cover setup and inspection without changing the daily launch path.
 
 ```bash
+# Preview installed agents, authentication, and available models
+ax list
+ax --yaml list
+
 # Discover native agents already on PATH
 ax agent list
 
@@ -140,6 +144,7 @@ The exact native versions and evidence behind this table live in the [lifecycle 
 ```text
 ax
 ax <agent> [--model <model>] [--cwd <path>] [--dry-run] [-- <native args...>]
+ax [--json|--yaml] list
 
 ax agent list
 ax agent which <agent>
@@ -164,6 +169,7 @@ Place `--json` or `--yaml` before the command for AgentX-owned results and dry-r
 
 ```bash
 ax --json agent list
+ax --yaml list
 ax --yaml session info <session-id> --source codex
 ax --json codex --model gpt-5.4 --dry-run
 ```

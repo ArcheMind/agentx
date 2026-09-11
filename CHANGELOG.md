@@ -4,6 +4,10 @@ All notable changes to AgentX are documented here. The format follows [Keep a Ch
 
 ## [Unreleased]
 
+### Added
+
+- `ax list` tree preview of agent installation, authentication, and model availability, with JSON and YAML output.
+
 ## [0.2.0] - 2026-09-10
 
 ### Added
