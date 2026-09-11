@@ -1,0 +1,2 @@
+{"type":"user","sessionId":"claude-incident-review","cwd":"../api-gateway","timestamp":"2026-09-10T17:15:00Z","message":{"role":"user","content":"Review the production timeout incident and propose follow-up work"}}
+{"type":"assistant","sessionId":"claude-incident-review","timestamp":"2026-09-10T17:48:00Z","message":{"role":"assistant","content":"Correlated request traces with the upstream retry window."}}
