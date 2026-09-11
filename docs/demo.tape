@@ -4,7 +4,7 @@ Set Shell bash
 Set Width 1200
 Set Height 720
 Set FontSize 16
-Set TypingSpeed 55ms
+Set TypingSpeed 25ms
 Set Theme "GitHub Dark"
 Set Padding 24
 Set Margin 24
@@ -32,11 +32,9 @@ Type "ax"
 Sleep 400ms
 Enter
 Wait+Screen /Choose a recent session/
-Sleep 1.4s
-Down
-Sleep 900ms
-Down
-Sleep 1.8s
+Wait+Screen /Choose an agent:/
+Wait+Screen /Choose a model:/
+Sleep 1.5s
 
 Hide
 Ctrl+C
