@@ -3,7 +3,7 @@ Output docs/assets/interactive-resume.gif
 Set Shell bash
 Set Width 1200
 Set Height 720
-Set FontSize 22
+Set FontSize 16
 Set TypingSpeed 55ms
 Set Theme "GitHub Dark"
 Set Padding 24
@@ -35,18 +35,11 @@ Wait+Screen /Choose a recent session/
 Sleep 1.4s
 Down
 Sleep 900ms
-Enter
-Wait+Screen /Choose an agent:/
-Sleep 1.4s
-Type "j"
-Sleep 300ms
-Enter
-Wait+Screen /Choose a model:/
-Sleep 1.2s
-Enter
-Wait+Screen /Cross-Agent session handed off/
-Sleep 2.5s
+Down
+Sleep 1.8s
 
 Hide
+Ctrl+C
+Sleep 200ms
 Type "/bin/rm -f /tmp/agentx-vhs-demo"
 Enter

@@ -1,0 +1,3 @@
+{"type":"session","id":"pi-session-selector","cwd":".","timestamp":"2026-09-11T09:40:00Z"}
+{"type":"message","message":{"role":"user","timestamp":"2026-09-11T09:40:00Z","content":[{"type":"text","text":"Reduce duplicate state in the keyboard navigation handler"}]}}
+{"type":"message","message":{"role":"assistant","timestamp":"2026-09-11T10:24:00Z","content":[{"type":"text","text":"Removed the overlapping selection state and preserved navigation behavior."}]}}
