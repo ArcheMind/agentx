@@ -20,6 +20,12 @@ type NativeAuth struct {
 	ParseStatus       func(runtime.CommandResult, error) (runtime.AuthStatus, error)
 }
 
+// LoginExecutor covers native login flows that require an SDK-owned interaction
+// instead of a single executable invocation.
+type LoginExecutor interface {
+	Login(context.Context, runtime.Runner, runtime.ExecuteOptions) (runtime.CommandResult, error)
+}
+
 func (d NativeAuth) PlanLogin() runtime.AuthPlan {
 	return runtime.AuthPlan{Command: d.Command, Instruction: d.Instruction}
 }

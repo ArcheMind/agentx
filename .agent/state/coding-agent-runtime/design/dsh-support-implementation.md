@@ -11,7 +11,11 @@ DeepSeek Harness (DSH) is integrated on `main` with native AgentX support for la
 - Launching invokes the native executable, honors AgentX's working-directory handling, and passes arguments after `--` through unchanged.
 - Model discovery uses DSH's native model directory.
 - Credential status is exposed without AgentX reading or storing credentials.
-- Login opens DSH's native Web UI entry point.
+- Login opens DSH's native Web UI entry point; it is API-key configuration, not OAuth.
+
+## Native credential behavior
+
+`dsh web` starts the local Web UI. Users configure a provider API key in **Settings → Models**. The Web credential remote writes only to DSH-managed `$DSH_HOME/.credentials.yaml`; the file is mode `0600`, uses an inter-process write lock, and is watched for hot reload. DSH applies credentials in this order: inherited environment variables, managed `credentials.yaml`, current-directory `.env`, then `$DSH_HOME/.env`. Environment layers are read-only and override credentials entered in the Web UI.
 
 The current AgentX registry declares these verified integrations.
 
@@ -21,7 +25,7 @@ AgentX does not expose DSH profile, ACP, SDK, headless, or session operations. M
 
 ## Why
 
-DSH's native source and executable surfaces provide the model directory, credential-state, and Web UI login mappings used by AgentX. Profile configuration remains the authoritative model-selection mechanism. The configurable compressed, versioned profile store does not establish an independent stable session command or session contract for AgentX.
+The installed DSH `v0.1.5-rc.1` Web app, Models UI, `credentials-local` source, and CLI help establish the API-key workflow and credential precedence. Native source and executable surfaces also provide the model directory, credential-state, and Web UI mappings used by AgentX. Profile configuration remains the authoritative model-selection mechanism. The configurable compressed, versioned profile store does not establish an independent stable session command or session contract for AgentX.
 
 ## Files
 
