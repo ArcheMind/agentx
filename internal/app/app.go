@@ -663,7 +663,7 @@ func (a App) interactiveResume(ctx context.Context, includeSubagents bool) error
 	for index, agent := range agents {
 		labels[index] = agent.ID
 	}
-	agentIndex, err := a.choose(reader, "Choose an agent:\n", labels)
+	agentIndex, err := a.chooseOptions(reader, "Choose an agent:", labels)
 	if err != nil {
 		return err
 	}
@@ -676,8 +676,9 @@ func (a App) interactiveResume(ctx context.Context, includeSubagents bool) error
 }
 
 func (a App) chooseModel(ctx context.Context, reader *bufio.Reader, agent runtime.Agent) (string, error) {
-	if _, unsupported := agent.Models.(drivers.UnsupportedModels); unsupported {
-		return a.prompt(reader, fmt.Sprintf("Model for %s (leave blank for native default): ", agent.ID), true)
+	if _, unsupported := agent.Models.(drivers.UnsupportedModels); unsupported || !hasCapability(agent.Capabilities, runtime.CapabilityModelSelect) {
+		_, err := a.chooseOptions(reader, "Choose a model:", []string{"Native default"})
+		return "", err
 	}
 	models, err := agent.Models.ListModels(ctx, a.Runner)
 	if err != nil {
@@ -694,7 +695,7 @@ func (a App) chooseModel(ctx context.Context, reader *bufio.Reader, agent runtim
 			labels[index+1] += "  " + model.DisplayName
 		}
 	}
-	choice, err := a.choose(reader, "Choose a model:\n", labels)
+	choice, err := a.chooseOptions(reader, "Choose a model:", labels)
 	if err != nil {
 		return "", err
 	}
@@ -702,25 +703,6 @@ func (a App) chooseModel(ctx context.Context, reader *bufio.Reader, agent runtim
 		return "", nil
 	}
 	return models[choice-1].ID, nil
-}
-
-func (a App) choose(reader *bufio.Reader, prompt string, options []string) (int, error) {
-	fmt.Fprint(a.Stdout, prompt)
-	for index, option := range options {
-		fmt.Fprintf(a.Stdout, "  %d. %s\n", index+1, option)
-	}
-	value, err := a.prompt(reader, "Selection (or q to cancel): ", false)
-	if err != nil {
-		return 0, err
-	}
-	if strings.EqualFold(value, "q") {
-		return 0, errors.New("interactive session resume cancelled")
-	}
-	choice, err := strconv.Atoi(value)
-	if err != nil || choice < 1 || choice > len(options) {
-		return 0, fmt.Errorf("selection must be a number from 1 to %d", len(options))
-	}
-	return choice - 1, nil
 }
 
 func (a App) prompt(reader *bufio.Reader, label string, allowBlank bool) (string, error) {
