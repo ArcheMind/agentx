@@ -96,6 +96,18 @@ ax auth login dsh
 ax auth status dsh
 ```
 
+`ax list` is a readiness view. Uninstalled, logged-out, and unknown agents stay on one line; only agents with verified authentication expand their accounts and currently available models. Terminal output uses color for readiness and status, while pipes, redirects, JSON, YAML, and `NO_COLOR` remain free of ANSI sequences.
+
+```text
+agents
+├── claude
+│   ├── account: claude (claude.ai, max)
+│   └── models (status unknown)
+├── codex (not logged in)
+├── gemini (status unknown)
+└── pi (not installed)
+```
+
 ## Explicit session commands
 
 Bare `ax` is the normal resume flow. Use the session commands when you need exact filters, inspection, or a non-interactive target.

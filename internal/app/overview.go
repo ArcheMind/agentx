@@ -3,10 +3,29 @@ package app
 import (
 	"context"
 	"fmt"
+	"io"
+	"os"
 	"os/exec"
 	"strings"
 
 	"github.com/ArcheMind/agentx/internal/runtime"
+)
+
+type overviewStatus string
+
+const (
+	overviewReady        overviewStatus = "ready"
+	overviewNotInstalled overviewStatus = "not_installed"
+	overviewNotLoggedIn  overviewStatus = "not_logged_in"
+	overviewUnknown      overviewStatus = "unknown"
+)
+
+type modelStatus string
+
+const (
+	modelsAvailable modelStatus = "available"
+	modelsNone      modelStatus = "none_available"
+	modelsUnknown   modelStatus = "unknown"
 )
 
 type overviewResult struct {
@@ -14,43 +33,52 @@ type overviewResult struct {
 }
 
 type agentOverview struct {
-	ID        string         `json:"id" yaml:"id"`
-	Name      string         `json:"name" yaml:"name"`
-	Installed bool           `json:"installed" yaml:"installed"`
-	Path      string         `json:"path,omitempty" yaml:"path,omitempty"`
-	Version   string         `json:"version,omitempty" yaml:"version,omitempty"`
-	Auth      authOverview   `json:"auth" yaml:"auth"`
-	Models    modelsOverview `json:"models" yaml:"models"`
-}
-
-type authOverview struct {
-	Supported bool                   `json:"supported" yaml:"supported"`
-	Providers []runtime.AuthProvider `json:"providers" yaml:"providers"`
-	Error     string                 `json:"error,omitempty" yaml:"error,omitempty"`
+	ID       string                 `json:"id" yaml:"id"`
+	Name     string                 `json:"name" yaml:"name"`
+	Status   overviewStatus         `json:"status" yaml:"status"`
+	Accounts []runtime.AuthProvider `json:"accounts,omitempty" yaml:"accounts,omitempty"`
+	Models   *modelsOverview        `json:"models,omitempty" yaml:"models,omitempty"`
 }
 
 type modelsOverview struct {
-	Supported bool            `json:"supported" yaml:"supported"`
-	Items     []runtime.Model `json:"items" yaml:"items"`
-	Error     string          `json:"error,omitempty" yaml:"error,omitempty"`
+	Status modelStatus     `json:"status" yaml:"status"`
+	Items  []overviewModel `json:"items,omitempty" yaml:"items,omitempty"`
+}
+
+type overviewModel struct {
+	ID          string `json:"id" yaml:"id"`
+	DisplayName string `json:"display_name,omitempty" yaml:"display_name,omitempty"`
 }
 
 func (a App) overview(ctx context.Context, args []string) error {
 	if len(args) != 0 {
 		return fmt.Errorf("usage: ax [--json|--yaml] list")
 	}
-	result := overviewResult{Agents: make([]agentOverview, 0, len(a.Registry.All()))}
-	for _, agent := range a.Registry.All() {
-		detection := a.detectAgent(ctx, agent)
+	agents := a.Registry.All()
+	result := overviewResult{Agents: make([]agentOverview, 0, len(agents))}
+	for _, agent := range agents {
+		detection := detectInstalled(agent)
 		result.Agents = append(result.Agents, a.queryAgentOverview(ctx, agent, detection))
 	}
 	if a.Output != OutputText {
 		return writeStructured(a.Stdout, result, a.Output)
 	}
-	return writeOverviewTree(a.Stdout, result)
+	return writeOverviewTree(a.Stdout, result, a.Color)
 }
 
 func (a App) detectAgent(ctx context.Context, agent runtime.Agent) runtime.Detection {
+	detection := detectInstalled(agent)
+	if !detection.Installed {
+		return detection
+	}
+	result, err := a.Runner.Execute(ctx, runtime.CommandPlan{Executable: detection.Path, Args: []string{"--version"}}, runtime.ExecuteOptions{})
+	if err == nil {
+		detection.Version = firstLine(result.Stdout + result.Stderr)
+	}
+	return detection
+}
+
+func detectInstalled(agent runtime.Agent) runtime.Detection {
 	detection := runtime.Detection{ID: agent.ID, Name: agent.Name, Capabilities: agent.Capabilities}
 	path, err := exec.LookPath(agent.Binary)
 	if err != nil {
@@ -58,41 +86,50 @@ func (a App) detectAgent(ctx context.Context, agent runtime.Agent) runtime.Detec
 	}
 	detection.Installed = true
 	detection.Path = path
-	result, err := a.Runner.Execute(ctx, runtime.CommandPlan{Executable: path, Args: []string{"--version"}}, runtime.ExecuteOptions{})
-	if err == nil {
-		detection.Version = firstLine(result.Stdout + result.Stderr)
-	}
 	return detection
 }
 
 func (a App) queryAgentOverview(ctx context.Context, agent runtime.Agent, detection runtime.Detection) agentOverview {
-	item := agentOverview{
-		ID: detection.ID, Name: detection.Name, Installed: detection.Installed,
-		Path: detection.Path, Version: detection.Version,
-		Auth:   authOverview{Supported: hasCapability(agent.Capabilities, runtime.CapabilityAuthStatus), Providers: []runtime.AuthProvider{}},
-		Models: modelsOverview{Supported: hasCapability(agent.Capabilities, runtime.CapabilityModelList), Items: []runtime.Model{}},
+	item := agentOverview{ID: detection.ID, Name: detection.Name}
+	if !detection.Installed {
+		item.Status = overviewNotInstalled
+		return item
 	}
-	if item.Auth.Supported {
-		if !item.Installed {
-			item.Auth.Error = "agent is not installed"
-		} else {
-			status, err := agent.Auth.Status(ctx, a.Runner)
-			if err != nil {
-				item.Auth.Error = err.Error()
-			} else {
-				item.Auth.Providers = status.Providers
-			}
-		}
+	if !hasCapability(agent.Capabilities, runtime.CapabilityAuthStatus) {
+		item.Status = overviewUnknown
+		return item
 	}
-	if item.Models.Supported {
-		models, err := agent.Models.ListModels(ctx, a.Runner)
-		if err != nil {
-			item.Models.Error = err.Error()
-		} else {
-			item.Models.Items = models
-		}
+	status, err := agent.Auth.Status(ctx, a.Runner)
+	if err != nil {
+		item.Status = overviewUnknown
+		return item
 	}
+	if len(status.Providers) == 0 {
+		item.Status = overviewNotLoggedIn
+		return item
+	}
+	item.Status = overviewReady
+	item.Accounts = status.Providers
+	item.Models = a.queryModels(ctx, agent)
 	return item
+}
+
+func (a App) queryModels(ctx context.Context, agent runtime.Agent) *modelsOverview {
+	if !hasCapability(agent.Capabilities, runtime.CapabilityModelList) {
+		return &modelsOverview{Status: modelsUnknown}
+	}
+	models, err := agent.Models.ListModels(ctx, a.Runner)
+	if err != nil {
+		return &modelsOverview{Status: modelsUnknown}
+	}
+	if len(models) == 0 {
+		return &modelsOverview{Status: modelsNone}
+	}
+	items := make([]overviewModel, 0, len(models))
+	for _, model := range models {
+		items = append(items, overviewModel{ID: model.ID, DisplayName: model.DisplayName})
+	}
+	return &modelsOverview{Status: modelsAvailable, Items: items}
 }
 
 func hasCapability(capabilities []runtime.Capability, expected runtime.Capability) bool {
@@ -104,12 +141,37 @@ func hasCapability(capabilities []runtime.Capability, expected runtime.Capabilit
 	return false
 }
 
-type stringWriter interface {
-	Write([]byte) (int, error)
+const (
+	ansiReset  = "\x1b[0m"
+	ansiBold   = "\x1b[1m"
+	ansiDim    = "\x1b[2m"
+	ansiRed    = "\x1b[31m"
+	ansiGreen  = "\x1b[32m"
+	ansiYellow = "\x1b[33m"
+	ansiCyan   = "\x1b[36m"
+)
+
+func colorEnabled(writer io.Writer) bool {
+	if os.Getenv("NO_COLOR") != "" || os.Getenv("TERM") == "dumb" {
+		return false
+	}
+	file, ok := writer.(*os.File)
+	if !ok {
+		return false
+	}
+	info, err := file.Stat()
+	return err == nil && info.Mode()&os.ModeCharDevice != 0
 }
 
-func writeOverviewTree(writer stringWriter, result overviewResult) error {
-	if _, err := fmt.Fprintln(writer, "agents"); err != nil {
+func colorize(enabled bool, color, value string) string {
+	if !enabled {
+		return value
+	}
+	return color + value + ansiReset
+}
+
+func writeOverviewTree(writer io.Writer, result overviewResult, color bool) error {
+	if _, err := fmt.Fprintln(writer, colorize(color, ansiBold, "agents")); err != nil {
 		return err
 	}
 	for index, item := range result.Agents {
@@ -118,98 +180,99 @@ func writeOverviewTree(writer stringWriter, result overviewResult) error {
 		if lastAgent {
 			branch, continuation = "└──", "    "
 		}
-		if _, err := fmt.Fprintf(writer, "%s %s — %s\n", branch, item.ID, item.Name); err != nil {
+		label := item.ID
+		if item.Status == overviewReady {
+			label = colorize(color, ansiGreen, label)
+		} else {
+			label += " " + formatOverviewStatus(item.Status, color)
+		}
+		if _, err := fmt.Fprintf(writer, "%s %s\n", colorize(color, ansiDim, branch), label); err != nil {
 			return err
 		}
-		installed := "no"
-		if item.Installed {
-			installed = "yes"
-			if item.Path != "" {
-				installed += " (" + item.Path + ")"
-			}
+		if item.Status != overviewReady {
+			continue
 		}
-		version := item.Version
-		if version == "" {
-			version = "unavailable"
-		}
-		if _, err := fmt.Fprintf(writer, "%s├── installed: %s\n%s├── version: %s\n", continuation, installed, continuation, version); err != nil {
+		if err := writeAccountsTree(writer, continuation, item.Accounts, color); err != nil {
 			return err
 		}
-		if err := writeAuthTree(writer, continuation, item.Auth); err != nil {
-			return err
-		}
-		if err := writeModelsTree(writer, continuation, item.Models); err != nil {
+		if err := writeModelsTree(writer, continuation, item.Models, color); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func writeAuthTree(writer stringWriter, prefix string, auth authOverview) error {
-	if !auth.Supported {
-		_, err := fmt.Fprintf(writer, "%s├── auth: unsupported\n", prefix)
+func formatOverviewStatus(status overviewStatus, color bool) string {
+	switch status {
+	case overviewNotInstalled:
+		return colorize(color, ansiDim, "(not installed)")
+	case overviewNotLoggedIn:
+		return colorize(color, ansiYellow, "(not logged in)")
+	case overviewUnknown:
+		return colorize(color, ansiRed, "(status unknown)")
+	default:
+		return ""
+	}
+}
+
+func writeAccountsTree(writer io.Writer, prefix string, accounts []runtime.AuthProvider, color bool) error {
+	branch := colorize(color, ansiDim, prefix+"├──")
+	if len(accounts) == 1 {
+		_, err := fmt.Fprintf(writer, "%s account: %s\n", branch, colorize(color, ansiCyan, formatAccount(accounts[0])))
 		return err
 	}
-	if auth.Error != "" {
-		_, err := fmt.Fprintf(writer, "%s├── auth: error: %s\n", prefix, singleLine(auth.Error, 120))
+	if _, err := fmt.Fprintf(writer, "%s accounts\n", branch); err != nil {
 		return err
 	}
-	if len(auth.Providers) == 0 {
-		_, err := fmt.Fprintf(writer, "%s├── auth: not logged in\n", prefix)
-		return err
-	}
-	if _, err := fmt.Fprintf(writer, "%s├── auth\n", prefix); err != nil {
-		return err
-	}
-	for index, provider := range auth.Providers {
-		branch := "├──"
-		if index == len(auth.Providers)-1 {
-			branch = "└──"
+	for index, account := range accounts {
+		accountBranch := "├──"
+		if index == len(accounts)-1 {
+			accountBranch = "└──"
 		}
-		details := make([]string, 0, 2)
-		if provider.Method != "" {
-			details = append(details, provider.Method)
-		}
-		if provider.Subscription != "" {
-			details = append(details, provider.Subscription)
-		}
-		label := provider.ID + ": logged in"
-		if len(details) > 0 {
-			label += " (" + strings.Join(details, ", ") + ")"
-		}
-		if _, err := fmt.Fprintf(writer, "%s│   %s %s\n", prefix, branch, label); err != nil {
+		if _, err := fmt.Fprintf(writer, "%s %s\n", colorize(color, ansiDim, prefix+"│   "+accountBranch), colorize(color, ansiCyan, formatAccount(account))); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func writeModelsTree(writer stringWriter, prefix string, models modelsOverview) error {
-	if !models.Supported {
-		_, err := fmt.Fprintf(writer, "%s└── models: unsupported\n", prefix)
+func formatAccount(account runtime.AuthProvider) string {
+	details := make([]string, 0, 2)
+	if account.Method != "" {
+		details = append(details, account.Method)
+	}
+	if account.Subscription != "" {
+		details = append(details, account.Subscription)
+	}
+	if len(details) == 0 {
+		return account.ID
+	}
+	return account.ID + " (" + strings.Join(details, ", ") + ")"
+}
+
+func writeModelsTree(writer io.Writer, prefix string, models *modelsOverview, color bool) error {
+	branch := colorize(color, ansiDim, prefix+"└──")
+	if models == nil || models.Status == modelsUnknown {
+		_, err := fmt.Fprintf(writer, "%s models %s\n", branch, colorize(color, ansiRed, "(status unknown)"))
 		return err
 	}
-	if models.Error != "" {
-		_, err := fmt.Fprintf(writer, "%s└── models: error: %s\n", prefix, singleLine(models.Error, 120))
+	if models.Status == modelsNone {
+		_, err := fmt.Fprintf(writer, "%s models %s\n", branch, colorize(color, ansiYellow, "(none available)"))
 		return err
 	}
-	if len(models.Items) == 0 {
-		_, err := fmt.Fprintf(writer, "%s└── models: none\n", prefix)
-		return err
-	}
-	if _, err := fmt.Fprintf(writer, "%s└── models\n", prefix); err != nil {
+	if _, err := fmt.Fprintf(writer, "%s models\n", branch); err != nil {
 		return err
 	}
 	for index, model := range models.Items {
-		branch := "├──"
+		modelBranch := "├──"
 		if index == len(models.Items)-1 {
-			branch = "└──"
+			modelBranch = "└──"
 		}
 		label := model.ID
 		if model.DisplayName != "" && model.DisplayName != model.ID {
 			label += " — " + model.DisplayName
 		}
-		if _, err := fmt.Fprintf(writer, "%s    %s %s\n", prefix, branch, label); err != nil {
+		if _, err := fmt.Fprintf(writer, "%s %s\n", colorize(color, ansiDim, prefix+"    "+modelBranch), colorize(color, ansiCyan, label)); err != nil {
 			return err
 		}
 	}

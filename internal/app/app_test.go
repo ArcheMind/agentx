@@ -95,29 +95,24 @@ func TestAuthStatusTextOutput(t *testing.T) {
 func TestOverviewTreeOutput(t *testing.T) {
 	result := overviewResult{Agents: []agentOverview{
 		{
-			ID: "codex", Name: "Codex CLI", Installed: true, Path: "/usr/local/bin/codex", Version: "codex-cli 0.108.0",
-			Auth:   authOverview{Supported: true, Providers: []runtime.AuthProvider{{ID: "codex", Method: "ChatGPT"}}},
-			Models: modelsOverview{Supported: true, Items: []runtime.Model{{ID: "gpt-5.4", DisplayName: "GPT-5.4"}}},
+			ID: "codex", Name: "Codex CLI", Status: overviewReady,
+			Accounts: []runtime.AuthProvider{{ID: "codex", Method: "ChatGPT"}},
+			Models:   &modelsOverview{Status: modelsAvailable, Items: []overviewModel{{ID: "gpt-5.4", DisplayName: "GPT-5.4"}}},
 		},
-		{
-			ID: "gemini", Name: "Gemini CLI",
-			Auth:   authOverview{Providers: []runtime.AuthProvider{}},
-			Models: modelsOverview{Items: []runtime.Model{}},
-		},
+		{ID: "gemini", Name: "Gemini CLI", Status: overviewUnknown},
+		{ID: "pi", Name: "Pi Coding Agent", Status: overviewNotInstalled},
 	}}
 	var stdout bytes.Buffer
-	if err := writeOverviewTree(&stdout, result); err != nil {
+	if err := writeOverviewTree(&stdout, result, false); err != nil {
 		t.Fatal(err)
 	}
 	for _, expected := range []string{
-		"agents\n├── codex — Codex CLI",
-		"│   ├── auth",
-		"│   │   └── codex: logged in (ChatGPT)",
+		"agents\n├── codex",
+		"│   ├── account: codex (ChatGPT)",
 		"│   └── models",
 		"│       └── gpt-5.4 — GPT-5.4",
-		"└── gemini — Gemini CLI",
-		"    ├── auth: unsupported",
-		"    └── models: unsupported",
+		"├── gemini (status unknown)",
+		"└── pi (not installed)",
 	} {
 		if !strings.Contains(stdout.String(), expected) {
 			t.Fatalf("tree %q does not contain %q", stdout.String(), expected)
@@ -126,19 +121,96 @@ func TestOverviewTreeOutput(t *testing.T) {
 }
 
 func TestOverviewYAMLOutput(t *testing.T) {
-	result := overviewResult{Agents: []agentOverview{{
-		ID: "codex", Name: "Codex CLI", Installed: true,
-		Auth:   authOverview{Supported: true, Providers: []runtime.AuthProvider{}},
-		Models: modelsOverview{Supported: true, Items: []runtime.Model{}, Error: "model source unavailable"},
-	}}}
+	result := overviewResult{Agents: []agentOverview{
+		{
+			ID: "codex", Name: "Codex CLI", Status: overviewReady,
+			Accounts: []runtime.AuthProvider{{ID: "codex", Method: "ChatGPT"}},
+			Models:   &modelsOverview{Status: modelsAvailable, Items: []overviewModel{{ID: "gpt-5.4"}}},
+		},
+		{ID: "pi", Name: "Pi Coding Agent", Status: overviewNotInstalled},
+	}}
 	var stdout bytes.Buffer
 	if err := writeStructured(&stdout, result, OutputYAML); err != nil {
 		t.Fatal(err)
 	}
-	for _, expected := range []string{"agents:", "id: codex", "auth:", "providers: []", "models:", "items: []", "error: model source unavailable"} {
+	for _, expected := range []string{"agents:", "id: codex", "status: ready", "accounts:", "models:", "status: available", "id: pi", "status: not_installed"} {
 		if !strings.Contains(stdout.String(), expected) {
 			t.Fatalf("YAML %q does not contain %q", stdout.String(), expected)
 		}
+	}
+	for _, removed := range []string{"installed:", "path:", "version:", "supported:", "error:"} {
+		if strings.Contains(stdout.String(), removed) {
+			t.Fatalf("YAML %q contains removed field %q", stdout.String(), removed)
+		}
+	}
+}
+
+func TestOverviewTreeColorIsOptional(t *testing.T) {
+	result := overviewResult{Agents: []agentOverview{
+		{
+			ID: "claude", Status: overviewReady,
+			Accounts: []runtime.AuthProvider{{ID: "claude"}},
+			Models:   &modelsOverview{Status: modelsAvailable, Items: []overviewModel{{ID: "opus"}}},
+		},
+		{ID: "codex", Status: overviewNotLoggedIn},
+		{ID: "gemini", Status: overviewUnknown},
+		{ID: "pi", Status: overviewNotInstalled},
+	}}
+	var colored bytes.Buffer
+	if err := writeOverviewTree(&colored, result, true); err != nil {
+		t.Fatal(err)
+	}
+	for _, expected := range []string{ansiBold, ansiDim, ansiRed, ansiGreen, ansiYellow, ansiCyan, ansiReset} {
+		if !strings.Contains(colored.String(), expected) {
+			t.Fatalf("colored tree %q does not contain %q", colored.String(), expected)
+		}
+	}
+	var plain bytes.Buffer
+	if err := writeOverviewTree(&plain, result, false); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(plain.String(), "\x1b[") {
+		t.Fatalf("plain tree contains ANSI: %q", plain.String())
+	}
+}
+
+type overviewAuthDriver struct {
+	status runtime.AuthStatus
+}
+
+func (d overviewAuthDriver) PlanLogin() runtime.AuthPlan  { return runtime.AuthPlan{} }
+func (d overviewAuthDriver) PlanLogout() runtime.AuthPlan { return runtime.AuthPlan{} }
+func (d overviewAuthDriver) SupportsStatus() bool         { return true }
+func (d overviewAuthDriver) SupportsLogout() bool         { return false }
+func (d overviewAuthDriver) Status(context.Context, runtime.Runner) (runtime.AuthStatus, error) {
+	return d.status, nil
+}
+
+type countingOverviewModels struct {
+	calls int
+}
+
+func (d *countingOverviewModels) ListModels(context.Context, runtime.Runner) ([]runtime.Model, error) {
+	d.calls++
+	return []runtime.Model{{ID: "available-model", Source: "test"}}, nil
+}
+
+func TestOverviewQueriesModelsOnlyWhenLoggedIn(t *testing.T) {
+	models := &countingOverviewModels{}
+	agent := runtime.Agent{
+		ID: "test", Name: "Test", Auth: overviewAuthDriver{}, Models: models,
+		Capabilities: []runtime.Capability{runtime.CapabilityAuthStatus, runtime.CapabilityModelList},
+	}
+	application := App{}
+	item := application.queryAgentOverview(context.Background(), agent, runtime.Detection{ID: agent.ID, Name: agent.Name, Installed: true})
+	if item.Status != overviewNotLoggedIn || item.Models != nil || models.calls != 0 {
+		t.Fatalf("logged-out overview = %#v, model calls = %d", item, models.calls)
+	}
+
+	agent.Auth = overviewAuthDriver{status: runtime.AuthStatus{Providers: []runtime.AuthProvider{{ID: "test"}}}}
+	item = application.queryAgentOverview(context.Background(), agent, runtime.Detection{ID: agent.ID, Name: agent.Name, Installed: true})
+	if item.Status != overviewReady || item.Models == nil || item.Models.Status != modelsAvailable || models.calls != 1 {
+		t.Fatalf("logged-in overview = %#v, model calls = %d", item, models.calls)
 	}
 }
 
