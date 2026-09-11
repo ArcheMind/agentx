@@ -4,9 +4,23 @@ All notable changes to AgentX are documented here. The format follows [Keep a Ch
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-09-11
+
 ### Added
 
 - `ax list` readiness tree with finite states, terminal colors, authentication-gated available models, and matching JSON/YAML output.
+- Session durations in the interactive recent-session selector.
+- Opt-in discovery of child Agent sessions through `--include-subagents`.
+
+### Changed
+
+- Added distinct theme colors for every supported agent in interactive selectors, with clearer headings, metadata, and selection emphasis.
+- Unified session, agent, and model selection under the same keyboard-driven interface.
+- Hidden child Agent sessions by default so top-level work remains the primary discovery surface.
+
+### Fixed
+
+- Pi login now uses Pi's SDK OAuth provider selector and writes credentials to Pi's native authentication store.
 
 ## [0.2.0] - 2026-09-10
 
@@ -38,7 +52,8 @@ All notable changes to AgentX are documented here. The format follows [Keep a Ch
 - Structured errors and opt-in raw external-call debug logging.
 - Consistency audit covering CLI grammar, documentation, capabilities, and drivers.
 
-[Unreleased]: https://github.com/ArcheMind/agentx/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/ArcheMind/agentx/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/ArcheMind/agentx/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/ArcheMind/agentx/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/ArcheMind/agentx/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/ArcheMind/agentx/releases/tag/v0.1.0

@@ -273,6 +273,42 @@ func TestOptionSelectorSupportsVimKeys(t *testing.T) {
 	}
 }
 
+func TestInteractiveSelectorUsesAgentThemeColors(t *testing.T) {
+	for _, provider := range []string{"claude", "codex", "dsh", "gemini", "opencode", "pi"} {
+		t.Run(provider, func(t *testing.T) {
+			row := contentRow{
+				text: provider + " row", itemIndex: 0, kind: contentRowSession,
+				provider: provider, updated: "Today 12:00", title: "Theme task",
+			}
+			colored := styledMarker("> ", row, true) + styledContentRow(row, true, true)
+			for _, expected := range []string{agentColor(provider), ansiBold, ansiDim, ansiReset} {
+				if !strings.Contains(colored, expected) {
+					t.Fatalf("colored row %q does not contain %q", colored, expected)
+				}
+			}
+			plain := styledMarker("> ", row, false) + styledContentRow(row, true, false)
+			if strings.Contains(plain, "\x1b[") {
+				t.Fatalf("plain row contains ANSI: %q", plain)
+			}
+			if plain != fmt.Sprintf("> %-8s  %-25s  %s", provider, "Today 12:00", "Theme task") {
+				t.Fatalf("plain row = %q", plain)
+			}
+		})
+	}
+}
+
+func TestInteractiveSelectorStylesHierarchy(t *testing.T) {
+	if got := styledContentRow(contentRow{text: "Current workspace", kind: contentRowHeading}, false, true); !strings.Contains(got, ansiBold) {
+		t.Fatalf("heading = %q", got)
+	}
+	if got := styledContentRow(contentRow{text: "  No recent sessions", kind: contentRowEmpty}, false, true); !strings.Contains(got, ansiDim) {
+		t.Fatalf("empty row = %q", got)
+	}
+	if got := styledContentRow(contentRow{text: "model", itemIndex: 0}, true, true); !strings.Contains(got, ansiBold) || strings.Contains(got, agentColor("codex")) {
+		t.Fatalf("non-agent option should use selection emphasis only: %q", got)
+	}
+}
+
 func TestBareAXStartsInteractiveSessionResume(t *testing.T) {
 	var stdout bytes.Buffer
 	application := New(false, strings.NewReader(""), &stdout, &bytes.Buffer{})
