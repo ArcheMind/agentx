@@ -21,8 +21,8 @@ type sessionGroup struct {
 	Items   []sessions.Summary
 }
 
-func (a App) recentSessionGroups() ([]sessionGroup, error) {
-	items, err := a.Sessions.RecentGroups("", recentSessionsPerProvider)
+func (a App) recentSessionGroups(includeSubagents bool) ([]sessionGroup, error) {
+	items, err := a.Sessions.RecentGroups("", recentSessionsPerProvider, includeSubagents)
 	if err != nil {
 		return nil, err
 	}

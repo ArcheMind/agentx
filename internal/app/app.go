@@ -57,11 +57,19 @@ func (a App) Run(ctx context.Context, args []string) error {
 		return err
 	}
 	a.Output = output
+	includeSubagents := false
+	if len(args) > 0 && args[0] == "--include-subagents" {
+		includeSubagents = true
+		args = args[1:]
+	}
 	if len(args) == 0 {
 		if err := a.rejectStructured("interactive session resume"); err != nil {
 			return err
 		}
-		return a.interactiveResume(ctx)
+		return a.interactiveResume(ctx, includeSubagents)
+	}
+	if includeSubagents {
+		return fmt.Errorf("--include-subagents is only supported by interactive session resume or session list")
 	}
 	switch args[0] {
 	case "help", "-h", "--help":
@@ -447,6 +455,8 @@ func (a App) sessionList(args []string) error {
 			options.Workspace = args[index]
 		case "--all":
 			options.All = true
+		case "--include-subagents":
+			options.IncludeSubagents = true
 		case "--limit":
 			index++
 			if index >= len(args) {
@@ -623,10 +633,10 @@ func (a App) resumeSession(ctx context.Context, agent runtime.Agent, detail sess
 	return nil
 }
 
-func (a App) interactiveResume(ctx context.Context) error {
+func (a App) interactiveResume(ctx context.Context, includeSubagents bool) error {
 	reader := bufio.NewReader(a.Stdin)
 	fmt.Fprint(a.Stdout, "Loading recent sessions...\r")
-	groups, err := a.recentSessionGroups()
+	groups, err := a.recentSessionGroups(includeSubagents)
 	if err != nil {
 		return err
 	}
@@ -746,7 +756,7 @@ func (a App) printHelp() {
 	fmt.Fprint(a.Stdout, `agentx manages native AI coding-agent runtimes.
 
 Usage:
-  ax
+  ax [--include-subagents]
   ax <agent> [--model <model>] [--cwd <path>] [--dry-run] [-- <native args...>]
   ax [--json|--yaml] list
   ax [--json|--yaml] agent list

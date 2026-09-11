@@ -19,7 +19,7 @@ Resume recent work:
 $ ax
 ```
 
-`ax` shows recent sessions in one keyboard-navigable selector, with separate `Current workspace` and `Global` sections. Times use your local timezone, and Global entries include their working directory. Move through every session with the arrow keys, press Enter to select one, then choose a target agent and, when supported, a model. AgentX continues through that agent's native CLI.
+`ax` shows recent top-level sessions in one keyboard-navigable selector, with separate `Current workspace` and `Global` sections. Times use your local timezone, and Global entries include their working directory. Move through every session with the arrow keys, press Enter to select one, then choose a target agent and, when supported, a model. AgentX continues through that agent's native CLI. Pass `--include-subagents` to include provider sessions identified as child Agent work.
 
 ![Interactive session resume demo](docs/assets/interactive-resume.gif)
 
@@ -118,6 +118,7 @@ ax session list
 
 # Inspect a session from any supported native store
 ax session list --source codex --all --limit 20 --sort date
+ax session list --all --include-subagents
 ax session info <session-id> --source codex --peek
 
 # Continue its bounded context in another native agent
@@ -171,7 +172,8 @@ ax auth logout <agent> [--dry-run]
 ax session <providers|list|info|resume>
 ax session providers
 ax session list [--source <provider>] [--workspace <path>|--all]
-                [--limit <n>] [--sort date|messages|provider]
+                [--include-subagents] [--limit <n>]
+                [--sort date|messages|provider]
 ax session info <session-id> [--source <provider>] [--peek|--peek-lines <n>]
 ax session resume <target-agent> <session-id> [--source <provider>]
                   [--workspace <path>] [--dry-run]
