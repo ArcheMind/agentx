@@ -2,7 +2,7 @@
 
 ## Conclusion
 
-Bare `ax` uses one grouped session selector on `main`. Commit `139f85b` introduced the grouped interaction; commit `146fda7` replaced its expensive startup path with bounded recent-session discovery. `Current workspace` and `Global` render as non-selectable headings, while a single flattened selection index lets Up/Down move across their boundary and Enter select the highlighted session. `q`, `Q`, Escape, and Ctrl-C cancel. Each discovered summary is classified into exactly one group by whether its workspace matches the current workspace; a Current item is not subsequently considered for Global.
+Bare `ax` uses one grouped session selector on `main`. Commit `139f85b` introduced the grouped interaction; commit `146fda7` replaced its expensive startup path with bounded recent-session discovery; commit `bfd4c89` added provider-aware sub-Agent classification and filtering. `Current workspace` and `Global` render as non-selectable headings, while a single flattened selection index lets Up/Down move across their boundary and Enter select the highlighted session. `q`, `Q`, Escape, and Ctrl-C cancel. Each discovered summary is classified into exactly one group by whether its workspace matches the current workspace; a Current item is not subsequently considered for Global.
 
 Each empty group renders `No recent sessions`; when both are empty, selection ends with `no recent sessions found in the current workspace or globally`. Rendering writes CRLF and uses a line-counted ANSI redraw after movement so raw terminal mode does not staircase output.
 
@@ -14,7 +14,7 @@ The selector only chooses a summary from the native read-only session service. F
 
 Recent summaries carry `StartedAt` as well as `UpdatedAt`. Codex, Pi, OpenCode, and Gemini use their native start timestamps. Claude discovery fills `StartedAt` from the first record that contains a timestamp, while retaining the bounded scan.
 
-Recent discovery does not de-duplicate by session ID, source, or visible metadata. Each discovered summary is processed independently, so rows with identical visible metadata may be distinct native sessions or may expose the Codex continuation identity defect described below. The UI does not expose session IDs. Current/Global separation is an exclusive workspace classification implemented by `matchesWorkspaceSummary` and `continue`, not an ID-based de-duplication pass.
+Recent discovery does not de-duplicate by session ID, source, or visible metadata. Each discovered summary is processed independently, so rows with identical visible metadata may be distinct native sessions. The UI does not expose session IDs. Current/Global separation is an exclusive workspace classification implemented by `matchesWorkspaceSummary` and `continue`, not an ID-based de-duplication pass.
 
 Codex title discovery skips injected context beginning with `# AGENTS.md instructions` or `<environment_context>`. Display shortening in `oneLine` and `singleLine` operates on runes, so multibyte UTF-8 titles are not split.
 
@@ -36,25 +36,29 @@ Commit `0d4fa5e` replaced the unbounded ANSI redraw with a viewport-based render
 
 **Test injection**: `App` has an unexported `termHeight int` field for deterministic viewport testing without a real terminal.
 
-## Known Codex continuation identity defect
+## Sub-Agent classification and stable identity
 
-A Codex continuation JSONL can contain more than one top-level `session_meta`. `recentCodexSummary` stops after the early metadata/title scan and therefore retains the first, newer session ID. Full `parseCodex` traverses the entire file and repeatedly overwrites `detail.ID`, so a later embedded `session_meta` can replace that ID with an older continued-session ID.
+Bare `ax` and `ax session list` exclude sub-Agent sessions by default. `--include-subagents` explicitly includes them, and `Summary.IsSubagent` exposes the normalized classification. This filtering is a list/discovery concern only: `Info` and resume still accept an explicitly supplied session ID, including a sub-Agent session ID.
 
-This mismatch is verified for the native file whose later metadata contains `01a08dbb-9c52-7f70-a715-77b27b226e91`: its earlier metadata contains the newer `01a08e08...` ID, but the full loader resolves the file to the later old ID. Consequently, two different Codex files can collapse to the same ID during full loading. The selector can show visually duplicated rows, and selecting one can fail in `Info` with an ambiguous-session error even when `source=codex` is already specified. The error's suggestion to pass `--source` is therefore ineffective for this case; the ambiguity exists within one provider.
+Classification remains provider-native rather than inferred from titles or paths:
 
-The identity overwrite path crosses `internal/sessions/recent.go` (bounded summary identity), `internal/sessions/service.go` (full parsing and ambiguity), and `internal/app/app.go` (selection-to-`Info` loading).
+- Codex uses `payload.source.subagent`; the first valid `session_meta` defines the JSONL file's stable identity and later parent metadata cannot overwrite it.
+- Claude uses `isSidechain`; sub-Agent files use `agentId` as their unique ID, and explicit inclusion extends discovery to `*/*/subagents/*.jsonl`.
+- Gemini uses `kind=subagent`.
+- OpenCode uses a non-empty `parentID`.
+- Pi has no reliable session-level marker, so AgentX does not infer sub-Agent status.
+
+The first-valid-`session_meta` rule fixes Codex child rollouts that carry both child and parent metadata: bounded discovery and full parsing now agree on identity, preventing the parent ID overwrite and false same-provider ambiguity previously observed for `01a08dbb-9c52-7f70-a715-77b27b226e91`.
 
 ## Why
 
-Removing the separate scope prompt makes workspace scope orthogonal to selection. The mutually exclusive workspace classification places each discovered summary in Current or Global, while flattening only selectable rows preserves section presentation and gives keyboard movement one continuous state space. No selector-level identity- or title-based merge is intended. However, the Codex full-parser overwrite defect can still collapse different native files onto one older embedded ID after selection.
+Removing the separate scope prompt makes workspace scope orthogonal to selection. The mutually exclusive workspace classification places each discovered summary in Current or Global, while flattening only selectable rows preserves section presentation and gives keyboard movement one continuous state space. The shared provider-aware filter keeps child execution sessions out of the primary recent-work surface without making them inaccessible by explicit ID. No selector-level identity- or title-based merge combines distinct native sessions.
 
 The bounded discovery path addresses a verified production-scale failure: the user's machine had 751 Codex JSONL files totaling about 928 MB, while the previous implementation fully parsed all providers twice before first render. The title filtering and rune-safe shortening address the observed injected, indistinguishable titles and malformed UTF-8 output. The session span helps distinguish otherwise similar summaries using native temporal metadata; file size was measured and rejected as an unreliable activity signal.
 
 ## Verification
 
-Tests cover recent discovery, native and Claude-derived start timestamps, bare-`ax` empty behavior, cross-boundary movement, each singly empty group, both groups empty, cancellation, workspace grouping, titles, time, duration and workspace presentation, invalid-duration omission, UTF-8 truncation, redraw layout, and viewport behavior. Viewport tests (`TestSessionSelectorViewport`: overflow bottom indicator, scroll follow, content-fits-no-indicator) verify scrolling and indicator correctness.
-
-The current selector tests verify that summaries classified as Current are not also placed in Global; they do not establish ID- or semantic de-duplication within either group, nor consistency between bounded Codex summary IDs and full Codex parse IDs when a file contains multiple top-level `session_meta` records.
+Tests cover recent discovery, native and Claude-derived start timestamps, bare-`ax` empty behavior, cross-boundary movement, each singly empty group, both groups empty, cancellation, workspace grouping, titles, time, duration and workspace presentation, invalid-duration omission, UTF-8 truncation, redraw layout, viewport behavior, provider-specific sub-Agent classification, default filtering, explicit inclusion, direct ID access, and Codex multi-`session_meta` identity stability. Viewport tests (`TestSessionSelectorViewport`: overflow bottom indicator, scroll follow, content-fits-no-indicator) verify scrolling and indicator correctness. `make verify` passed for commit `bfd4c89` on `main`.
 
 ## Files
 
@@ -65,4 +69,5 @@ The current selector tests verify that summaries classified as Current are not a
 - `internal/app/app.go`
 - `internal/app/app_test.go`
 - `README.md`
+- `docs/troubleshooting.md`
 - `docs/assets/interactive-resume.gif`
