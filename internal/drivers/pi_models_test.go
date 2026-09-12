@@ -27,6 +27,10 @@ func (s staticProviderSource) ListLoggedInProviders(context.Context) ([]string, 
 	return s.providers, s.err
 }
 
+func (s staticProviderSource) ListConfiguredProviders(context.Context, runtime.Runner) ([]string, error) {
+	return s.providers, s.err
+}
+
 type modelRunner struct {
 	result runtime.CommandResult
 	err    error
@@ -38,7 +42,7 @@ func (r *modelRunner) Execute(context.Context, runtime.CommandPlan, runtime.Exec
 	return r.result, r.err
 }
 
-func TestPiModelsFiltersMultipleLoggedInProviders(t *testing.T) {
+func TestPiModelsFiltersMultipleConfiguredProviders(t *testing.T) {
 	runner := &modelRunner{result: runtime.CommandResult{Stdout: piModelsFixture}}
 	driver := PiModels{
 		Plan:      runtime.CommandPlan{Executable: "pi", Args: []string{"--list-models"}},
@@ -58,7 +62,7 @@ func TestPiModelsFiltersMultipleLoggedInProviders(t *testing.T) {
 	}
 }
 
-func TestPiModelsExcludesProvidersWithoutNativeLogin(t *testing.T) {
+func TestPiModelsExcludesUnconfiguredProviders(t *testing.T) {
 	runner := &modelRunner{result: runtime.CommandResult{Stdout: piModelsFixture}}
 	driver := PiModels{
 		Plan:      runtime.CommandPlan{Executable: "pi", Args: []string{"--list-models"}},
@@ -74,7 +78,7 @@ func TestPiModelsExcludesProvidersWithoutNativeLogin(t *testing.T) {
 	}
 }
 
-func TestPiModelsReturnsEmptyWithoutLoggedInProviders(t *testing.T) {
+func TestPiModelsReturnsEmptyWithoutConfiguredProviders(t *testing.T) {
 	runner := &modelRunner{result: runtime.CommandResult{Stdout: piModelsFixture}}
 	driver := PiModels{
 		Plan:      runtime.CommandPlan{Executable: "pi", Args: []string{"--list-models"}},
@@ -100,30 +104,6 @@ func TestPiModelsRejectsMalformedOutput(t *testing.T) {
 	}
 	if _, err := driver.ListModels(context.Background(), runner); err == nil {
 		t.Fatal("expected malformed Pi model output to fail")
-	}
-}
-
-func TestPiAuthFileProvidersReadsProviderIDsOnly(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "auth.json")
-	raw := []byte(`{
-  "anthropic": {"type":"api_key","key":"secret"},
-  "github-copilot": {"type":"oauth","access":"secret","refresh":"secret","expires":1}
-}`)
-	if err := os.WriteFile(path, raw, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	providers, err := (PiAuthFileProviders{Path: path}).ListLoggedInProviders(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := map[string]bool{"anthropic": true, "github-copilot": true}
-	if len(providers) != len(want) {
-		t.Fatalf("providers = %v, want %v", providers, want)
-	}
-	for _, provider := range providers {
-		if !want[provider] {
-			t.Fatalf("unexpected provider %q", provider)
-		}
 	}
 }
 
@@ -161,34 +141,46 @@ func TestDSHModelsExposeBundledCatalog(t *testing.T) {
 	}
 }
 
-func TestPiAuthFileProvidersTreatsMissingFileAsEmpty(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "auth.json")
-	providers, err := (PiAuthFileProviders{Path: path}).ListLoggedInProviders(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if providers == nil || len(providers) != 0 {
-		t.Fatalf("providers = %#v, want non-nil empty list", providers)
-	}
-}
-
-func TestPiAuthFileProvidersRejectsMalformedState(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "auth.json")
-	if err := os.WriteFile(path, []byte(`{"anthropic":`), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	_, err := (PiAuthFileProviders{Path: path}).ListLoggedInProviders(context.Background())
-	if err == nil {
-		t.Fatal("expected malformed Pi auth state to fail")
-	}
-}
-
 func TestPiModelsPropagatesProviderSourceError(t *testing.T) {
 	want := errors.New("provider state unavailable")
 	driver := PiModels{Providers: staticProviderSource{err: want}}
 	_, err := driver.ListModels(context.Background(), &modelRunner{})
 	if !errors.Is(err, want) {
 		t.Fatalf("error = %v, want %v", err, want)
+	}
+}
+
+func TestPiModelsIncludesCustomAPIProvider(t *testing.T) {
+	runner := &modelRunner{result: runtime.CommandResult{Stdout: piModelsFixture + "deepseek       deepseek-v4-pro        128K     16K      yes       no\n"}}
+	driver := PiModels{
+		Plan:      runtime.CommandPlan{Executable: "pi", Args: []string{"--list-models"}},
+		Providers: staticProviderSource{providers: []string{"deepseek"}},
+	}
+	models, err := driver.ListModels(context.Background(), runner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []runtime.Model{{ID: "deepseek/deepseek-v4-pro", Source: "pi"}}
+	if !reflect.DeepEqual(models, want) {
+		t.Fatalf("models = %#v, want %#v", models, want)
+	}
+}
+
+func TestPiSDKAuthUsesConfiguredProviders(t *testing.T) {
+	driver := PiSDKAuth{ConfiguredProviders: staticProviderSource{providers: []string{"deepseek"}}}
+	status, err := driver.Status(context.Background(), &modelRunner{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := runtime.AuthStatus{Supported: true, Providers: []runtime.AuthProvider{{ID: "deepseek"}}}
+	if !reflect.DeepEqual(status, want) {
+		t.Fatalf("status = %#v, want %#v", status, want)
+	}
+}
+
+func TestPiProviderIDsRejectsMalformedOutput(t *testing.T) {
+	if _, err := piProviderIDs("deepseek\ninvalid provider"); err == nil {
+		t.Fatal("expected malformed provider output to fail")
 	}
 }
 
