@@ -8,7 +8,10 @@ if (!sdkPath) {
 const { ModelRuntime } = await import(pathToFileURL(sdkPath).href);
 const runtime = await ModelRuntime.create();
 const providerIDs = runtime.getProviders()
-  .filter((provider) => runtime.hasConfiguredAuth(provider.id))
+  .filter((provider) => {
+    const status = runtime.getProviderAuthStatus(provider.id);
+    return status.configured && (status.source === "stored" || status.source.startsWith("models_json_"));
+  })
   .map((provider) => provider.id)
   .sort();
 
