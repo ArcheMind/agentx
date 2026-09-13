@@ -2,7 +2,7 @@
 
 ## Status
 
-The GitHub repository productization requirement is complete and published. As of the `v0.2.0` release, local `main` and `origin/main` both point to `ea2154b7b79db737b8391b1452077976090a4cbd`.
+The GitHub repository productization requirement is complete and published. The latest verified release is `v0.2.2`, pointing to commit `5f54619`; the four Pi provider-discovery fix and documentation commits have been pushed to `origin/main`.
 
 ## Product entry point
 
@@ -13,6 +13,8 @@ The GitHub repository productization requirement is complete and published. As o
 **Files:** `README.md`, `install.sh`, `go.mod`, `.goreleaser.yml`, `docs/`, `CHANGELOG.md`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`, `.github/ISSUE_TEMPLATE/`, `.github/PULL_REQUEST_TEMPLATE.md`
 
 ## Release and automation
+
+**Current release:** GitHub release `v0.2.2` is public, neither a draft nor a prerelease. Release workflow run `34728994409` completed successfully. All six archives for macOS, Linux, and Windows on `amd64` and `arm64`, plus `checksums.txt`, are uploaded. This patch ships the Pi custom API provider discovery and authentication-source filtering fix in `internal/drivers/pi_sdk_providers.mjs`, preserving the second model-filtering pass.
 
 **Conclusion:** GitHub release `v0.2.0` was published on 2026-09-10 America/Los_Angeles (`publishedAt` 2026-09-11T01:14:31Z). It is neither a draft nor a prerelease. Release workflow run `34549808674` succeeded after local `make verify` passed. The release contains six archives covering Darwin, Linux, and Windows on both `amd64` and `arm64`, plus `checksums.txt`. Dependabot is enabled; its first pull requests upgrading `actions/checkout`, `actions/setup-go`, and GoReleaser actions all passed checks and were squash-merged.
 

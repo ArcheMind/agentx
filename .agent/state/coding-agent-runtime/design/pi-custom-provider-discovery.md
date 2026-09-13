@@ -12,6 +12,8 @@ Pi's model listing includes providers regardless of access. Conversely, custom A
 
 Implemented by commit `5b8b14b` (`fix: discover Pi custom API providers`) and corrected after observing generic environment providers in `ax list`: the embedded SDK adapter creates `ModelRuntime`, reads `getProviderAuthStatus(provider.id)`, and returns only `stored` or `models_json_*` IDs. `PiModels` intersects those IDs with `pi --list-models`; tests cover including a DeepSeek custom API provider and excluding unconfigured providers.
 
+The authentication-source correction is commit `508a7c6`. The fix and its documentation are pushed to `origin/main` and published in patch release `v0.2.2` at `5f54619`; release workflow run `34728994409` succeeded.
+
 ## Files
 
 `internal/drivers/pi_models.go`, `internal/drivers/pi_sdk_login.go`, `internal/drivers/pi_sdk_providers.mjs`, `internal/drivers/registry.go`, `internal/drivers/pi_models_test.go`
