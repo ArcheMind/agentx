@@ -693,7 +693,7 @@ func TestSessionInfoUsesGlobalYAMLOutput(t *testing.T) {
 	if err := application.Run(context.Background(), []string{"--yaml", "session", "info", "session-id", "--source", "claude"}); err != nil {
 		t.Fatal(err)
 	}
-	for _, expected := range []string{"id: session-id", "provider: claude", "content: continue work"} {
+	for _, expected := range []string{"id: session-id", "provider: claude", "text: continue work"} {
 		if !strings.Contains(stdout.String(), expected) {
 			t.Fatalf("YAML %q does not contain %q", stdout.String(), expected)
 		}

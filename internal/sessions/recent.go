@@ -129,7 +129,7 @@ func recentClaudeSummary(path string) (Summary, bool, error) {
 		}
 		if kind == "user" && item.Title == "" {
 			message, _ := record["message"].(map[string]any)
-			content := flattenContent(message["content"])
+			content := extractText(message["content"])
 			if isSessionTitle(content) {
 				item.Title = oneLine(content, 96)
 			}
@@ -151,7 +151,7 @@ func recentCodexSummary(path string) (Summary, bool, error) {
 			item.IsSubagent = codexSubagentSource(payload["source"])
 		}
 		if kind == "response_item" && stringValue(payload["type"]) == "message" && stringValue(payload["role"]) == "user" && item.Title == "" {
-			content := flattenContent(payload["content"])
+			content := extractText(payload["content"])
 			if isSessionTitle(content) {
 				item.Title = oneLine(content, 96)
 			}
@@ -173,7 +173,7 @@ func recentPiSummary(path string) (Summary, bool, error) {
 		if kind == "message" && item.Title == "" {
 			message, _ := record["message"].(map[string]any)
 			if stringValue(message["role"]) == "user" {
-				content := flattenContent(message["content"])
+				content := extractText(message["content"])
 				if isSessionTitle(content) {
 					item.Title = oneLine(content, 96)
 				}

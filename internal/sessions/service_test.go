@@ -81,7 +81,7 @@ func TestNativeSessionReaders(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if detail.Provider != test.provider || detail.MessageCount == 0 || !strings.Contains(detail.Messages[0].Content, test.content) {
+			if detail.Provider != test.provider || detail.MessageCount == 0 || !strings.Contains(textContent(detail.Messages[0].Content), test.content) {
 				t.Fatalf("detail = %#v", detail)
 			}
 		})
@@ -112,8 +112,8 @@ func TestSessionIDMustBeUnambiguous(t *testing.T) {
 
 func TestResumePromptDropsReasoningAndCapsSize(t *testing.T) {
 	detail := Detail{Summary: Summary{ID: "id", Provider: "codex"}, Messages: []Message{
-		{Role: "user", Content: strings.Repeat("a", resumeContextLimit)},
-		{Role: "assistant", Content: "latest"},
+		{Role: "user", Content: []ContentBlock{{Type: "text", Text: strings.Repeat("a", resumeContextLimit)}}},
+		{Role: "assistant", Content: []ContentBlock{{Type: "text", Text: "latest"}}},
 	}}
 	prompt := ResumePrompt(detail)
 	if len(prompt) > resumeContextLimit || !strings.Contains(prompt, "latest") || !strings.Contains(prompt, "truncated") {
@@ -249,6 +249,170 @@ func TestSubagentSessionsAreFilteredByDefault(t *testing.T) {
 	}
 	if _, err := service.Info("codex-root", "codex"); err != nil {
 		t.Fatalf("codex root should remain unambiguous: %v", err)
+	}
+}
+
+func TestStructuredContentPreservesToolCalls(t *testing.T) {
+	home := t.TempDir()
+	workspace := filepath.Join(home, "project")
+	if err := os.MkdirAll(workspace, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Claude: assistant with tool_use, user with tool_result
+	writeFixture(t, filepath.Join(home, ".claude", "projects", "p", "tc.jsonl"), strings.Join([]string{
+		fmt.Sprintf(`{"type":"user","sessionId":"tc-claude","cwd":%q,"timestamp":"2026-09-01T10:00:00Z","message":{"role":"user","content":"run ls"}}`, workspace),
+		`{"type":"assistant","sessionId":"tc-claude","timestamp":"2026-09-01T10:01:00Z","message":{"role":"assistant","content":[{"type":"text","text":"calling ls"},{"type":"tool_use","id":"tu-1","name":"bash","input":{"command":"ls"}}]}}`,
+		`{"type":"user","sessionId":"tc-claude","timestamp":"2026-09-01T10:02:00Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tu-1","content":"file1.txt\nfile2.txt"}]}}`,
+	}, "\n"))
+
+	// Codex: function_call + function_call_output
+	writeFixture(t, filepath.Join(home, ".codex", "sessions", "2026", "09", "01", "tc.jsonl"), strings.Join([]string{
+		fmt.Sprintf(`{"type":"session_meta","timestamp":"2026-09-01T11:00:00Z","payload":{"id":"tc-codex","cwd":%q,"timestamp":"2026-09-01T11:00:00Z"}}`, workspace),
+		`{"type":"response_item","timestamp":"2026-09-01T11:01:00Z","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"let me check"}]}}`,
+		`{"type":"response_item","timestamp":"2026-09-01T11:02:00Z","payload":{"type":"function_call","call_id":"fc-1","name":"shell","arguments":"{\"cmd\":\"ls\"}"}}`,
+		`{"type":"response_item","timestamp":"2026-09-01T11:03:00Z","payload":{"type":"function_call_output","call_id":"fc-1","output":"file1.txt"}}`,
+	}, "\n"))
+
+	// Pi: assistant with toolCall, toolResult
+	writeFixture(t, filepath.Join(home, ".pi", "agent", "sessions", "p", "tc.jsonl"), strings.Join([]string{
+		fmt.Sprintf(`{"type":"session","id":"tc-pi","cwd":%q,"timestamp":"2026-09-01T14:00:00Z"}`, workspace),
+		`{"type":"message","message":{"role":"assistant","timestamp":1788271200000,"content":[{"type":"text","text":"running"},{"type":"toolCall","toolCallId":"pc-1","toolName":"shell","input":{"cmd":"ls"}}]}}`,
+		`{"type":"message","message":{"role":"toolResult","timestamp":1788271260000,"toolCallId":"pc-1","toolName":"shell","content":"done"}}`,
+	}, "\n"))
+
+	service := Service{HomeDir: home}
+
+	t.Run("claude", func(t *testing.T) {
+		detail, err := service.Info("tc-claude", "claude")
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Should have: user, assistant (with tool_use), tool
+		hasToolUse := false
+		hasToolMsg := false
+		for _, m := range detail.Messages {
+			for _, b := range m.Content {
+				if b.Type == "tool_use" && b.ID == "tu-1" && b.Name == "bash" {
+					hasToolUse = true
+				}
+			}
+			if m.Role == "tool" && m.ToolUseID == "tu-1" {
+				hasToolMsg = true
+			}
+		}
+		if !hasToolUse {
+			t.Fatal("missing tool_use block in claude assistant message")
+		}
+		if !hasToolMsg {
+			t.Fatal("missing role=tool message in claude session")
+		}
+	})
+
+	t.Run("codex", func(t *testing.T) {
+		detail, err := service.Info("tc-codex", "codex")
+		if err != nil {
+			t.Fatal(err)
+		}
+		hasToolUse := false
+		hasToolMsg := false
+		for _, m := range detail.Messages {
+			for _, b := range m.Content {
+				if b.Type == "tool_use" && b.ID == "fc-1" && b.Name == "shell" {
+					hasToolUse = true
+				}
+			}
+			if m.Role == "tool" && m.ToolUseID == "fc-1" && m.ToolName == "shell" {
+				hasToolMsg = true
+			}
+		}
+		if !hasToolUse {
+			t.Fatal("missing tool_use block in codex assistant message")
+		}
+		if !hasToolMsg {
+			t.Fatal("missing role=tool message in codex session")
+		}
+	})
+
+	t.Run("pi", func(t *testing.T) {
+		detail, err := service.Info("tc-pi", "pi")
+		if err != nil {
+			t.Fatal(err)
+		}
+		hasToolUse := false
+		hasToolMsg := false
+		for _, m := range detail.Messages {
+			for _, b := range m.Content {
+				if b.Type == "tool_use" && b.ID == "pc-1" && b.Name == "shell" {
+					hasToolUse = true
+				}
+			}
+			if m.Role == "tool" && m.ToolUseID == "pc-1" && m.ToolName == "shell" {
+				hasToolMsg = true
+			}
+		}
+		if !hasToolUse {
+			t.Fatal("missing tool_use block in pi assistant message")
+		}
+		if !hasToolMsg {
+			t.Fatal("missing role=tool message in pi session")
+		}
+	})
+}
+
+func TestBuildViewOffload(t *testing.T) {
+	messages := []Message{
+		{ID: "1", Role: "user", Content: []ContentBlock{{Type: "text", Text: "hello"}}},
+		{ID: "2", Role: "assistant", Content: []ContentBlock{
+			{Type: "thinking", Text: "private reasoning"},
+			{Type: "text", Text: "response"},
+			{Type: "tool_use", ID: "tu-1", Name: "bash", Input: map[string]any{"cmd": "ls"}},
+		}},
+		{ID: "3", Role: "tool", Content: []ContentBlock{{Type: "text", Text: "file1.txt"}}, ToolUseID: "tu-1", ToolName: "bash"},
+		{ID: "4", Role: "assistant", Content: []ContentBlock{
+			{Type: "thinking", Text: "more reasoning"},
+			{Type: "text", Text: "done"},
+		}},
+	}
+	view := BuildView(messages)
+
+	// Thinking blocks should be dropped from assistant messages
+	for _, m := range view {
+		for _, b := range m.Content {
+			if b.Type == "thinking" {
+				t.Fatal("thinking block should be dropped by BuildView")
+			}
+		}
+	}
+
+	// Assistant messages should only have text blocks
+	for _, m := range view {
+		if m.Role == "assistant" {
+			for _, b := range m.Content {
+				if b.Type != "text" {
+					t.Fatalf("assistant view message should only have text blocks, got %q", b.Type)
+				}
+			}
+		}
+	}
+
+	// Tool messages should preserve toolUseId
+	foundTool := false
+	for _, m := range view {
+		if m.Role == "tool" {
+			foundTool = true
+			if m.ToolUseID != "tu-1" {
+				t.Fatalf("tool message toolUseId = %q, want tu-1", m.ToolUseID)
+			}
+		}
+	}
+	if !foundTool {
+		t.Fatal("tool message should be present in view")
+	}
+
+	// User messages should pass through unchanged
+	if textContent(view[0].Content) != "hello" {
+		t.Fatalf("user message content = %q, want hello", textContent(view[0].Content))
 	}
 }
 
