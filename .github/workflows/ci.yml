@@ -76,4 +76,4 @@ jobs:
           & .\bin\ax.exe agent install codex --dry-run
           & .\bin\ax.exe --yaml auth login codex --dry-run
           & .\bin\ax.exe agent run codex --model smoke-test --dry-run
-          & .\bin\ax.exe --json session providers
+          & .\bin\ax.exe --json list
