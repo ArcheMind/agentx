@@ -376,16 +376,16 @@ func TestBuildViewOffload(t *testing.T) {
 	}
 	view := BuildView(messages)
 
-	// Thinking blocks should be dropped from assistant messages
+	// Thinking blocks should be offloaded (not in view)
 	for _, m := range view {
 		for _, b := range m.Content {
 			if b.Type == "thinking" {
-				t.Fatal("thinking block should be dropped by BuildView")
+				t.Fatal("thinking block should be offloaded from view")
 			}
 		}
 	}
 
-	// Assistant messages should only have text blocks
+	// Assistant messages should only have text blocks (thinking offloaded, tool_use stripped)
 	for _, m := range view {
 		if m.Role == "assistant" {
 			for _, b := range m.Content {
