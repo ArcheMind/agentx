@@ -669,7 +669,7 @@ func TestSessionListCanIncludeSubagents(t *testing.T) {
 	if err := application.Run(context.Background(), []string{"--json", "session", "list", "--source", "codex", "--all", "--include-subagents"}); err != nil {
 		t.Fatal(err)
 	}
-	for _, expected := range []string{`"id": "child-id"`, `"is_subagent": true`} {
+	for _, expected := range []string{`"id": "child-id"`, `"isSubagent": true`} {
 		if !strings.Contains(stdout.String(), expected) {
 			t.Fatalf("JSON %q does not contain %q", stdout.String(), expected)
 		}
@@ -808,7 +808,7 @@ func TestConvertToAndFromMutuallyExclusive(t *testing.T) {
 }
 
 func TestConvertToClaude(t *testing.T) {
-	input := `{"summary":{"id":"s1","provider":"claude","message_count":1},"messages":[{"id":"m1","role":"user","content":[{"type":"text","text":"hello"}]}]}`
+	input := `{"id":"s1","provider":"claude","messageCount":1,"messages":[{"id":"m1","role":"user","content":[{"type":"text","text":"hello"}]}]}`
 	var stdout bytes.Buffer
 	application := New(false, strings.NewReader(input), &stdout, &bytes.Buffer{})
 	if err := application.Run(context.Background(), []string{"convert", "--to", "claude"}); err != nil {

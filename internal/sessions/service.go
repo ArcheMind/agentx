@@ -13,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/ArcheMind/agentx-protocol/transcript"
 )
 
 const resumeContextLimit = 120_000
@@ -24,42 +26,33 @@ type Provider struct {
 	Root      string `json:"session_root" yaml:"session_root"`
 }
 
-type ContentBlock struct {
-	Type      string `json:"type" yaml:"type"`
-	Text      string `json:"text,omitempty" yaml:"text,omitempty"`
-	Signature string `json:"signature,omitempty" yaml:"signature,omitempty"`
-	ID        string `json:"id,omitempty" yaml:"id,omitempty"`
-	Name      string `json:"name,omitempty" yaml:"name,omitempty"`
-	Input     any    `json:"input,omitempty" yaml:"input,omitempty"`
-}
-
-type Message struct {
-	ID         string         `json:"id" yaml:"id"`
-	ParentID   string         `json:"parentId,omitempty" yaml:"parentId,omitempty"`
-	Role       string         `json:"role" yaml:"role"`
-	Content    []ContentBlock `json:"content" yaml:"content"`
-	Timestamp  string         `json:"timestamp,omitempty" yaml:"timestamp,omitempty"`
-	Model      string         `json:"model,omitempty" yaml:"model,omitempty"`
-	StopReason string         `json:"stopReason,omitempty" yaml:"stopReason,omitempty"`
-	ToolUseID  string         `json:"toolUseId,omitempty" yaml:"toolUseId,omitempty"`
-	ToolName   string         `json:"toolName,omitempty" yaml:"toolName,omitempty"`
-}
+// Transcript shapes are owned by the shared protocol module; agentx defines
+// no message shapes of its own.
+type (
+	ContentBlock = transcript.ContentBlock
+	Message      = transcript.Message
+	Detail       = transcript.Session
+)
 
 type Summary struct {
 	ID           string `json:"id" yaml:"id"`
 	Provider     string `json:"provider" yaml:"provider"`
-	IsSubagent   bool   `json:"is_subagent,omitempty" yaml:"is_subagent,omitempty"`
+	IsSubagent   bool   `json:"isSubagent,omitempty" yaml:"isSubagent,omitempty"`
 	Workspace    string `json:"workspace,omitempty" yaml:"workspace,omitempty"`
 	Title        string `json:"title,omitempty" yaml:"title,omitempty"`
-	StartedAt    string `json:"started_at,omitempty" yaml:"started_at,omitempty"`
-	UpdatedAt    string `json:"updated_at,omitempty" yaml:"updated_at,omitempty"`
-	MessageCount int    `json:"message_count" yaml:"message_count"`
+	StartedAt    string `json:"startedAt,omitempty" yaml:"startedAt,omitempty"`
+	UpdatedAt    string `json:"updatedAt,omitempty" yaml:"updatedAt,omitempty"`
+	MessageCount int    `json:"messageCount" yaml:"messageCount"`
 	Source       string `json:"source" yaml:"source"`
 }
 
-type Detail struct {
-	Summary  `json:"summary" yaml:"summary"`
-	Messages []Message `json:"messages" yaml:"messages"`
+func summaryOf(detail Detail) Summary {
+	return Summary{
+		ID: detail.ID, Provider: detail.Provider, IsSubagent: detail.IsSubagent,
+		Workspace: detail.Workspace, Title: detail.Title,
+		StartedAt: detail.StartedAt, UpdatedAt: detail.UpdatedAt,
+		MessageCount: detail.MessageCount, Source: detail.Source,
+	}
 }
 
 type ListOptions struct {
@@ -134,7 +127,7 @@ func (s Service) List(options ListOptions) ([]Summary, error) {
 			if workspace != "" && !matchesWorkspace(detail, workspace) {
 				continue
 			}
-			all = append(all, detail.Summary)
+			all = append(all, summaryOf(detail))
 		}
 	}
 
@@ -380,10 +373,11 @@ func parseClaude(path string, records []map[string]any) (Detail, bool) {
 				toolUseID := stringValue(obj["tool_use_id"])
 				toolName := claudeToolNameByID(&detail, toolUseID)
 				toolMsgID := fmt.Sprintf("claude-%d", len(detail.Messages))
+				isError, _ := obj["is_error"].(bool)
 				toolMsg := Message{
 					ID: toolMsgID, ParentID: lastID, Role: "tool",
 					Content:   []ContentBlock{{Type: "text", Text: extractText(obj["content"])}},
-					Timestamp: ts, ToolUseID: toolUseID, ToolName: toolName,
+					Timestamp: ts, ToolUseID: toolUseID, ToolName: toolName, IsError: isError,
 				}
 				detail.Messages = append(detail.Messages, toolMsg)
 				updateTimeBounds(&detail, ts)
@@ -641,10 +635,11 @@ func parsePi(path string, records []map[string]any) (Detail, bool) {
 			toolCallID := stringValue(message["toolCallId"])
 			toolName := stringValue(message["toolName"])
 			msgID := fmt.Sprintf("pi-%d", len(detail.Messages))
+			isError, _ := message["isError"].(bool)
 			m := Message{
 				ID: msgID, ParentID: parentID, Role: "tool",
 				Content:   []ContentBlock{{Type: "text", Text: extractText(message["content"])}},
-				Timestamp: ts, ToolUseID: toolCallID, ToolName: toolName,
+				Timestamp: ts, ToolUseID: toolCallID, ToolName: toolName, IsError: isError,
 			}
 			detail.Messages = append(detail.Messages, m)
 			updateTimeBounds(&detail, ts)
@@ -865,7 +860,7 @@ func readJSONL(path string) ([]map[string]any, error) {
 }
 
 func newDetail(provider, source string) Detail {
-	return Detail{Summary: Summary{Provider: provider, Source: source}}
+	return Detail{Provider: provider, Source: source}
 }
 
 func codexSubagentSource(value any) bool {

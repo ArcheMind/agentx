@@ -84,7 +84,7 @@ func recentProviderSummaries(spec providerSpec, home string, includeSubagents bo
 		}
 		items := make([]Summary, len(details))
 		for index, detail := range details {
-			items[index] = detail.Summary
+			items[index] = summaryOf(detail)
 		}
 		return items, nil
 	}

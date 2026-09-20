@@ -111,7 +111,7 @@ func TestSessionIDMustBeUnambiguous(t *testing.T) {
 }
 
 func TestResumePromptDropsReasoningAndCapsSize(t *testing.T) {
-	detail := Detail{Summary: Summary{ID: "id", Provider: "codex"}, Messages: []Message{
+	detail := Detail{ID: "id", Provider: "codex", Messages: []Message{
 		{Role: "user", Content: []ContentBlock{{Type: "text", Text: strings.Repeat("a", resumeContextLimit)}}},
 		{Role: "assistant", Content: []ContentBlock{{Type: "text", Text: "latest"}}},
 	}}

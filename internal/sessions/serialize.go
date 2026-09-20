@@ -65,6 +65,14 @@ func SerializeClaude(detail Detail) []map[string]any {
 				"message":    msg,
 			})
 		case "tool":
+			result := map[string]any{
+				"type":        "tool_result",
+				"tool_use_id": m.ToolUseID,
+				"content":     textContent(m.Content),
+			}
+			if m.IsError {
+				result["is_error"] = true
+			}
 			records = append(records, map[string]any{
 				"type":       "user",
 				"sessionId":  detail.ID,
@@ -72,12 +80,8 @@ func SerializeClaude(detail Detail) []map[string]any {
 				"uuid":       m.ID,
 				"parentUuid": m.ParentID,
 				"message": map[string]any{
-					"role": "user",
-					"content": []any{map[string]any{
-						"type":        "tool_result",
-						"tool_use_id": m.ToolUseID,
-						"content":     textContent(m.Content),
-					}},
+					"role":    "user",
+					"content": []any{result},
 				},
 			})
 		}
@@ -346,15 +350,19 @@ func SerializePi(detail Detail) []map[string]any {
 					content = append(content, map[string]any{"type": "text", "text": b.Text})
 				}
 			}
+			msg := map[string]any{
+				"role":       "toolResult",
+				"toolCallId": m.ToolUseID,
+				"toolName":   m.ToolName,
+				"timestamp":  m.Timestamp,
+				"content":    content,
+			}
+			if m.IsError {
+				msg["isError"] = true
+			}
 			records = append(records, map[string]any{
-				"type": "message",
-				"message": map[string]any{
-					"role":       "toolResult",
-					"toolCallId": m.ToolUseID,
-					"toolName":   m.ToolName,
-					"timestamp":  m.Timestamp,
-					"content":    content,
-				},
+				"type":    "message",
+				"message": msg,
 			})
 		}
 	}
