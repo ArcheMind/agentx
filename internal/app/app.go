@@ -92,6 +92,8 @@ func (a App) Run(ctx context.Context, args []string) error {
 		return a.auth(ctx, args[1:])
 	case "session":
 		return a.sessions(ctx, args[1:])
+	case "convert":
+		return a.convert(args[1:])
 	default:
 		if _, err := a.Registry.Get(args[0]); err == nil {
 			return a.runAgent(ctx, args)
@@ -107,12 +109,10 @@ func (a App) agent(ctx context.Context, args []string) error {
 	switch args[0] {
 	case "list":
 		return a.list(ctx, args[1:])
-	case "which":
-		return a.which(args[1:])
+	case "show", "which", "models":
+		return a.agentShow(ctx, args[0], args[1:])
 	case "install":
 		return a.install(ctx, args[1:])
-	case "models":
-		return a.models(ctx, args[1:])
 	case "run":
 		return a.runAgent(ctx, args[1:])
 	default:
@@ -121,7 +121,7 @@ func (a App) agent(ctx context.Context, args []string) error {
 }
 
 func agentUsageError() error {
-	return fmt.Errorf("usage: ax [--json|--yaml] agent <list|which|install|models|run> [args...]")
+	return fmt.Errorf("usage: ax [--json|--yaml] agent <list|show|install|run> [args...]")
 }
 
 func (a App) list(ctx context.Context, args []string) error {
@@ -148,22 +148,89 @@ func (a App) list(ctx context.Context, args []string) error {
 	return nil
 }
 
-func (a App) which(args []string) error {
+type agentShowResult struct {
+	ID           string               `json:"id" yaml:"id"`
+	Name         string               `json:"name" yaml:"name"`
+	Binary       string               `json:"binary" yaml:"binary"`
+	Path         string               `json:"path,omitempty" yaml:"path,omitempty"`
+	Capabilities []runtime.Capability `json:"capabilities" yaml:"capabilities"`
+	Models       []runtime.Model      `json:"models,omitempty" yaml:"models,omitempty"`
+}
+
+func (a App) agentShow(ctx context.Context, verb string, args []string) error {
 	if len(args) != 1 {
-		return fmt.Errorf("usage: ax agent which <agent>")
-	}
-	if err := a.rejectStructured("agent which"); err != nil {
-		return err
+		return fmt.Errorf("usage: ax [--json|--yaml] agent show <agent>")
 	}
 	agent, err := a.Registry.Get(args[0])
 	if err != nil {
 		return err
 	}
-	path, err := exec.LookPath(agent.Binary)
-	if err != nil {
-		return fmt.Errorf("%s is not installed; run ax agent install %s", agent.Name, agent.ID)
+
+	result := agentShowResult{
+		ID:           agent.ID,
+		Name:         agent.Name,
+		Binary:       agent.Binary,
+		Capabilities: agent.Capabilities,
 	}
-	fmt.Fprintln(a.Stdout, path)
+
+	path, pathErr := exec.LookPath(agent.Binary)
+	if pathErr == nil {
+		result.Path = path
+	}
+
+	// Legacy alias: "which" outputs only the path
+	if verb == "which" {
+		if err := a.rejectStructured("agent which"); err != nil {
+			return err
+		}
+		if pathErr != nil {
+			return fmt.Errorf("%s is not installed; run ax agent install %s", agent.Name, agent.ID)
+		}
+		fmt.Fprintln(a.Stdout, path)
+		return nil
+	}
+
+	// Legacy alias: "models" outputs only the model list
+	if verb == "models" {
+		return a.models(ctx, args)
+	}
+
+	if agent.Models != nil {
+		if _, unsupported := agent.Models.(drivers.UnsupportedModels); !unsupported {
+			if models, modelErr := agent.Models.ListModels(ctx, a.Runner); modelErr == nil {
+				result.Models = models
+			}
+		}
+	}
+
+	if a.Output != OutputText {
+		return writeStructured(a.Stdout, result, a.Output)
+	}
+
+	fmt.Fprintf(a.Stdout, "Agent: %s (%s)\n", result.Name, result.ID)
+	fmt.Fprintf(a.Stdout, "Binary: %s\n", result.Binary)
+	if result.Path != "" {
+		fmt.Fprintf(a.Stdout, "Path: %s\n", result.Path)
+	} else {
+		fmt.Fprintf(a.Stdout, "Path: not installed\n")
+	}
+	if len(result.Capabilities) > 0 {
+		caps := make([]string, len(result.Capabilities))
+		for i, c := range result.Capabilities {
+			caps[i] = string(c)
+		}
+		fmt.Fprintf(a.Stdout, "Capabilities: %s\n", strings.Join(caps, ", "))
+	}
+	if len(result.Models) > 0 {
+		fmt.Fprintln(a.Stdout, "Models:")
+		for _, model := range result.Models {
+			if model.DisplayName != "" && model.DisplayName != model.ID {
+				fmt.Fprintf(a.Stdout, "  %s\t%s\n", model.ID, model.DisplayName)
+			} else {
+				fmt.Fprintf(a.Stdout, "  %s\n", model.ID)
+			}
+		}
+	}
 	return nil
 }
 
@@ -307,6 +374,13 @@ func (a App) runAgent(ctx context.Context, args []string) error {
 }
 
 func (a App) auth(ctx context.Context, args []string) error {
+	if len(args) == 0 {
+		return authUsageError()
+	}
+	// "auth list" requires no agent argument
+	if args[0] == "list" {
+		return a.authList(ctx, args[1:])
+	}
 	if len(args) < 2 {
 		return authUsageError()
 	}
@@ -317,9 +391,9 @@ func (a App) auth(ctx context.Context, args []string) error {
 	if agent.Auth == nil {
 		return fmt.Errorf("%s has no auth driver", agent.Name)
 	}
-	if args[0] == "status" {
+	if args[0] == "show" || args[0] == "status" {
 		if len(args) != 2 {
-			return fmt.Errorf("usage: ax [--json|--yaml] auth status <agent>")
+			return fmt.Errorf("usage: ax [--json|--yaml] auth show <agent>")
 		}
 		if !agent.Auth.SupportsStatus() {
 			return a.writeAuthStatus(runtime.AuthStatus{Agent: agent.ID, Supported: false, Providers: []runtime.AuthProvider{}})
@@ -382,8 +456,72 @@ func (a App) auth(ctx context.Context, args []string) error {
 	return nil
 }
 
+func (a App) authList(ctx context.Context, args []string) error {
+	if len(args) != 0 {
+		return fmt.Errorf("usage: ax [--json|--yaml] auth list")
+	}
+	type authListEntry struct {
+		Agent     string                 `json:"agent" yaml:"agent"`
+		Installed bool                   `json:"installed" yaml:"installed"`
+		Status    string                 `json:"status" yaml:"status"`
+		Providers []runtime.AuthProvider `json:"providers,omitempty" yaml:"providers,omitempty"`
+	}
+	var entries []authListEntry
+	for _, agent := range a.Registry.All() {
+		entry := authListEntry{Agent: agent.ID}
+		if _, err := exec.LookPath(agent.Binary); err != nil {
+			entry.Status = "not_installed"
+			entries = append(entries, entry)
+			continue
+		}
+		entry.Installed = true
+		if agent.Auth == nil || !agent.Auth.SupportsStatus() {
+			entry.Status = "unknown"
+			entries = append(entries, entry)
+			continue
+		}
+		status, err := agent.Auth.Status(ctx, a.Runner)
+		if err != nil {
+			entry.Status = "error"
+			entries = append(entries, entry)
+			continue
+		}
+		if len(status.Providers) == 0 {
+			entry.Status = "not_logged_in"
+		} else {
+			entry.Status = "logged_in"
+			entry.Providers = status.Providers
+		}
+		entries = append(entries, entry)
+	}
+	if a.Output != OutputText {
+		return writeStructured(a.Stdout, entries, a.Output)
+	}
+	for _, entry := range entries {
+		if len(entry.Providers) > 0 {
+			for _, p := range entry.Providers {
+				details := []string{}
+				if p.Method != "" {
+					details = append(details, p.Method)
+				}
+				if p.Subscription != "" {
+					details = append(details, p.Subscription)
+				}
+				line := fmt.Sprintf("%-10s %s", entry.Agent, p.ID)
+				if len(details) > 0 {
+					line += " (" + strings.Join(details, ", ") + ")"
+				}
+				fmt.Fprintln(a.Stdout, line)
+			}
+		} else {
+			fmt.Fprintf(a.Stdout, "%-10s %s\n", entry.Agent, entry.Status)
+		}
+	}
+	return nil
+}
+
 func authUsageError() error {
-	return fmt.Errorf("usage: ax [--json|--yaml] auth <login|status|logout> <agent> [--dry-run]")
+	return fmt.Errorf("usage: ax [--json|--yaml] auth <list|show|login|logout> [args...]")
 }
 
 func (a App) writeAuthStatus(status runtime.AuthStatus) error {
@@ -421,24 +559,10 @@ func (a App) sessions(ctx context.Context, args []string) error {
 	}
 	switch args[0] {
 	case "providers":
-		if len(args) != 1 {
-			return fmt.Errorf("usage: ax [--json|--yaml] session providers")
-		}
-		providers := a.Sessions.Providers()
-		if a.Output != OutputText {
-			return writeStructured(a.Stdout, providers, a.Output)
-		}
-		for _, provider := range providers {
-			status := "not installed"
-			if provider.Installed {
-				status = "installed"
-			}
-			fmt.Fprintf(a.Stdout, "%-10s %-13s %s\n", provider.ID, status, provider.Root)
-		}
-		return nil
+		return fmt.Errorf("session providers has been removed; use ax list instead")
 	case "list":
 		return a.sessionList(args[1:])
-	case "info":
+	case "show", "info":
 		return a.sessionInfo(args[1:])
 	case "resume":
 		return a.sessionResume(ctx, args[1:])
@@ -505,7 +629,7 @@ func (a App) sessionList(args []string) error {
 
 func (a App) sessionInfo(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: ax [--json|--yaml] session info <session-id> [--source <provider>] [--peek] [--peek-lines <n>]")
+		return fmt.Errorf("usage: ax [--json|--yaml] session show <session-id> [--source <provider>] [--peek] [--peek-lines <n>]")
 	}
 	id := args[0]
 	var source string
@@ -531,7 +655,7 @@ func (a App) sessionInfo(args []string) error {
 			}
 			peekLines = value
 		default:
-			return fmt.Errorf("unknown session info option %q", args[index])
+			return fmt.Errorf("unknown session show option %q", args[index])
 		}
 	}
 	detail, err := a.Sessions.Info(id, source)
@@ -732,7 +856,7 @@ func (a App) prompt(reader *bufio.Reader, label string, allowBlank bool) (string
 }
 
 func sessionUsageError() error {
-	return fmt.Errorf("usage: ax [--json|--yaml] session <providers|list|info|resume> [args...]")
+	return fmt.Errorf("usage: ax [--json|--yaml] session <list|show|resume> [args...]")
 }
 
 func singleLine(value string, max int) string {
@@ -751,15 +875,14 @@ Usage:
   ax [--include-subagents]
   ax <agent> [--model <model>] [--cwd <path>] [--dry-run] [-- <native args...>]
   ax [--json|--yaml] list
-  ax [--json|--yaml] agent list
-  ax agent which <agent>
-  ax [--json|--yaml] agent install <agent> [--version <version>] [--dry-run]
-  ax [--json|--yaml] agent models <agent>
-  ax [--json|--yaml] agent run <agent> [--model <model>] [--cwd <path>] [--dry-run] [-- <native args...>]
-  ax [--json|--yaml] auth login <agent> [--dry-run]
-  ax [--json|--yaml] auth status <agent>
-  ax [--json|--yaml] auth logout <agent> [--dry-run]
-  ax [--json|--yaml] session <providers|list|info|resume> [args...]
+
+  ax [--json|--yaml] agent <list|show|install|run> [args...]
+  ax [--json|--yaml] auth <list|show|login|logout> [args...]
+  ax [--json|--yaml] session <list|show|resume> [args...]
+
+  ax convert --to <provider> [< unified.json]
+  ax convert --from <provider> [< native.jsonl]
+
   ax version
 
 Running ax without arguments starts an interactive session resume. The ax <agent>
@@ -770,6 +893,134 @@ Agents: claude, codex, dsh, gemini, opencode, pi
 Set AX_LOG=debug or pass --verbose before the command to log raw external input,
 output, and errors as JSON on stderr.
 `)
+}
+
+var convertProviders = []string{"claude", "codex", "gemini", "opencode", "pi"}
+
+func isConvertProvider(id string) bool {
+	for _, p := range convertProviders {
+		if p == id {
+			return true
+		}
+	}
+	return false
+}
+
+func (a App) convert(args []string) error {
+	var toProvider, fromProvider string
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--to":
+			i++
+			if i >= len(args) {
+				return fmt.Errorf("--to requires a value")
+			}
+			toProvider = args[i]
+		case "--from":
+			i++
+			if i >= len(args) {
+				return fmt.Errorf("--from requires a value")
+			}
+			fromProvider = args[i]
+		default:
+			return fmt.Errorf("unknown convert option %q", args[i])
+		}
+	}
+	if toProvider == "" && fromProvider == "" {
+		return fmt.Errorf("usage: ax convert --to <provider> or ax convert --from <provider>")
+	}
+	if toProvider != "" && fromProvider != "" {
+		return fmt.Errorf("--to and --from are mutually exclusive")
+	}
+
+	if toProvider != "" {
+		return a.convertTo(toProvider)
+	}
+	return a.convertFrom(fromProvider)
+}
+
+func (a App) convertTo(provider string) error {
+	if !isConvertProvider(provider) {
+		return fmt.Errorf("unknown convert provider %q; supported: %s", provider, strings.Join(convertProviders, ", "))
+	}
+	data, err := io.ReadAll(a.Stdin)
+	if err != nil {
+		return fmt.Errorf("read stdin: %w", err)
+	}
+	var detail sessions.Detail
+	if err := json.Unmarshal(data, &detail); err != nil {
+		return fmt.Errorf("parse unified JSON from stdin: %w", err)
+	}
+
+	switch provider {
+	case "claude":
+		return writeJSONL(a.Stdout, sessions.SerializeClaude(detail))
+	case "codex":
+		return writeJSONL(a.Stdout, sessions.SerializeCodex(detail))
+	case "pi":
+		return writeJSONL(a.Stdout, sessions.SerializePi(detail))
+	case "gemini":
+		encoder := json.NewEncoder(a.Stdout)
+		encoder.SetIndent("", "  ")
+		return encoder.Encode(sessions.SerializeGemini(detail))
+	case "opencode":
+		return fmt.Errorf("opencode requires a directory target; use session resume instead")
+	}
+	return nil
+}
+
+func (a App) convertFrom(provider string) error {
+	if !isConvertProvider(provider) {
+		return fmt.Errorf("unknown convert provider %q; supported: %s", provider, strings.Join(convertProviders, ", "))
+	}
+	data, err := io.ReadAll(a.Stdin)
+	if err != nil {
+		return fmt.Errorf("read stdin: %w", err)
+	}
+
+	var records []map[string]any
+	switch provider {
+	case "gemini":
+		var single map[string]any
+		if err := json.Unmarshal(data, &single); err != nil {
+			return fmt.Errorf("parse %s JSON from stdin: %w", provider, err)
+		}
+		records = []map[string]any{single}
+	default:
+		lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+		for _, line := range lines {
+			line = strings.TrimSpace(line)
+			if line == "" {
+				continue
+			}
+			var record map[string]any
+			if err := json.Unmarshal([]byte(line), &record); err != nil {
+				return fmt.Errorf("parse %s JSONL from stdin: %w", provider, err)
+			}
+			records = append(records, record)
+		}
+	}
+
+	detail, ok := sessions.ParseRecords(provider, records)
+	if !ok {
+		return fmt.Errorf("no valid session found in %s input", provider)
+	}
+
+	output := a.Output
+	if output == OutputText {
+		output = OutputJSON
+	}
+	return writeStructured(a.Stdout, detail, output)
+}
+
+func writeJSONL(writer io.Writer, records []map[string]any) error {
+	encoder := json.NewEncoder(writer)
+	for _, record := range records {
+		if err := encoder.Encode(record); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 type ExitError struct {

@@ -690,13 +690,156 @@ func TestSessionInfoUsesGlobalYAMLOutput(t *testing.T) {
 	var stdout bytes.Buffer
 	application := New(false, strings.NewReader(""), &stdout, &bytes.Buffer{})
 	application.Sessions = sessions.Service{HomeDir: home}
-	if err := application.Run(context.Background(), []string{"--yaml", "session", "info", "session-id", "--source", "claude"}); err != nil {
+	if err := application.Run(context.Background(), []string{"--yaml", "session", "show", "session-id", "--source", "claude"}); err != nil {
 		t.Fatal(err)
 	}
 	for _, expected := range []string{"id: session-id", "provider: claude", "text: continue work"} {
 		if !strings.Contains(stdout.String(), expected) {
 			t.Fatalf("YAML %q does not contain %q", stdout.String(), expected)
 		}
+	}
+}
+
+func TestSessionShowAlias(t *testing.T) {
+	home := t.TempDir()
+	workspace := t.TempDir()
+	path := filepath.Join(home, ".claude", "projects", "fixture", "session.jsonl")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	fixture := `{"type":"user","sessionId":"session-id","cwd":"` + workspace + `","timestamp":"2026-09-01T10:00:00Z","message":{"content":"continue work"}}`
+	if err := os.WriteFile(path, []byte(fixture), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// "session info" still works as alias
+	var stdout bytes.Buffer
+	application := New(false, strings.NewReader(""), &stdout, &bytes.Buffer{})
+	application.Sessions = sessions.Service{HomeDir: home}
+	if err := application.Run(context.Background(), []string{"--yaml", "session", "info", "session-id", "--source", "claude"}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(stdout.String(), "id: session-id") {
+		t.Fatalf("info alias output = %q", stdout.String())
+	}
+}
+
+func TestSessionProvidersRemoved(t *testing.T) {
+	application := New(false, strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{})
+	err := application.Run(context.Background(), []string{"session", "providers"})
+	if err == nil || !strings.Contains(err.Error(), "removed") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestAuthShowAlias(t *testing.T) {
+	var stdout bytes.Buffer
+	application := New(false, strings.NewReader(""), &stdout, &bytes.Buffer{})
+	// "auth status" should still work as alias for "auth show" -- must not return a usage error
+	err := application.Run(context.Background(), []string{"--yaml", "auth", "status", "claude"})
+	if err != nil && strings.Contains(err.Error(), "usage:") {
+		t.Fatalf("auth status alias should be accepted, error = %v", err)
+	}
+	// If it succeeds (agent installed) or fails for non-usage reasons, the alias works
+}
+
+func TestAgentShowStructuredOutput(t *testing.T) {
+	var stdout bytes.Buffer
+	application := New(false, strings.NewReader(""), &stdout, &bytes.Buffer{})
+	err := application.Run(context.Background(), []string{"--json", "agent", "show", "codex"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, expected := range []string{`"id": "codex"`, `"name": "Codex CLI"`, `"binary": "codex"`, `"capabilities"`} {
+		if !strings.Contains(stdout.String(), expected) {
+			t.Fatalf("agent show JSON %q does not contain %q", stdout.String(), expected)
+		}
+	}
+}
+
+func TestAgentWhichAlias(t *testing.T) {
+	application := New(false, strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{})
+	// "agent which" still accepted -- must not return a usage error
+	err := application.Run(context.Background(), []string{"agent", "which", "codex"})
+	if err != nil && strings.Contains(err.Error(), "usage:") {
+		t.Fatalf("agent which alias should be accepted, error = %v", err)
+	}
+}
+
+func TestAgentModelsAlias(t *testing.T) {
+	application := New(false, strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{})
+	// "agent models" still accepted
+	err := application.Run(context.Background(), []string{"agent", "models", "codex"})
+	// codex models uses a cache driver that may fail, but the command is parsed
+	if err != nil && strings.Contains(err.Error(), "usage:") {
+		t.Fatalf("agent models alias should be accepted, error = %v", err)
+	}
+}
+
+func TestConvertToRejectsUnknownProvider(t *testing.T) {
+	application := New(false, strings.NewReader("{}"), &bytes.Buffer{}, &bytes.Buffer{})
+	err := application.Run(context.Background(), []string{"convert", "--to", "unknown"})
+	if err == nil || !strings.Contains(err.Error(), "unknown convert provider") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestConvertFromRejectsUnknownProvider(t *testing.T) {
+	application := New(false, strings.NewReader("{}"), &bytes.Buffer{}, &bytes.Buffer{})
+	err := application.Run(context.Background(), []string{"convert", "--from", "unknown"})
+	if err == nil || !strings.Contains(err.Error(), "unknown convert provider") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestConvertRequiresFlag(t *testing.T) {
+	application := New(false, strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{})
+	err := application.Run(context.Background(), []string{"convert"})
+	if err == nil || !strings.Contains(err.Error(), "usage:") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestConvertToAndFromMutuallyExclusive(t *testing.T) {
+	application := New(false, strings.NewReader("{}"), &bytes.Buffer{}, &bytes.Buffer{})
+	err := application.Run(context.Background(), []string{"convert", "--to", "claude", "--from", "codex"})
+	if err == nil || !strings.Contains(err.Error(), "mutually exclusive") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestConvertToClaude(t *testing.T) {
+	input := `{"summary":{"id":"s1","provider":"claude","message_count":1},"messages":[{"id":"m1","role":"user","content":[{"type":"text","text":"hello"}]}]}`
+	var stdout bytes.Buffer
+	application := New(false, strings.NewReader(input), &stdout, &bytes.Buffer{})
+	if err := application.Run(context.Background(), []string{"convert", "--to", "claude"}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(stdout.String(), `"type":"user"`) || !strings.Contains(stdout.String(), `"sessionId":"s1"`) {
+		t.Fatalf("convert --to claude output = %q", stdout.String())
+	}
+}
+
+func TestConvertFromCodex(t *testing.T) {
+	input := `{"type":"session_meta","timestamp":"2026-09-01T11:00:00Z","payload":{"id":"cx1","cwd":"/work","timestamp":"2026-09-01T11:00:00Z"}}
+{"type":"response_item","timestamp":"2026-09-01T11:01:00Z","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"hello"}]}}`
+	var stdout bytes.Buffer
+	application := New(false, strings.NewReader(input), &stdout, &bytes.Buffer{})
+	if err := application.Run(context.Background(), []string{"convert", "--from", "codex"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, expected := range []string{`"id": "cx1"`, `"provider": "codex"`, `"text": "hello"`} {
+		if !strings.Contains(stdout.String(), expected) {
+			t.Fatalf("convert --from codex output %q does not contain %q", stdout.String(), expected)
+		}
+	}
+}
+
+func TestConvertToOpenCodeErrors(t *testing.T) {
+	input := `{"summary":{"id":"s1","provider":"opencode","message_count":0},"messages":[]}`
+	application := New(false, strings.NewReader(input), &bytes.Buffer{}, &bytes.Buffer{})
+	err := application.Run(context.Background(), []string{"convert", "--to", "opencode"})
+	if err == nil || !strings.Contains(err.Error(), "directory target") {
+		t.Fatalf("error = %v", err)
 	}
 }
 

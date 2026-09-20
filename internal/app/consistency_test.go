@@ -24,15 +24,11 @@ func TestCrossLayerConsistency(t *testing.T) {
 	}
 	for _, command := range []string{
 		"[--json|--yaml] list",
-		"agent list",
-		"agent which <agent>",
-		"agent install <agent>",
-		"agent models <agent>",
-		"agent run <agent>",
-		"auth login <agent>",
-		"auth status <agent>",
-		"auth logout <agent>",
-		"session <providers|list|info|resume>",
+		"agent <list|show|install|run>",
+		"auth <list|show|login|logout>",
+		"session <list|show|resume>",
+		"convert --to <provider>",
+		"convert --from <provider>",
 	} {
 		if !strings.Contains(help.String(), command) {
 			t.Errorf("help does not advertise %q", command)

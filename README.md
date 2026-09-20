@@ -83,17 +83,18 @@ ax agent list
 ax agent install codex --dry-run
 ax agent install codex
 
+# Inspect an agent: binary path, capabilities, available models
+ax agent show codex
+ax --json agent show dsh
+
 # Use native authentication
 ax auth login codex
-ax auth status codex
-
-# Inspect models when the agent exposes a verified source
-ax agent models codex
-ax agent models dsh
+ax auth show codex
+ax auth list
 
 # Configure DSH credentials through its native Models page, then inspect status
 ax auth login dsh
-ax auth status dsh
+ax auth show dsh
 ```
 
 `ax list` is a readiness view. Uninstalled, logged-out, and unknown agents stay on one line; only agents with verified authentication expand their accounts and currently available models. Terminal output uses color for readiness and status, while pipes, redirects, JSON, YAML, and `NO_COLOR` remain free of ANSI sequences.
@@ -119,7 +120,7 @@ ax session list
 # Inspect a session from any supported native store
 ax session list --source codex --all --limit 20 --sort date
 ax session list --all --include-subagents
-ax session info <session-id> --source codex --peek
+ax session show <session-id> --source codex --peek
 
 # Continue its bounded context in another native agent
 ax session resume claude <session-id> --source codex
@@ -159,24 +160,14 @@ ax
 ax <agent> [--model <model>] [--cwd <path>] [--dry-run] [-- <native args...>]
 ax [--json|--yaml] list
 
-ax agent list
-ax agent which <agent>
-ax agent install <agent> [--version <version>] [--dry-run]
-ax agent models <agent>
-ax agent run <agent> [--model <model>] [--cwd <path>] [--dry-run] [-- <native args...>]
+ax [--json|--yaml] agent <list|show|install|run> [args...]
+ax [--json|--yaml] auth <list|show|login|logout> [args...]
+ax [--json|--yaml] session <list|show|resume> [args...]
 
-ax auth login <agent> [--dry-run]
-ax auth status <agent>
-ax auth logout <agent> [--dry-run]
+ax convert --to <provider> [< unified.json]
+ax convert --from <provider> [< native.jsonl]
 
-ax session <providers|list|info|resume>
-ax session providers
-ax session list [--source <provider>] [--workspace <path>|--all]
-                [--include-subagents] [--limit <n>]
-                [--sort date|messages|provider]
-ax session info <session-id> [--source <provider>] [--peek|--peek-lines <n>]
-ax session resume <target-agent> <session-id> [--source <provider>]
-                  [--workspace <path>] [--dry-run]
+ax version
 ```
 
 Place `--json` or `--yaml` before the command for AgentX-owned results and dry-run plans. Actual install, authentication, launch, and resume commands retain native interactive output and reject structured mode rather than silently mixing protocols.
@@ -184,7 +175,7 @@ Place `--json` or `--yaml` before the command for AgentX-owned results and dry-r
 ```bash
 ax --json agent list
 ax --yaml list
-ax --yaml session info <session-id> --source codex
+ax --yaml session show <session-id> --source codex
 ax --json codex --model gpt-5.4 --dry-run
 ```
 

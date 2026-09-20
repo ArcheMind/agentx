@@ -25,7 +25,7 @@ smoke: build
 	./bin/ax agent install codex --dry-run >/dev/null
 	./bin/ax --yaml auth login codex --dry-run >/dev/null
 	./bin/ax agent run codex --model smoke-test --dry-run >/dev/null
-	./bin/ax --json session providers >/dev/null
+	echo '{"summary":{"id":"test","provider":"claude","message_count":0},"messages":[]}' | ./bin/ax convert --to claude >/dev/null
 
 smoke-live: build
 	./bin/ax --json agent models codex >/dev/null

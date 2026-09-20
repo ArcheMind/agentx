@@ -1153,3 +1153,98 @@ func nonEmpty(values []string) []string {
 	}
 	return result
 }
+
+// ParseRecords parses raw records from a native provider format into a unified Detail.
+// For JSONL providers (claude, codex, pi), records is the list of parsed JSON objects.
+// For JSON providers (gemini), records should contain a single top-level object.
+// For opencode, this returns false since opencode uses a file-per-message layout.
+func ParseRecords(provider string, records []map[string]any) (Detail, bool) {
+	switch provider {
+	case "claude":
+		return parseClaude("stdin", records)
+	case "codex":
+		return parseCodex("stdin", records)
+	case "pi":
+		return parsePi("stdin", records)
+	case "gemini":
+		if len(records) == 0 {
+			return Detail{}, false
+		}
+		return parseGeminiRecord(records[0])
+	default:
+		return Detail{}, false
+	}
+}
+
+func parseGeminiRecord(record map[string]any) (Detail, bool) {
+	detail := newDetail("gemini", "stdin")
+	detail.ID = stringValue(record["sessionId"])
+	detail.IsSubagent = stringValue(record["kind"]) == "subagent"
+	detail.Title = stringValue(record["summary"])
+	detail.StartedAt = timeValue(record["startTime"])
+	detail.UpdatedAt = timeValue(record["lastUpdated"])
+
+	var lastID string
+	values, _ := record["messages"].([]any)
+	for _, value := range values {
+		message, _ := value.(map[string]any)
+		role := stringValue(message["type"])
+		if role == "gemini" {
+			role = "assistant"
+		}
+		if role != "user" && role != "assistant" {
+			continue
+		}
+		ts := timeValue(message["timestamp"])
+		msgID := fmt.Sprintf("gemini-%d", len(detail.Messages))
+
+		if role == "assistant" {
+			var blocks []ContentBlock
+			if text := extractText(message["content"]); text != "" {
+				blocks = append(blocks, ContentBlock{Type: "text", Text: text})
+			}
+			if toolCalls, ok := message["toolCalls"].([]any); ok {
+				for _, tc := range toolCalls {
+					call, _ := tc.(map[string]any)
+					callID := stringValue(call["id"])
+					callName := stringValue(call["name"])
+					blocks = append(blocks, ContentBlock{Type: "tool_use", ID: callID, Name: callName, Input: call["args"]})
+					if results, ok := call["result"].([]any); ok {
+						for _, r := range results {
+							resp, _ := r.(map[string]any)
+							fr, _ := resp["functionResponse"].(map[string]any)
+							toolMsgID := fmt.Sprintf("gemini-%d", len(detail.Messages)+1)
+							toolMsg := Message{
+								ID: toolMsgID, ParentID: msgID, Role: "tool",
+								Content:   []ContentBlock{{Type: "text", Text: extractText(fr["response"])}},
+								Timestamp: ts, ToolUseID: callID, ToolName: callName,
+							}
+							detail.Messages = append(detail.Messages, toolMsg)
+							updateTimeBounds(&detail, ts)
+						}
+					}
+				}
+			}
+			if len(blocks) == 0 {
+				continue
+			}
+			m := Message{ID: msgID, ParentID: lastID, Role: role, Content: blocks, Timestamp: ts}
+			detail.Messages = append(detail.Messages, m)
+			updateTimeBounds(&detail, ts)
+			lastID = msgID
+		} else {
+			var blocks []ContentBlock
+			if text := extractText(message["content"]); text != "" {
+				blocks = append(blocks, ContentBlock{Type: "text", Text: text})
+			}
+			if len(blocks) == 0 {
+				continue
+			}
+			m := Message{ID: msgID, ParentID: lastID, Role: role, Content: blocks, Timestamp: ts}
+			detail.Messages = append(detail.Messages, m)
+			updateTimeBounds(&detail, ts)
+			lastID = msgID
+		}
+	}
+	return finishDetail(detail)
+}
