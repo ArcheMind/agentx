@@ -519,86 +519,16 @@ func loadGemini(home string) ([]Detail, error) {
 		if json.Unmarshal(data, &record) != nil {
 			continue
 		}
-		detail := newDetail("gemini", path)
-		detail.ID = stringValue(record["sessionId"])
-		detail.IsSubagent = stringValue(record["kind"]) == "subagent"
-		detail.Title = stringValue(record["summary"])
-		detail.StartedAt = timeValue(record["startTime"])
-		detail.UpdatedAt = timeValue(record["lastUpdated"])
+		detail, ok := parseGeminiRecord(record)
+		if !ok {
+			continue
+		}
+		detail.Source = path
 		rootFile := filepath.Join(filepath.Dir(filepath.Dir(path)), ".project_root")
 		if data, err := os.ReadFile(rootFile); err == nil {
 			detail.Workspace = strings.TrimSpace(string(data))
 		}
-		var lastID string
-		if values, ok := record["messages"].([]any); ok {
-			for _, value := range values {
-				message, _ := value.(map[string]any)
-				role := stringValue(message["type"])
-				if role == "gemini" {
-					role = "assistant"
-				}
-				if role != "user" && role != "assistant" {
-					continue
-				}
-				ts := timeValue(message["timestamp"])
-				msgID := fmt.Sprintf("gemini-%d", len(detail.Messages))
-
-				if role == "assistant" {
-					var blocks []ContentBlock
-					// Text content
-					if text := extractText(message["content"]); text != "" {
-						blocks = append(blocks, ContentBlock{Type: "text", Text: text})
-					}
-					// Tool calls
-					if toolCalls, ok := message["toolCalls"].([]any); ok {
-						for _, tc := range toolCalls {
-							call, _ := tc.(map[string]any)
-							callID := stringValue(call["id"])
-							callName := stringValue(call["name"])
-							blocks = append(blocks, ContentBlock{Type: "tool_use", ID: callID, Name: callName, Input: call["args"]})
-							// Tool results from toolCall.result
-							if results, ok := call["result"].([]any); ok {
-								for _, r := range results {
-									resp, _ := r.(map[string]any)
-									fr, _ := resp["functionResponse"].(map[string]any)
-									toolMsgID := fmt.Sprintf("gemini-%d", len(detail.Messages)+1)
-									toolMsg := Message{
-										ID: toolMsgID, ParentID: msgID, Role: "tool",
-										Content:   []ContentBlock{{Type: "text", Text: extractText(fr["response"])}},
-										Timestamp: ts, ToolUseID: callID, ToolName: callName,
-									}
-									detail.Messages = append(detail.Messages, toolMsg)
-									updateTimeBounds(&detail, ts)
-								}
-							}
-						}
-					}
-					if len(blocks) == 0 {
-						continue
-					}
-					m := Message{ID: msgID, ParentID: lastID, Role: role, Content: blocks, Timestamp: ts}
-					detail.Messages = append(detail.Messages, m)
-					updateTimeBounds(&detail, ts)
-					lastID = msgID
-				} else {
-					// user message
-					var blocks []ContentBlock
-					if text := extractText(message["content"]); text != "" {
-						blocks = append(blocks, ContentBlock{Type: "text", Text: text})
-					}
-					if len(blocks) == 0 {
-						continue
-					}
-					m := Message{ID: msgID, ParentID: lastID, Role: role, Content: blocks, Timestamp: ts}
-					detail.Messages = append(detail.Messages, m)
-					updateTimeBounds(&detail, ts)
-					lastID = msgID
-				}
-			}
-		}
-		if finished, ok := finishDetail(detail); ok {
-			details = append(details, finished)
-		}
+		details = append(details, detail)
 	}
 	sortDetails(details)
 	return details, nil
@@ -1195,6 +1125,7 @@ func parseGeminiRecord(record map[string]any) (Detail, bool) {
 
 		if role == "assistant" {
 			var blocks []ContentBlock
+			var toolMessages []Message
 			if text := extractText(message["content"]); text != "" {
 				blocks = append(blocks, ContentBlock{Type: "text", Text: text})
 			}
@@ -1208,14 +1139,12 @@ func parseGeminiRecord(record map[string]any) (Detail, bool) {
 						for _, r := range results {
 							resp, _ := r.(map[string]any)
 							fr, _ := resp["functionResponse"].(map[string]any)
-							toolMsgID := fmt.Sprintf("gemini-%d", len(detail.Messages)+1)
 							toolMsg := Message{
-								ID: toolMsgID, ParentID: msgID, Role: "tool",
+								ParentID: msgID, Role: "tool",
 								Content:   []ContentBlock{{Type: "text", Text: extractText(fr["response"])}},
 								Timestamp: ts, ToolUseID: callID, ToolName: callName,
 							}
-							detail.Messages = append(detail.Messages, toolMsg)
-							updateTimeBounds(&detail, ts)
+							toolMessages = append(toolMessages, toolMsg)
 						}
 					}
 				}
@@ -1227,6 +1156,12 @@ func parseGeminiRecord(record map[string]any) (Detail, bool) {
 			detail.Messages = append(detail.Messages, m)
 			updateTimeBounds(&detail, ts)
 			lastID = msgID
+			for _, toolMessage := range toolMessages {
+				toolMessage.ID = fmt.Sprintf("gemini-%d", len(detail.Messages))
+				detail.Messages = append(detail.Messages, toolMessage)
+				updateTimeBounds(&detail, ts)
+				lastID = toolMessage.ID
+			}
 		} else {
 			var blocks []ContentBlock
 			if text := extractText(message["content"]); text != "" {

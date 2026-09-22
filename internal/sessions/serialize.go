@@ -270,10 +270,23 @@ func SerializeGemini(detail Detail) map[string]any {
 		}
 	}
 
-	return map[string]any{
+	result := map[string]any{
 		"sessionId": detail.ID,
 		"messages":  messages,
 	}
+	if detail.IsSubagent {
+		result["kind"] = "subagent"
+	}
+	if detail.Title != "" {
+		result["summary"] = detail.Title
+	}
+	if detail.StartedAt != "" {
+		result["startTime"] = detail.StartedAt
+	}
+	if detail.UpdatedAt != "" {
+		result["lastUpdated"] = detail.UpdatedAt
+	}
+	return result
 }
 
 // SerializePi converts a unified Detail back to Pi's native JSONL records.

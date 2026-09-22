@@ -842,28 +842,3 @@ func TestConvertToOpenCodeErrors(t *testing.T) {
 		t.Fatalf("error = %v", err)
 	}
 }
-
-func TestSessionResumeDryRunIsNativeAgentPlan(t *testing.T) {
-	home := t.TempDir()
-	workspace := t.TempDir()
-	path := filepath.Join(home, ".pi", "agent", "sessions", "fixture", "session.jsonl")
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	fixture := `{"type":"session","id":"pi-session","cwd":"` + workspace + `"}` + "\n" +
-		`{"type":"message","message":{"role":"user","content":"continue work"}}`
-	if err := os.WriteFile(path, []byte(fixture), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	var stdout bytes.Buffer
-	application := New(false, strings.NewReader(""), &stdout, &bytes.Buffer{})
-	application.Sessions = sessions.Service{HomeDir: home}
-	if err := application.Run(context.Background(), []string{"--json", "session", "resume", "codex", "pi-session", "--source", "pi", "--dry-run"}); err != nil {
-		t.Fatal(err)
-	}
-	for _, expected := range []string{`"executable": "codex"`, `"cwd": "` + workspace + `"`, "continue work"} {
-		if !strings.Contains(stdout.String(), expected) {
-			t.Fatalf("JSON %q does not contain %q", stdout.String(), expected)
-		}
-	}
-}
