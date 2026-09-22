@@ -16,6 +16,7 @@ import (
 	"github.com/ArcheMind/agentx/internal/drivers"
 	"github.com/ArcheMind/agentx/internal/runtime"
 	"github.com/ArcheMind/agentx/internal/sessions"
+	"github.com/ArcheMind/agentx/internal/skills"
 	"gopkg.in/yaml.v3"
 )
 
@@ -24,6 +25,7 @@ var Version = "0.1.0"
 type App struct {
 	Registry   drivers.Registry
 	Sessions   sessions.Service
+	Skills     skills.Service
 	Runner     runtime.Runner
 	Stdin      io.Reader
 	Stdout     io.Writer
@@ -42,13 +44,15 @@ const (
 )
 
 func New(debug bool, stdin io.Reader, stdout, stderr io.Writer) App {
-	return App{
+	app := App{
 		Registry: drivers.NewRegistry(),
 		Sessions: sessions.New(),
 		Runner:   runtime.ExecRunner{Debug: debug, Log: stderr},
 		Stdin:    stdin, Stdout: stdout, Stderr: stderr,
 		Color: colorEnabled(stdout),
 	}
+	app.Skills = skills.New(app.Runner)
+	return app
 }
 
 func (a App) Run(ctx context.Context, args []string) error {
@@ -92,6 +96,8 @@ func (a App) Run(ctx context.Context, args []string) error {
 		return a.auth(ctx, args[1:])
 	case "session":
 		return a.sessions(ctx, args[1:])
+	case "skill":
+		return a.skill(ctx, args[1:])
 	case "convert":
 		return a.convert(args[1:])
 	default:
@@ -879,6 +885,7 @@ Usage:
   ax [--json|--yaml] agent <list|show|install|run> [args...]
   ax [--json|--yaml] auth <list|show|login|logout> [args...]
   ax [--json|--yaml] session <list|show|resume> [args...]
+  ax [--json|--yaml] skill <list|show|install> [args...]
 
   ax convert --to <provider> [< unified.json]
   ax convert --from <provider> [< native.jsonl]

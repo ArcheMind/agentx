@@ -92,6 +92,14 @@ ax auth login codex
 ax auth show codex
 ax auth list
 
+# Discover and inspect installed Agent Skills
+ax skill list
+ax skill show review
+
+# Preview, then install a local skill or a skill inside a Git repository
+ax skill install ./skills/review --scope project --dry-run
+ax skill install https://github.com/example/agent-skills.git --path skills/review --scope user
+
 # Configure DSH credentials through its native Models page, then inspect status
 ax auth login dsh
 ax auth show dsh
@@ -142,14 +150,14 @@ The design is inspired by [uv](https://github.com/astral-sh/uv): preserve establ
 
 ## Supported agents
 
-| Agent | Install | Login | Auth status | Model list | Model select | Sessions |
-| --- | --- | --- | --- | --- | --- | --- |
-| Claude Code | Yes | Yes | Yes | No verified source | Yes | Yes |
-| Codex CLI | Yes | Yes | Yes | Native cache | Yes | Yes |
-| DeepSeek Harness | Yes | Web UI | Provider credential | Bundled catalog | Native profile config | Unsupported |
-| Gemini CLI | Yes | Interactive | Unsupported | No verified source | Yes | Yes |
-| OpenCode | Yes | Yes | Provider list | Native command | Yes | Yes |
-| Pi | Yes | Provider selector | Provider list | Native command + auth filter | Yes | Yes |
+| Agent | Install | Login | Auth status | Model list | Model select | Sessions | Skills |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Claude Code | Yes | Yes | Yes | No verified source | Yes | Yes | Shared store via projection |
+| Codex CLI | Yes | Yes | Yes | Native cache | Yes | Yes | Shared store |
+| DeepSeek Harness | Yes | Web UI | Provider credential | Bundled catalog | Native profile config | Unsupported | Unsupported |
+| Gemini CLI | Yes | Interactive | Unsupported | No verified source | Yes | Yes | Shared store |
+| OpenCode | Yes | Yes | Provider list | Native command | Yes | Yes | Not actively integrated |
+| Pi | Yes | Provider selector | Provider list | Native command + auth filter | Yes | Yes | Shared store |
 
 The exact native versions and evidence behind this table live in the [lifecycle and protocol audit](docs/lifecycle-and-protocol-audit.md).
 
@@ -163,6 +171,7 @@ ax [--json|--yaml] list
 ax [--json|--yaml] agent <list|show|install|run> [args...]
 ax [--json|--yaml] auth <list|show|login|logout> [args...]
 ax [--json|--yaml] session <list|show|resume> [args...]
+ax [--json|--yaml] skill <list|show|install> [args...]
 
 ax convert --to <provider> [< unified.json]
 ax convert --from <provider> [< native.jsonl]
@@ -171,6 +180,8 @@ ax version
 ```
 
 Place `--json` or `--yaml` before the command for AgentX-owned results and dry-run plans. Actual install, authentication, launch, and resume commands retain native interactive output and reject structured mode rather than silently mixing protocols.
+
+Skills use the standard `SKILL.md` format. User skills live in `~/.agents/skills`; project skills live in `.agents/skills`. Codex, Gemini, and Pi discover that canonical store directly. AgentX creates a relative symbolic-link projection in the matching `.claude/skills` directory so Claude reads the same files rather than a copy. Install records source provenance in `.agentx-origins.yaml` beside the canonical store. Existing canonical or Claude destinations are treated as conflicts and are never overwritten.
 
 ```bash
 ax --json agent list

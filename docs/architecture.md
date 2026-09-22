@@ -18,6 +18,11 @@ CLI grammar and output protocol
              |     +-- OpenCode
              |     +-- Pi
              |
+             +-- Agent Skills store
+             |     +-- canonical .agents/skills directories
+             |     +-- Claude symbolic-link projections
+             |     +-- local and Git installers
+             |
              +-- external command runner
 ```
 
@@ -37,6 +42,12 @@ This avoids a large adapter filled with optional methods and prevents the CLI fr
 
 Resume never writes a source provider's database. AgentX builds a bounded transcript and invokes the target agent through its launch driver.
 
+## Agent Skills
+
+`internal/skills` discovers and validates standard `SKILL.md` directories. The canonical stores are `~/.agents/skills` for user scope and `.agents/skills` for project scope. Codex, Gemini, and Pi consume those directories directly. Claude receives a relative symbolic-link projection under the equivalent `.claude/skills` directory, preserving one physical source of truth. DeepSeek Harness is reported as unsupported; OpenCode remains outside this actively developed integration.
+
+Installation accepts a local directory or a Git repository plus subpath, validates frontmatter and resource safety before writing, rejects conflicts, and stages the canonical copy before publishing it. Source provenance is stored outside the skill in the canonical store's `.agentx-origins.yaml`; the skill itself remains the standard Agent Skills format.
+
 ## External commands
 
 `internal/runtime` executes native commands. Interactive operations retain native stdin, stdout, stderr, and exit behavior. When debug logging is explicitly enabled, each external call emits its raw command plan, stdout, stderr, error, and exit code as a JSON record.
@@ -49,6 +60,7 @@ Resume never writes a source provider's database. AgentX builds a bounded transc
 | Credentials | Native agent | Invoke native login, status, and logout flows |
 | Models | Verified native source | Parse or report unsupported |
 | Sessions | Native agent | Read and normalize without mutation |
+| Skills | User or project `.agents/skills` | Validate, install, discover, and project to Claude |
 | Run output | Native agent | Pass through unchanged |
 | Dry-run plans | AgentX | Emit as text, JSON, or YAML |
 

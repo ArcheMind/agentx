@@ -27,6 +27,7 @@ func TestCrossLayerConsistency(t *testing.T) {
 		"agent <list|show|install|run>",
 		"auth <list|show|login|logout>",
 		"session <list|show|resume>",
+		"skill <list|show|install>",
 		"convert --to <provider>",
 		"convert --from <provider>",
 	} {
