@@ -1,0 +1,6 @@
+[[rule]]
+toolName = "activate_skill"
+argsPattern = '"name":"agentx-unified-smoke"'
+decision = "allow"
+priority = 100
+interactive = false

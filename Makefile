@@ -1,11 +1,11 @@
-.PHONY: fmt check test audit build smoke smoke-live smoke-clean smoke-hooks-live verify clean
+.PHONY: fmt check test audit build smoke smoke-live smoke-clean smoke-hooks-live smoke-skills-clean smoke-skills-live verify clean
 
 fmt:
 	gofmt -w cmd internal
 
 check:
 	go vet ./...
-	sh -n install.sh test/smoke/install-clean.sh test/smoke/record-hook.sh test/smoke/hooks-live.sh
+	sh -n install.sh test/smoke/install-clean.sh test/smoke/record-hook.sh test/smoke/hooks-live.sh test/smoke/skills-clean.sh test/smoke/skills-live.sh
 
 test:
 	go test ./...
@@ -36,10 +36,16 @@ smoke-live: build
 	AX_LOG=debug ./bin/ax --json agent list >/dev/null 2>&1
 
 smoke-clean:
-	docker build --no-cache -f test/smoke/Dockerfile -t agentx-smoke-clean .
+	docker build --no-cache --target agents-clean -f test/smoke/Dockerfile -t agentx-smoke-clean .
 
 smoke-hooks-live: build
 	sh test/smoke/hooks-live.sh "$(CURDIR)/bin/ax"
+
+smoke-skills-clean:
+	docker build --no-cache --target skills-clean -f test/smoke/Dockerfile -t agentx-smoke-skills-clean .
+
+smoke-skills-live: build
+	sh test/smoke/skills-live.sh "$(CURDIR)/bin/ax"
 
 verify: fmt check test audit smoke
 
