@@ -23,6 +23,7 @@ smoke: build
 	./bin/ax --json agent list >/dev/null
 	./bin/ax --yaml agent list >/dev/null
 	./bin/ax --json skill list >/dev/null
+	./bin/ax --json hook list >/dev/null
 	./bin/ax agent install codex --dry-run >/dev/null
 	./bin/ax --yaml auth login codex --dry-run >/dev/null
 	./bin/ax agent run codex --model smoke-test --dry-run >/dev/null

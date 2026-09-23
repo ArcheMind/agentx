@@ -96,6 +96,10 @@ ax auth list
 ax skill list
 ax skill show review
 
+# Inspect portable Hooks configured for Claude, Codex, Gemini, and Pi
+ax hook list
+ax --json hook list
+
 # Preview, then install a local skill or a skill inside a Git repository
 ax skill install ./skills/review --scope project --dry-run
 ax skill install https://github.com/example/agent-skills.git --path skills/review --scope user
@@ -172,6 +176,7 @@ ax [--json|--yaml] agent <list|show|install|run> [args...]
 ax [--json|--yaml] auth <list|show|login|logout> [args...]
 ax [--json|--yaml] session <list|show|resume> [args...]
 ax [--json|--yaml] skill <list|show|install> [args...]
+ax [--json|--yaml] hook list
 
 ax convert --to <provider> [< unified.json]
 ax convert --from <provider> [< native.jsonl]
@@ -182,6 +187,8 @@ ax version
 Place `--json` or `--yaml` before the command for AgentX-owned results and dry-run plans. Actual install, authentication, launch, and resume commands retain native interactive output and reject structured mode rather than silently mixing protocols.
 
 Skills use the standard `SKILL.md` format. User skills live in `~/.agents/skills`; project skills live in `.agents/skills`. Codex, Gemini, and Pi discover that canonical store directly. AgentX creates a relative symbolic-link projection in the matching `.claude/skills` directory so Claude reads the same files rather than a copy. Install records source provenance in `.agentx-origins.yaml` beside the canonical store. Existing canonical or Claude destinations are treated as conflicts and are never overwritten.
+
+Hooks use the Claude/Codex `hooks.json` structure at `~/.agents/hooks.json` and `.agents/hooks.json`. The portable profile contains `SessionStart`, `SessionEnd`, `UserPromptSubmit`, and `Stop` command handlers. `ax hook list` reports only that canonical configuration and AgentX targets; native-only events produce warnings and remain under their native agent's control.
 
 ```bash
 ax --json agent list

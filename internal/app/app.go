@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/ArcheMind/agentx/internal/drivers"
+	"github.com/ArcheMind/agentx/internal/hooks"
 	"github.com/ArcheMind/agentx/internal/runtime"
 	"github.com/ArcheMind/agentx/internal/sessions"
 	"github.com/ArcheMind/agentx/internal/skills"
@@ -26,6 +27,7 @@ type App struct {
 	Registry   drivers.Registry
 	Sessions   sessions.Service
 	Skills     skills.Service
+	Hooks      hooks.Service
 	Runner     runtime.Runner
 	Stdin      io.Reader
 	Stdout     io.Writer
@@ -52,6 +54,7 @@ func New(debug bool, stdin io.Reader, stdout, stderr io.Writer) App {
 		Color: colorEnabled(stdout),
 	}
 	app.Skills = skills.New(app.Runner)
+	app.Hooks = hooks.New()
 	return app
 }
 
@@ -98,6 +101,8 @@ func (a App) Run(ctx context.Context, args []string) error {
 		return a.sessions(ctx, args[1:])
 	case "skill":
 		return a.skill(ctx, args[1:])
+	case "hook":
+		return a.hook(args[1:])
 	case "convert":
 		return a.convert(args[1:])
 	default:
@@ -886,6 +891,7 @@ Usage:
   ax [--json|--yaml] auth <list|show|login|logout> [args...]
   ax [--json|--yaml] session <list|show|resume> [args...]
   ax [--json|--yaml] skill <list|show|install> [args...]
+  ax [--json|--yaml] hook list
 
   ax convert --to <provider> [< unified.json]
   ax convert --from <provider> [< native.jsonl]
