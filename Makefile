@@ -1,11 +1,11 @@
-.PHONY: fmt check test audit build smoke smoke-live verify clean
+.PHONY: fmt check test audit build smoke smoke-live smoke-clean smoke-hooks-live verify clean
 
 fmt:
 	gofmt -w cmd internal
 
 check:
 	go vet ./...
-	sh -n install.sh
+	sh -n install.sh test/smoke/install-clean.sh test/smoke/record-hook.sh test/smoke/hooks-live.sh
 
 test:
 	go test ./...
@@ -34,6 +34,12 @@ smoke-live: build
 	./bin/ax --json agent models opencode >/dev/null
 	./bin/ax --json agent models pi >/dev/null
 	AX_LOG=debug ./bin/ax --json agent list >/dev/null 2>&1
+
+smoke-clean:
+	docker build --no-cache -f test/smoke/Dockerfile -t agentx-smoke-clean .
+
+smoke-hooks-live: build
+	sh test/smoke/hooks-live.sh "$(CURDIR)/bin/ax"
 
 verify: fmt check test audit smoke
 

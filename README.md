@@ -190,6 +190,8 @@ Skills use the standard `SKILL.md` format. User skills live in `~/.agents/skills
 
 Hooks use the Claude/Codex `hooks.json` structure at `~/.agents/hooks.json` and `.agents/hooks.json`. The portable profile contains `SessionStart`, `SessionEnd`, `UserPromptSubmit`, and `Stop` command handlers. `ax hook list` reports only that canonical configuration and AgentX targets; native-only events produce warnings and remain under their native agent's control. Launching Claude, Codex, Gemini, or Pi through `ax` creates or refreshes an isolated AgentX-owned bridge through that provider's public plugin, config, or extension surface. The bridge carries the projected command definitions so native trust review sees configuration changes; AgentX never merges them into user-owned provider config.
 
+Two explicit smoke suites exercise native tooling outside the normal `make verify` path. `make smoke-clean` uses a no-cache Docker build and asks AgentX to install Claude, Codex, Gemini, and Pi from scratch. `make smoke-hooks-live` reuses local native login state, launches all four agents with low-cost models, and requires all four portable lifecycle Hooks to reach a temporary recorder. Missing CLIs are installed through AgentX; missing Claude, Codex, or Pi login state reports the corresponding `ax auth login` command. Gemini remains a real launch check and fails with its login instruction when authentication is unavailable. Live evidence is retained in the printed temporary results directory.
+
 ```bash
 ax --json agent list
 ax --yaml list
