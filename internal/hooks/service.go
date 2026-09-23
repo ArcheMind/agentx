@@ -19,10 +19,7 @@ const (
 	ScopeProject Scope = "project"
 )
 
-var (
-	portableEvents  = []string{"SessionStart", "SessionEnd", "UserPromptSubmit", "Stop"}
-	portableTargets = []string{"claude", "codex", "gemini", "pi"}
-)
+var portableEvents = []string{"SessionStart", "SessionEnd", "UserPromptSubmit", "Stop"}
 
 type Hook struct {
 	Scope    Scope    `json:"scope" yaml:"scope"`
@@ -30,7 +27,6 @@ type Hook struct {
 	Event    string   `json:"event" yaml:"event"`
 	Command  string   `json:"command" yaml:"command"`
 	Portable bool     `json:"portable" yaml:"portable"`
-	Targets  []string `json:"targets" yaml:"targets"`
 	Warnings []string `json:"warnings" yaml:"warnings"`
 	matcher  string
 	timeout  float64
@@ -217,7 +213,7 @@ func readHandler(path string, scope Scope, event, matcher string, groupIndex, ha
 			warnings = append(warnings, Warning{Source: path, Event: event, Message: fmt.Sprintf("handler field %s is outside the portable hook profile; ignored", key)})
 		}
 	}
-	return Hook{Scope: scope, Source: path, Event: event, Command: command, Portable: true, Targets: append([]string(nil), portableTargets...), Warnings: []string{}, matcher: matcher, timeout: timeout}, warnings, true, nil
+	return Hook{Scope: scope, Source: path, Event: event, Command: command, Portable: true, Warnings: []string{}, matcher: matcher, timeout: timeout}, warnings, true, nil
 }
 
 func requiredString(value map[string]json.RawMessage, key string) (string, error) {

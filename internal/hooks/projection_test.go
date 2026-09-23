@@ -44,7 +44,7 @@ func TestPortableHooksProjectThroughEachNativeLoadingSurface(t *testing.T) {
 					t.Fatalf("args %q do not project %s", joined, event)
 				}
 			}
-			assertProjectedHandler(t, joined, "codex", "UserPromptSubmit", hooks.Handler{Command: "project-before", Timeout: 600, Project: project})
+			assertProjectedHandler(t, joined, "codex", "UserPromptSubmit", hooks.Handler{Command: "project-before", Timeout: 600})
 			if len(projection.Artifacts) != 0 {
 				t.Fatalf("codex artifacts = %#v", projection.Artifacts)
 			}
@@ -92,7 +92,7 @@ func TestProjectedCommandTransportDoesNotExposeShellSyntax(t *testing.T) {
 	if strings.Contains(content, command) || strings.Contains(content, "%PATH%") {
 		t.Fatalf("projection exposes command to provider shell: %s", content)
 	}
-	assertProjectedHandler(t, content, "codex", "Stop", hooks.Handler{Command: command, Timeout: 600, Project: project})
+	assertProjectedHandler(t, content, "codex", "Stop", hooks.Handler{Command: command, Timeout: 600})
 }
 
 func TestHookProjectionDryRunDoesNotWriteAndOwnedArtifactIsRequired(t *testing.T) {

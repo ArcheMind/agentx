@@ -65,7 +65,7 @@ func (s Service) Prepare(provider, executable string, write bool) (Projection, e
 				if item.Event != event {
 					continue
 				}
-				handler := projectedHandler(item, s.Project)
+				handler := projectedHandler(item, "")
 				command, err := bridgeCommand(executable, provider, item.Event, handler)
 				if err != nil {
 					return Projection{}, err
@@ -125,12 +125,12 @@ func configuredEvents(items []Hook) []string {
 }
 
 func isPortableTarget(provider string) bool {
-	for _, target := range portableTargets {
-		if provider == target {
-			return true
-		}
+	switch provider {
+	case "claude", "codex", "gemini", "pi":
+		return true
+	default:
+		return false
 	}
-	return false
 }
 
 func jsonHookConfig(provider, executable, project string, events []string, hooks []Hook) ([]byte, error) {

@@ -110,7 +110,7 @@ run_case() {
 }
 
 run_case claude haiku --print "$prompt"
-run_case codex gpt-6-luna exec --skip-git-repo-check "$prompt"
+run_case codex gpt-6-luna --dangerously-bypass-hook-trust exec --skip-git-repo-check "$prompt"
 run_case gemini gemini-2.5-flash-lite --skip-trust --prompt "$prompt"
 run_case pi "$pi_model" --print "$prompt"
 

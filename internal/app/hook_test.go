@@ -26,14 +26,17 @@ func TestHookListUsesPublicConfigurationAndStructuredOutput(t *testing.T) {
 	if err := application.Run(context.Background(), []string{"--json", "hook", "list"}); err != nil {
 		t.Fatal(err)
 	}
-	for _, expected := range []string{`"event": "UserPromptSubmit"`, `"command": "./hooks/check.sh"`, `"portable": true`, `"claude"`, `"PreToolUse"`, `not projected`} {
+	for _, expected := range []string{`"event": "UserPromptSubmit"`, `"command": "./hooks/check.sh"`, `"portable": true`, `"PreToolUse"`, `not projected`} {
 		if !strings.Contains(stdout.String(), expected) {
 			t.Fatalf("output %q does not contain %q", stdout.String(), expected)
 		}
 	}
+	if strings.Contains(stdout.String(), `"targets"`) {
+		t.Fatalf("output contains redundant targets field: %q", stdout.String())
+	}
 }
 
-func TestHookListTextShowsPortableTargetsAndWarning(t *testing.T) {
+func TestHookListTextShowsPortableHooksAndWarning(t *testing.T) {
 	project := t.TempDir()
 	path := filepath.Join(project, ".agents", "hooks.json")
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -48,10 +51,13 @@ func TestHookListTextShowsPortableTargetsAndWarning(t *testing.T) {
 	if err := application.Run(context.Background(), []string{"hook", "list"}); err != nil {
 		t.Fatal(err)
 	}
-	for _, expected := range []string{"SCOPE", "SessionStart", "load.sh", "claude,codex,gemini,pi", "warning: PreToolUse"} {
+	for _, expected := range []string{"SCOPE", "EVENT", "COMMAND", "SessionStart", "load.sh", "warning: PreToolUse"} {
 		if !strings.Contains(stdout.String(), expected) {
 			t.Fatalf("output %q does not contain %q", stdout.String(), expected)
 		}
+	}
+	if strings.Contains(stdout.String(), "TARGETS") {
+		t.Fatalf("output contains redundant targets column: %q", stdout.String())
 	}
 }
 

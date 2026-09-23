@@ -29,8 +29,8 @@ func TestListPortableHooksFromUserAndProjectScopes(t *testing.T) {
 		t.Fatalf("project hook = %#v", result.Hooks[1])
 	}
 	for _, item := range result.Hooks {
-		if !item.Portable || strings.Join(item.Targets, ",") != "claude,codex,gemini,pi" {
-			t.Fatalf("portable targets = %#v", item)
+		if !item.Portable {
+			t.Fatalf("hook is not portable: %#v", item)
 		}
 	}
 }

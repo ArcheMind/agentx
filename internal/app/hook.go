@@ -31,9 +31,9 @@ func (a App) hook(ctx context.Context, args []string) error {
 	if len(result.Hooks) == 0 {
 		fmt.Fprintln(a.Stdout, "No portable hooks configured.")
 	} else {
-		fmt.Fprintln(a.Stdout, "SCOPE    EVENT             COMMAND                         TARGETS")
+		fmt.Fprintln(a.Stdout, "SCOPE    EVENT             COMMAND")
 		for _, item := range result.Hooks {
-			fmt.Fprintf(a.Stdout, "%-8s %-17s %-31s %s\n", item.Scope, item.Event, item.Command, strings.Join(item.Targets, ","))
+			fmt.Fprintf(a.Stdout, "%-8s %-17s %s\n", item.Scope, item.Event, item.Command)
 		}
 	}
 	if len(result.Warnings) > 0 && len(result.Hooks) > 0 {
