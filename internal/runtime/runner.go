@@ -21,6 +21,7 @@ type ExecRunner struct {
 type externalCallLog struct {
 	Event    string      `json:"event"`
 	Input    CommandPlan `json:"input"`
+	Stdin    string      `json:"stdin,omitempty"`
 	Output   string      `json:"output"`
 	ErrorOut string      `json:"error_output"`
 	Error    string      `json:"error,omitempty"`
@@ -31,11 +32,21 @@ func (r ExecRunner) Execute(ctx context.Context, plan CommandPlan, options Execu
 	cmd := exec.CommandContext(ctx, plan.Executable, plan.Args...)
 	cmd.Dir = plan.Cwd
 	cmd.Env = mergeEnvironment(os.Environ(), plan.Env)
+	stdin := ""
+	if !options.Interactive && options.Stdin != nil {
+		data, err := io.ReadAll(options.Stdin)
+		if err != nil {
+			return CommandResult{ExitCode: -1}, fmt.Errorf("read external command stdin: %w", err)
+		}
+		stdin = string(data)
+		cmd.Stdin = bytes.NewReader(data)
+	} else {
+		cmd.Stdin = options.Stdin
+	}
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 	if options.Interactive {
-		cmd.Stdin = options.Stdin
 		cmd.Stdout = options.Stdout
 		cmd.Stderr = options.Stderr
 	} else {
@@ -53,20 +64,21 @@ func (r ExecRunner) Execute(ctx context.Context, plan CommandPlan, options Execu
 			result.ExitCode = -1
 		}
 	}
-	r.log(plan, result, err)
+	r.log(plan, stdin, result, err)
 	if err != nil {
 		return result, fmt.Errorf("external command %s failed: %w", plan.Executable, err)
 	}
 	return result, nil
 }
 
-func (r ExecRunner) log(plan CommandPlan, result CommandResult, err error) {
+func (r ExecRunner) log(plan CommandPlan, stdin string, result CommandResult, err error) {
 	if !r.Debug {
 		return
 	}
 	entry := externalCallLog{
 		Event:    "external_call",
 		Input:    plan,
+		Stdin:    stdin,
 		Output:   result.Stdout,
 		ErrorOut: result.Stderr,
 		ExitCode: result.ExitCode,

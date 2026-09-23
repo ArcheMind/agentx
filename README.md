@@ -188,7 +188,7 @@ Place `--json` or `--yaml` before the command for AgentX-owned results and dry-r
 
 Skills use the standard `SKILL.md` format. User skills live in `~/.agents/skills`; project skills live in `.agents/skills`. Codex, Gemini, and Pi discover that canonical store directly. AgentX creates a relative symbolic-link projection in the matching `.claude/skills` directory so Claude reads the same files rather than a copy. Install records source provenance in `.agentx-origins.yaml` beside the canonical store. Existing canonical or Claude destinations are treated as conflicts and are never overwritten.
 
-Hooks use the Claude/Codex `hooks.json` structure at `~/.agents/hooks.json` and `.agents/hooks.json`. The portable profile contains `SessionStart`, `SessionEnd`, `UserPromptSubmit`, and `Stop` command handlers. `ax hook list` reports only that canonical configuration and AgentX targets; native-only events produce warnings and remain under their native agent's control.
+Hooks use the Claude/Codex `hooks.json` structure at `~/.agents/hooks.json` and `.agents/hooks.json`. The portable profile contains `SessionStart`, `SessionEnd`, `UserPromptSubmit`, and `Stop` command handlers. `ax hook list` reports only that canonical configuration and AgentX targets; native-only events produce warnings and remain under their native agent's control. Launching Claude, Codex, Gemini, or Pi through `ax` creates or refreshes an isolated AgentX-owned bridge through that provider's public plugin, config, or extension surface. The bridge carries the projected command definitions so native trust review sees configuration changes; AgentX never merges them into user-owned provider config.
 
 ```bash
 ax --json agent list
@@ -201,7 +201,7 @@ ax --json codex --model gpt-5.4 --dry-run
 
 AgentX owns workflow coordination, not the agents themselves. It deliberately does not:
 
-- define a universal user profile or project configuration format;
+- define a universal agent settings file beyond the documented Skills and Hooks profiles;
 - store or proxy account credentials;
 - replace native package managers or session databases;
 - normalize destructive session operations with incompatible semantics;

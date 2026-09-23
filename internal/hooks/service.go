@@ -32,6 +32,8 @@ type Hook struct {
 	Portable bool     `json:"portable" yaml:"portable"`
 	Targets  []string `json:"targets" yaml:"targets"`
 	Warnings []string `json:"warnings" yaml:"warnings"`
+	matcher  string
+	timeout  float64
 }
 
 type Warning struct {
@@ -168,7 +170,7 @@ func readEvent(path string, scope Scope, event string, value json.RawMessage) ([
 			return nil, nil, fmt.Errorf("invalid hook configuration %s: %s[%d].hooks must be a non-empty array", path, event, groupIndex)
 		}
 		for handlerIndex, handler := range handlers {
-			item, handlerWarnings, include, err := readHandler(path, scope, event, groupIndex, handlerIndex, handler)
+			item, handlerWarnings, include, err := readHandler(path, scope, event, matcher, groupIndex, handlerIndex, handler)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -184,7 +186,7 @@ func readEvent(path string, scope Scope, event string, value json.RawMessage) ([
 	return items, warnings, nil
 }
 
-func readHandler(path string, scope Scope, event string, groupIndex, handlerIndex int, handler map[string]json.RawMessage) (Hook, []Warning, bool, error) {
+func readHandler(path string, scope Scope, event, matcher string, groupIndex, handlerIndex int, handler map[string]json.RawMessage) (Hook, []Warning, bool, error) {
 	location := fmt.Sprintf("%s[%d].hooks[%d]", event, groupIndex, handlerIndex)
 	typeName, err := requiredString(handler, "type")
 	if err != nil {
@@ -200,10 +202,13 @@ func readHandler(path string, scope Scope, event string, groupIndex, handlerInde
 	if err != nil {
 		return Hook{}, nil, false, fmt.Errorf("invalid hook configuration %s: %s.command must be a non-empty string", path, location)
 	}
+	var timeout float64
 	if value, ok := handler["timeout"]; ok {
-		var timeout float64
 		if err := json.Unmarshal(value, &timeout); err != nil || timeout <= 0 {
 			return Hook{}, nil, false, fmt.Errorf("invalid hook configuration %s: %s.timeout must be a positive number", path, location)
+		}
+		if event == "SessionEnd" && timeout > 3 {
+			return Hook{}, []Warning{{Source: path, Event: event, Message: "timeout above 3 seconds is outside the portable hook profile; handler not projected"}}, false, nil
 		}
 	}
 	warnings := []Warning{}
@@ -212,7 +217,7 @@ func readHandler(path string, scope Scope, event string, groupIndex, handlerInde
 			warnings = append(warnings, Warning{Source: path, Event: event, Message: fmt.Sprintf("handler field %s is outside the portable hook profile; ignored", key)})
 		}
 	}
-	return Hook{Scope: scope, Source: path, Event: event, Command: command, Portable: true, Targets: append([]string(nil), portableTargets...), Warnings: []string{}}, warnings, true, nil
+	return Hook{Scope: scope, Source: path, Event: event, Command: command, Portable: true, Targets: append([]string(nil), portableTargets...), Warnings: []string{}, matcher: matcher, timeout: timeout}, warnings, true, nil
 }
 
 func requiredString(value map[string]json.RawMessage, key string) (string, error) {

@@ -102,7 +102,7 @@ func (a App) Run(ctx context.Context, args []string) error {
 	case "skill":
 		return a.skill(ctx, args[1:])
 	case "hook":
-		return a.hook(args[1:])
+		return a.hook(ctx, args[1:])
 	case "convert":
 		return a.convert(args[1:])
 	default:
@@ -363,6 +363,9 @@ func (a App) runAgent(ctx context.Context, args []string) error {
 	}
 	if !info.IsDir() {
 		return fmt.Errorf("working directory %s is not a directory", request.Cwd)
+	}
+	if err := a.prepareHooks(&request, agent.ID, !dryRun); err != nil {
+		return err
 	}
 	plan, err := agent.Launch.PlanRun(request)
 	if err != nil {
@@ -757,6 +760,9 @@ func (a App) resumeSession(ctx context.Context, agent runtime.Agent, detail sess
 	request := runtime.RunRequest{Cwd: workspace, Model: model, PassthroughArgs: []string{prompt}}
 	if agent.ID == "opencode" {
 		request.PassthroughArgs = []string{"--prompt", prompt}
+	}
+	if err := a.prepareHooks(&request, agent.ID, !dryRun); err != nil {
+		return err
 	}
 	plan, err := agent.Launch.PlanRun(request)
 	if err != nil {

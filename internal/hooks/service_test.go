@@ -84,6 +84,21 @@ func TestListRejectsInvalidPortableConfiguration(t *testing.T) {
 	}
 }
 
+func TestSessionEndTimeoutAboveThreeSecondsIsNotPortable(t *testing.T) {
+	project := t.TempDir()
+	writeConfig(t, filepath.Join(project, ".agents", "hooks.json"), `{"hooks":{"SessionEnd":[{"hooks":[{"type":"command","command":"slow-cleanup","timeout":4},{"type":"command","command":"fast-cleanup","timeout":3}]}]}}`)
+	result, err := (hooks.Service{Home: t.TempDir(), Project: project}).List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Hooks) != 1 || result.Hooks[0].Command != "fast-cleanup" {
+		t.Fatalf("hooks = %#v", result.Hooks)
+	}
+	if !strings.Contains(warningText(result.Warnings), "above 3 seconds") {
+		t.Fatalf("warnings = %#v", result.Warnings)
+	}
+}
+
 func writeConfig(t *testing.T, path, content string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
