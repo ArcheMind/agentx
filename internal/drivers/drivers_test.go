@@ -2,10 +2,12 @@ package drivers
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/ArcheMind/agentx/internal/runtime"
@@ -237,18 +239,64 @@ func TestDSHHasOnlyVerifiedDrivers(t *testing.T) {
 	}
 }
 
-func TestCodexCacheModels(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "models.json")
-	data := []byte(`{"models":[{"slug":"gpt-test","display_name":"GPT Test","description":"fixture"}]}`)
-	if err := os.WriteFile(path, data, 0o600); err != nil {
+type codexModelsRunner struct {
+	response json.RawMessage
+	plan     runtime.CommandPlan
+	requests []json.RawMessage
+}
+
+func (r *codexModelsRunner) Execute(context.Context, runtime.CommandPlan, runtime.ExecuteOptions) (runtime.CommandResult, error) {
+	return runtime.CommandResult{}, errors.New("unexpected command execution")
+}
+
+func (r *codexModelsRunner) ExecuteJSONRPC(_ context.Context, plan runtime.CommandPlan, requests []json.RawMessage, _ json.RawMessage) (json.RawMessage, error) {
+	r.plan = plan
+	r.requests = requests
+	return r.response, nil
+}
+
+func TestCodexModelsUseNativeAccountCatalogInsteadOfCache(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	cachePath := filepath.Join(home, ".codex", "models_cache.json")
+	if err := os.MkdirAll(filepath.Dir(cachePath), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	models, err := (CodexCacheModels{Path: path}).ListModels(context.Background(), nil)
+	if err := os.WriteFile(cachePath, []byte(`{"models":[{"slug":"gpt-6-sol"}]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	runner := &codexModelsRunner{response: json.RawMessage(`{"id":2,"result":{"data":[{"id":"available","model":"gpt-5.6-sol","displayName":"GPT-5.6-Sol","description":"available","hidden":false}],"nextCursor":null}}`)}
+	models, err := (CodexAppServerModels{}).ListModels(context.Background(), runner)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(models) != 1 || models[0].ID != "gpt-test" || models[0].Source != path {
+	if len(models) != 1 || models[0].ID != "gpt-5.6-sol" || models[0].Source != "codex app-server model/list" {
 		t.Fatalf("models = %#v", models)
+	}
+	if runner.plan.Executable != "codex" || !reflect.DeepEqual(runner.plan.Args, []string{"app-server", "--stdio"}) {
+		t.Fatalf("plan = %#v", runner.plan)
+	}
+	if len(runner.requests) != 3 || !strings.Contains(string(runner.requests[2]), `"includeHidden":false`) {
+		t.Fatalf("requests = %s", runner.requests)
+	}
+}
+
+func TestCodexModelsFailClosedOnRPCError(t *testing.T) {
+	runner := &codexModelsRunner{response: json.RawMessage(`{"id":2,"error":{"code":-32600,"message":"model catalog unavailable"}}`)}
+	if _, err := (CodexAppServerModels{}).ListModels(context.Background(), runner); err == nil || !strings.Contains(err.Error(), "model catalog unavailable") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestCodexModelCapabilitiesUseNativeAccountCatalog(t *testing.T) {
+	agent, err := NewRegistry().Get("codex")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := agent.Models.(CodexAppServerModels); !ok {
+		t.Fatalf("Codex model driver = %T", agent.Models)
+	}
+	if !containsCapability(agent.Capabilities, runtime.CapabilityModelList) || !containsCapability(agent.Capabilities, runtime.CapabilityModelSelect) {
+		t.Fatalf("Codex capabilities = %#v", agent.Capabilities)
 	}
 }

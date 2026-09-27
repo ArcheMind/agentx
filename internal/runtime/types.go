@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 )
 
@@ -77,6 +78,10 @@ type AuthProvider struct {
 
 type Runner interface {
 	Execute(context.Context, CommandPlan, ExecuteOptions) (CommandResult, error)
+}
+
+type JSONRPCRunner interface {
+	ExecuteJSONRPC(context.Context, CommandPlan, []json.RawMessage, json.RawMessage) (json.RawMessage, error)
 }
 
 type LaunchDriver interface {
