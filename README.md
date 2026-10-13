@@ -67,6 +67,42 @@ ax dsh -- --profile headless "review this change"
 ax dsh -- --profile acp
 ```
 
+## Native Claude subagents backed by Codex
+
+```bash
+ax claude --subagents
+```
+
+Ask Claude to use `agentx:codex` for a read-only research or review task. Claude
+creates a native subagent; the AgentX mod answers its `turn.step` through Codex
+without an intermediary Claude model request. Continue the same subagent with
+Claude's native `SendMessage`; AgentX resumes its exact Codex session.
+
+Requires Claude Code 2.1.296 or later with Mods enabled, plus an installed,
+authenticated Codex CLI. Select the external model with
+`AX_SUBAGENT_CODEX_MODEL=<model> ax claude --subagents`; otherwise Codex uses its
+native default. Restart a Claude session with the same flag when resuming it.
+
+The first integration is read-only and supports one external agent per native
+subagent. Agent combinations and arbitrary external model APIs are not yet
+implemented. Codex runs with its own tools and configuration, a read-only sandbox,
+and no interactive approval requests. Claude tool allowlists do not become Codex
+tool policies. Native task rows and returned answers are retained; Codex's internal
+tool trace stays in its native session. External failures return an explicit
+`AgentX execution failed` answer, not a successful result or a Claude fallback;
+the native task row can still show completed because that error answer was delivered.
+External token usage is not reported as Claude usage.
+
+See [subagent integration](docs/subagents.md) for lifecycle boundaries and validation.
+The underlying non-interactive command reads a prompt from stdin and streams native
+Codex JSONL; `--json`/`--yaml` apply only to its dry-run plan:
+
+```bash
+ax agent exec codex --cwd . < prompt.txt
+ax agent exec codex --resume <session-uuid> < follow-up.txt
+ax --json agent exec codex --dry-run
+```
+
 ## Manage agents
 
 The resource-oriented commands cover setup and inspection without changing the daily launch path.
@@ -172,7 +208,7 @@ ax
 ax <agent> [--model <model>] [--cwd <path>] [--dry-run] [-- <native args...>]
 ax [--json|--yaml] list
 
-ax [--json|--yaml] agent <list|show|install|run> [args...]
+ax [--json|--yaml] agent <list|show|install|run|exec> [args...]
 ax [--json|--yaml] auth <list|show|login|logout> [args...]
 ax [--json|--yaml] session <list|show|resume> [args...]
 ax [--json|--yaml] skill <list|show|install> [args...]

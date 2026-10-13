@@ -47,10 +47,11 @@ type RunRequest struct {
 }
 
 type ExecuteOptions struct {
-	Interactive bool
-	Stdin       io.Reader
-	Stdout      io.Writer
-	Stderr      io.Writer
+	Interactive        bool
+	CancelProcessGroup bool
+	Stdin              io.Reader
+	Stdout             io.Writer
+	Stderr             io.Writer
 }
 
 type CommandResult struct {

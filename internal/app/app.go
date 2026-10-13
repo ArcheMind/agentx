@@ -126,13 +126,15 @@ func (a App) agent(ctx context.Context, args []string) error {
 		return a.install(ctx, args[1:])
 	case "run":
 		return a.runAgent(ctx, args[1:])
+	case "exec":
+		return a.execAgent(ctx, args[1:])
 	default:
 		return agentUsageError()
 	}
 }
 
 func agentUsageError() error {
-	return fmt.Errorf("usage: ax [--json|--yaml] agent <list|show|install|run> [args...]")
+	return fmt.Errorf("usage: ax [--json|--yaml] agent <list|show|install|run|exec> [args...]")
 }
 
 func (a App) list(ctx context.Context, args []string) error {
@@ -324,6 +326,7 @@ func (a App) runAgent(ctx context.Context, args []string) error {
 	}
 	request := runtime.RunRequest{}
 	dryRun := false
+	withSubagents := false
 	for index := 1; index < len(args); index++ {
 		switch args[index] {
 		case "--":
@@ -343,6 +346,8 @@ func (a App) runAgent(ctx context.Context, args []string) error {
 			request.Cwd = args[index]
 		case "--dry-run":
 			dryRun = true
+		case "--subagents":
+			withSubagents = true
 		default:
 			return fmt.Errorf("unknown run option %q; native arguments must follow --", args[index])
 		}
@@ -363,6 +368,14 @@ func (a App) runAgent(ctx context.Context, args []string) error {
 	}
 	if !info.IsDir() {
 		return fmt.Errorf("working directory %s is not a directory", request.Cwd)
+	}
+	if withSubagents {
+		if agent.ID != "claude" {
+			return fmt.Errorf("--subagents is only supported by Claude Code")
+		}
+		if err := a.prepareSubagents(&request, !dryRun); err != nil {
+			return err
+		}
 	}
 	if err := a.prepareHooks(&request, agent.ID, !dryRun); err != nil {
 		return err
@@ -893,11 +906,13 @@ Usage:
   ax <agent> [--model <model>] [--cwd <path>] [--dry-run] [-- <native args...>]
   ax [--json|--yaml] list
 
-  ax [--json|--yaml] agent <list|show|install|run> [args...]
+  ax [--json|--yaml] agent <list|show|install|run|exec> [args...]
   ax [--json|--yaml] auth <list|show|login|logout> [args...]
   ax [--json|--yaml] session <list|show|resume> [args...]
   ax [--json|--yaml] skill <list|show|install> [args...]
   ax [--json|--yaml] hook list
+  ax claude --subagents [-- <native args...>]
+  ax agent exec codex [--model <model>] [--resume <session-id>] [--cwd <path>] [--dry-run] < prompt.txt
 
   ax convert --to <provider> [< unified.json]
   ax convert --from <provider> [< native.jsonl]

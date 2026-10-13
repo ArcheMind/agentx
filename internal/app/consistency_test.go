@@ -24,7 +24,7 @@ func TestCrossLayerConsistency(t *testing.T) {
 	}
 	for _, command := range []string{
 		"[--json|--yaml] list",
-		"agent <list|show|install|run>",
+		"agent <list|show|install|run|exec>",
 		"auth <list|show|login|logout>",
 		"session <list|show|resume>",
 		"skill <list|show|install>",

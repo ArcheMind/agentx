@@ -1,4 +1,4 @@
-.PHONY: fmt check test audit build smoke smoke-live smoke-clean smoke-hooks-live smoke-skills-clean smoke-skills-live verify clean
+.PHONY: fmt check test test-subagents smoke-subagents smoke-subagents-live audit build smoke smoke-live smoke-clean smoke-hooks-live smoke-skills-clean smoke-skills-live verify clean
 
 fmt:
 	gofmt -w cmd internal
@@ -9,6 +9,17 @@ check:
 
 test:
 	go test ./...
+
+test-subagents:
+	claude plugin validate test/smoke/fixtures/agentx-subagents-probe --strict
+	claude plugin validate internal/subagents/claude --strict
+	claude plugin test internal/subagents/claude
+
+smoke-subagents: build
+	node test/smoke/subagents.mjs "$(CURDIR)/bin/ax"
+
+smoke-subagents-live: build
+	node test/smoke/subagents.mjs "$(CURDIR)/bin/ax" --live
 
 audit:
 	go test ./internal/app ./internal/drivers -run 'Consistency|Capabilities|Grammar|Terminology|Structured'

@@ -1,0 +1,10 @@
+package runtime
+
+import (
+	"os/exec"
+	"time"
+)
+
+func configureProcessGroup(cmd *exec.Cmd) {
+	cmd.WaitDelay = 2 * time.Second
+}

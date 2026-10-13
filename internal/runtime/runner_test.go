@@ -25,3 +25,16 @@ func TestExecRunnerDebugLogContainsRawIO(t *testing.T) {
 		}
 	}
 }
+
+func TestExecRunnerStreamsAndCapturesOutput(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	result, err := (ExecRunner{}).Execute(context.Background(), CommandPlan{
+		Executable: "sh", Args: []string{"-c", "cat; printf error >&2"},
+	}, ExecuteOptions{Stdin: strings.NewReader("prompt"), Stdout: &stdout, Stderr: &stderr})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stdout.String() != "prompt" || result.Stdout != stdout.String() || stderr.String() != "error" || result.Stderr != stderr.String() {
+		t.Fatalf("streamed output differs from captured output: %#v", result)
+	}
+}

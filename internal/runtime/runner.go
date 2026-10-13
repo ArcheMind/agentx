@@ -52,6 +52,15 @@ func (r ExecRunner) Execute(ctx context.Context, plan CommandPlan, options Execu
 	} else {
 		cmd.Stdout = &stdout
 		cmd.Stderr = &stderr
+		if options.Stdout != nil {
+			cmd.Stdout = io.MultiWriter(&stdout, options.Stdout)
+		}
+		if options.Stderr != nil {
+			cmd.Stderr = io.MultiWriter(&stderr, options.Stderr)
+		}
+		if options.CancelProcessGroup {
+			configureProcessGroup(cmd)
+		}
 	}
 
 	err := cmd.Run()
