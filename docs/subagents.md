@@ -1,63 +1,93 @@
-# Native subagents through AgentX
+# Native external subagents
 
-`ax claude --subagents` loads an AgentX-owned mod through `--plugin-dir`. The mod
-registers `agentx:codex` using Claude's native `$.agent.register`. It registers no
-agent when Mods are disabled, avoiding a static Claude-backed substitute.
+Start with `ax claude --subagents`. AgentX loads a content-addressed Claude mod
+through `--plugin-dir`, without editing user-owned Claude settings. Claude Code
+2.1.296 or newer with Mods enabled is required. If Mods are disabled, no external
+agent definitions are registered and no Claude-backed substitute is offered.
 
-The integration targets Claude Code 2.1.296 and newer. That build's generated
-`claude-code/index.d.ts` verifies the interfaces used here:
+## What Claude uses
 
-- `classic.SubagentStart` supplies the native child ID and working directory.
-- `turn.step` carries `agentId` and can yield its own text and stop chunks without
-  calling `next`, so the engine creates the subagent but sends no Claude inference
-  request for that child.
-- `$.session.messages({ agentId })` reads that child's conversation; an unreadable
-  child returns a denial, never the main conversation.
-- `$.process.spawn` streams the external process; returning its iterator,
-  cancellation of the hook, or unloading the mod kills the process.
-- `$.store` retains the native child to Codex thread mapping across mod reloads.
+These tools are available directly, without ToolSearch:
 
-Official references: [turn events](https://code.claude.com/docs/en/plugins/mods/events#follow-a-turn),
-[version-specific declarations](https://code.claude.com/docs/en/plugins/mods/create#get-the-types-for-your-build),
-[Codex non-interactive execution](https://developers.openai.com/codex/noninteractive).
+```text
+mcp__agentx__discover({})
+mcp__agentx__discover({"agent":"pi"})
+mcp__agentx__define_agent({
+  "name":"reviewer",
+  "agent":"pi",
+  "model":"provider/model",
+  "description":"Review changes for correctness",
+  "instructions":"Check failure handling and report concrete findings."
+})
+→ {"subagent_type":"agentx:reviewer", ...}
+Agent(subagent_type="agentx:reviewer", prompt="Review the current change")
+SendMessage(to=<native agent ID>, message="Check the second concern")
+TaskStop(task_id=<native agent ID>)
+```
 
-## Execution and state
+Discovery reuses `ax --json agent list` and `ax --json agent models <agent>`.
+It reports installation and subagent execution support separately. Model discovery
+is native: unavailable catalogs produce an explicit error, not an invented list.
+An omitted model uses the external CLI's default; an explicit ID is passed intact.
+The backend reports whether that model is actually available to the account.
 
-The mod launches `ax agent exec codex`, which runs `codex exec --json`. A native
-`thread.started` event supplies the Codex session UUID; a subsequent delegation to
-the same Claude child uses `codex exec resume <uuid>`. Only new user messages from
-the child's transcript are sent on subsequent turns. The mapping records the
-message cursor once Codex starts a turn, including interrupted or failed turns, so
-an already-submitted prompt is not silently submitted again. A shortened native
-transcript fails explicitly rather than guessing a new cursor.
+Registration creates a native agent type and makes no inference request. Definitions
+are scoped to the Claude session and restored on its next start with `--subagents`.
+A name cannot be rebound to another configuration; use another role name. Different
+roles may be registered concurrently without overwriting one another. Each child
+retains its own binding and native external session, even when several children
+use the same role. Role instructions are prepended to the first delegated task;
+they do not replace the backend's own system prompt.
 
-The initial implementation executes read-only tasks. It sets Codex's native
-`sandbox_mode="read-only"` and `approval_policy="never"` for new and resumed runs.
-There is no translation of Claude's tool policies, skills, memory or system prompt
-into Codex settings. Codex loads its own project instructions. Only the delegated
-user task is forwarded, and no parent conversation is copied.
+`agentx:codex` is registered by default. Its model can be set before session creation
+with `AX_SUBAGENT_CODEX_MODEL`; custom roles choose their model through the tool.
+AgentX supplies no scheduler, voting scheme or fixed agent combination. Claude
+chooses the roles, their models, parallelism and follow-up work with native tools.
 
-AgentX does not recreate a task list, scheduler, conversation store, or credentials.
-The mod uses native Claude IDs and the native Codex session. The only additional
-state is their association and the delivery cursor. The plugin projection is
-content-addressed under `~/.cache/agentx/subagents`; it never edits user-owned
-Claude configuration. `AX_LOG=debug` logs raw external commands, stdin, output and
-errors through the existing AgentX runner.
+## Backends and access
 
-## Boundaries
+| Backend | Execution | Resume | Native read-only setting |
+| --- | --- | --- | --- |
+| Codex | `exec --json` | `exec resume <UUID>` | `sandbox_mode="read-only"`, `approval_policy="never"` |
+| Pi | `--print --mode json` | `--session <UUID>` | `--tools read,grep,find,ls --no-extensions` |
+| Gemini | `--output-format stream-json` | `--resume <UUID>` | `--approval-mode plan` |
+| Claude | Use native Claude subagents directly | Native | Native |
+| OpenCode, DSH | No execution adapter in this bridge | — | — |
 
-- Returned text is the external agent's final message. Codex tool calls remain in
-  Codex's transcript and do not appear as native Claude tool calls.
-- An external error is delivered as an explicit error answer. It does not turn
-  the native task row into a failed state; the native response was delivered.
-- Token counters on the Claude row do not represent external provider usage.
-- Native cancellation ends the bridge process. On Unix, AgentX cancels the external
-  process group as well; Windows descendant-process cleanup is not yet verified.
-- Resume requires the original Codex session and Claude mod state. Missing state
-  returns an error; it does not create a replacement conversation silently.
-- Only Codex and the built-in `agentx:codex` definition are supported in this first
-  integration. Custom external subagent definitions and combinations are follow-up
-  work, not aliases silently mapped to Codex.
+OpenCode and DSH remain available through the ordinary AgentX launch interface.
+Gemini requires its own workspace trust and plan-mode prerequisites; AgentX does
+not override trust. Pi extensions are disabled to keep the advertised built-in
+read-only tool set. There is no general sandbox guarantee across the three CLIs:
+the table describes their different native policies, not a shared enforcement layer.
+
+Only delegated child user messages are sent. No parent transcript, Claude tool
+allowlist, skills or system prompt is translated into backend configuration.
+The backend loads its own project instructions and credentials. Claude's native
+child working directory is passed to the external process.
+
+## Lifecycle and failure behavior
+
+The mod answers `turn.step` without calling its native model continuation, yielding
+text and stop chunks with `usage: null`. There is no intermediary Claude inference
+request for the external child. Ordinary parent reasoning and external inference
+still consume tokens; external usage is not reported as Claude usage.
+
+The bridge records the external session ID from native events and resumes that
+exact ID. It advances the delivered-message cursor when the backend accepts a
+turn. Subsequent turns deliver only new user messages. Missing or shortened child
+context, changed external session IDs, malformed output, incomplete answers and
+provider errors are explicit failures; none silently falls back to Claude.
+
+Native `SendMessage` resumes the same external session. Native cancellation closes
+the process iterator and stops AgentX; on Unix AgentX kills the backend process
+group as well. Windows descendant-process cleanup remains unverified. Backend tool
+traces remain in backend transcripts. An error is returned as an explicit answer,
+so Claude's native task row may say completed even though external execution failed.
+
+Persisted state contains role definitions, native child/external session bindings
+and delivery cursors. It does not duplicate the native conversation stores. Plugin
+projections live under `~/.cache/agentx/subagents`. `AX_LOG=debug` records raw external
+commands, input, output and errors through AgentX's runner and the mod debug log.
 
 ## Verification
 
@@ -65,24 +95,33 @@ errors through the existing AgentX runner.
 make verify
 make test-subagents
 make smoke-subagents
-make smoke-subagents-live
+AX_SUBAGENT_SMOKE_MODEL=gpt-5.6-luna make smoke-subagents-live
+AX_SUBAGENT_SMOKE_BACKENDS=pi AX_SUBAGENT_SMOKE_MODEL=openai-codex/gpt-5.6-luna make smoke-subagents-live
+AX_SUBAGENT_SMOKE_BACKENDS=gemini make smoke-subagents-live
 ```
 
-`test-subagents` uses Claude's own mod test runner, with no inference calls.
-`smoke-subagents` drives a real Claude engine with a deterministic Codex executable
-and checks native spawn, resume, cancellation, and descendant-process cleanup. A probe answers the parent model step and
-refuses any unexpected child model request. `smoke-subagents-live` uses the same
-probe with real Codex and native authentication; it incurs Codex usage. Both smoke
-commands print the retained evidence directory. No credentials are copied.
+Use model IDs available to your own native account. Live smoke incurs external
+model usage. The probe replaces parent inference only for the test and rejects
+unexpected child inference. All Claude result records must have empty model usage.
+Answers must match the expected tokens exactly, so echoed prompts inside diagnostic
+errors cannot make a failing backend pass.
 
-Validated on 2026-10-13 with Claude Code 2.1.296 and Codex CLI 0.147.0: native
-spawn and `SendMessage` resume succeeded with a real `gpt-5.6-luna` session;
-the probe's Claude model usage was empty and its reported cost was zero. The
-deterministic cancellation case produced a native `killed` task and left neither
-external process running. This does not claim that ordinary parent-agent reasoning
-is free; the probe replaces the parent's request solely to measure the bridge.
-The machine's default `gpt-6-astra` failed its CLI version requirement, and the
-repository's older smoke choice `gpt-6-luna` was refused for the account. Both
-errors were returned without falling back to Claude. Use a model available in
-your own native Codex model list, for example by setting
-`AX_SUBAGENT_CODEX_MODEL` for `make smoke-subagents-live`.
+The deterministic smoke runs a real Claude engine with fake external executables.
+It discovers capabilities, registers three distinct backend roles in parallel,
+spawns and resumes each native child, and checks native cancellation plus Unix
+external descendant cleanup. Mod tests cover model/role routing, failure behavior,
+concurrent definitions, persisted definitions and native discovery.
+
+On 2026-10-13, live Codex and Pi each passed dynamic registration, native creation
+and memory-preserving resume with `gpt-5.6-luna` (Pi's ID includes `openai-codex/`).
+Both reported zero Claude model usage. Gemini execution was refused by its native
+workspace trust check in this checkout; its real successful inference/resume is
+not claimed. Its protocol adapter is covered by mod tests and deterministic native
+engine smoke.
+
+References: [Claude turn events](https://code.claude.com/docs/en/plugins/mods/events#follow-a-turn),
+[version-specific declarations](https://code.claude.com/docs/en/plugins/mods/create#get-the-types-for-your-build),
+[Codex non-interactive execution](https://developers.openai.com/codex/noninteractive).
+Implementation was also checked against the installed Pi print-mode/session loader
+and Gemini headless/session resolver, rather than inferring their protocol from
+command names.

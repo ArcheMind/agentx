@@ -912,7 +912,7 @@ Usage:
   ax [--json|--yaml] skill <list|show|install> [args...]
   ax [--json|--yaml] hook list
   ax claude --subagents [-- <native args...>]
-  ax agent exec codex [--model <model>] [--resume <session-id>] [--cwd <path>] [--dry-run] < prompt.txt
+  ax agent exec <codex|pi|gemini> [--model <model>] [--resume <session-id>] [--cwd <path>] [--dry-run] < prompt.txt
 
   ax convert --to <provider> [< unified.json]
   ax convert --from <provider> [< native.jsonl]

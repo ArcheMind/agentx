@@ -21,10 +21,11 @@ function setup(on, options = {}) {
   let closed = 0
   on('session.start', () => ({ cwd: '/project' }))
   on('agent.register', ($, e) => {
-    expect(e.name).toBe('codex')
-    return { value: { agent: 'agentx:codex' } }
+    return { value: { agent: `agentx:${e.name}` } }
   })
   on('classic.SubagentStart', () => ({}))
+  on('store.keys', () => ({ value: [...saved.keys()] }))
+  on('tool.register', ($, e) => ({ value: { tool: `mcp__agentx__${e.name}` } }))
   on('store.get', ($, e) => ({ value: saved.get(e.key) }))
   on('store.set', ($, e) => { saved.set(e.key, e.value); return { value: undefined } })
   on('env.get', () => ({ value: 'external-model' }))
@@ -38,16 +39,20 @@ function setup(on, options = {}) {
   on('process.spawn', async function* ($, e) {
     requests.push(e)
     try {
+      if (options.discovery) {
+        yield { stream: 'stdout', text: JSON.stringify(options.discovery) }
+        return { value: { code: 0, signal: null } }
+      }
       if (options.malformed) {
         yield { stream: 'stdout', text: '{broken\n' }
         return { value: { code: 0, signal: null } }
       }
-      const lines = [
+      const lines = (options.events ?? [
         { type: 'thread.started', thread_id: id },
         { type: 'turn.started' },
         { type: 'item.completed', item: { type: 'agent_message', text: 'External answer' } },
         options.fail ? { type: 'turn.failed', error: { message: 'External failure' } } : { type: 'turn.completed' },
-      ].map(value => JSON.stringify(value)).join('\n')
+      ]).map(value => JSON.stringify(value)).join('\n')
       // Pipe boundaries are not event boundaries, and the last event has no newline.
       yield { stream: 'stdout', text: lines.slice(0, 13) }
       yield { stream: 'stderr', text: 'diagnostic' }
@@ -116,4 +121,91 @@ test('missing bridge state does not send an external agent to Claude', async ($,
   const { result } = await drain($.turn.step(input))
   expect(result.answer).toContain('missing subagent context')
   expect(fixture.modelCalls()).toBe(0)
+})
+
+async function defineRole($, agent, extra = {}) {
+  return $.tool.call({ tool: 'mcp__agentx__define_agent', name: 'reviewer', agent, model: 'chosen-model', description: 'Review changes', instructions: 'Check correctness first.', ...extra })
+}
+
+for (const [agent, events] of [
+  ['codex', undefined],
+  ['pi', [
+    { type: 'session', id }, { type: 'agent_start' },
+    { type: 'message_end', message: { role: 'assistant', stopReason: 'stop', content: [{ type: 'text', text: 'External answer' }] } },
+    { type: 'agent_end' },
+  ]],
+  ['gemini', [
+    { type: 'init', session_id: id }, { type: 'message', role: 'user', content: 'task' },
+    { type: 'message', role: 'assistant', content: 'External ', delta: true },
+    { type: 'message', role: 'assistant', content: 'answer', delta: true },
+    { type: 'result', status: 'success' },
+  ]],
+]) {
+  test(`${agent} dynamic role binds model and instructions and resumes without repeating them`, async ($, on) => {
+    const fixture = setup(on, { events })
+    await start($)
+    const registered = await defineRole($, agent)
+    expect(registered.deny).toBeUndefined()
+    expect(fixture.requests.length).toBe(0)
+    await $.classic.SubagentStart({ agent_id: 'child', agent_type: 'agentx:reviewer', session_id: 'session', cwd: '/worktree' })
+    // A different native child gets the new binding; the original child's binding is frozen.
+    fixture.saved.delete('external:session:child')
+    await $.classic.SubagentStart({ agent_id: 'child', agent_type: 'agentx:reviewer', session_id: 'session', cwd: '/worktree' })
+    const first = await drain($.turn.step(input))
+    expect(first.result.answer).toBe('External answer')
+    expect(fixture.requests[0].argv).toEqual(['/bin/ax', 'agent', 'exec', agent, '--cwd', '/worktree', '--model', 'chosen-model'])
+    expect(fixture.requests[0].input).toBe('Check correctness first.\n\nTask:\nInspect the repository')
+    fixture.setMessages([{ role: 'user', text: 'Inspect the repository' }, { role: 'assistant', text: 'External answer' }, { role: 'user', text: 'Follow up' }])
+    await drain($.turn.step({ ...input, turnId: 'followup' }))
+    expect(fixture.requests[1].input).toBe('Follow up')
+    expect(fixture.requests[1].argv.slice(-2)).toEqual(['--resume', id])
+    expect(fixture.modelCalls()).toBe(0)
+  })
+}
+
+test('role definitions survive session start, reject rebinding and allow parallel distinct names', async ($, on) => {
+  const fixture = setup(on)
+  await start($)
+  const definitions = await Promise.all([defineRole($, 'pi'), defineRole($, 'codex', { name: 'second' })])
+  expect(definitions.every(result => !result.deny)).toBe(true)
+  const rebound = await defineRole($, 'gemini')
+  expect(rebound.deny).toContain('already bound')
+  await $.session.start({ surface: 'terminal', isInteractive: true, cwd: '/project' })
+  expect(fixture.saved.get('definition:session:reviewer').agent).toBe('pi')
+  expect(fixture.saved.get('definition:session:second').agent).toBe('codex')
+  expect(fixture.requests.length).toBe(0)
+})
+
+for (const [name, events, expected] of [
+  ['pi', [{ type: 'session', id }, { type: 'agent_start' }, { type: 'message_end', message: { role: 'assistant', stopReason: 'error', errorMessage: 'Pi provider refused', content: [] } }, { type: 'agent_end' }], 'Pi provider refused'],
+  ['gemini', [{ type: 'init', session_id: id }, { type: 'message', role: 'user' }, { type: 'result', status: 'error', error: { message: 'Gemini provider refused' } }], 'Gemini provider refused'],
+]) {
+  test(`${name} reports native errors even when CLI exits zero`, async ($, on) => {
+    const fixture = setup(on, { events })
+    await start($)
+    await defineRole($, name)
+    fixture.saved.delete('external:session:child')
+    await $.classic.SubagentStart({ agent_id: 'child', agent_type: 'agentx:reviewer', session_id: 'session', cwd: '/worktree' })
+    expect((await drain($.turn.step(input))).result.answer).toContain(expected)
+    expect(fixture.modelCalls()).toBe(0)
+  })
+}
+
+
+test('discovery reuses native model catalog without inference', async ($, on) => {
+  const fixture = setup(on, { discovery: [{ id: 'provider/model', source: 'pi' }] })
+  await start($)
+  const result = await $.tool.call({ tool: 'mcp__agentx__discover', agent: 'pi' })
+  expect(JSON.parse(result.result).models[0].id).toBe('provider/model')
+  expect(fixture.requests[0].argv).toEqual(['/bin/ax', '--json', 'agent', 'models', 'pi'])
+  expect(fixture.modelCalls()).toBe(0)
+})
+
+test('agent discovery distinguishes launch support from subagent support', async ($, on) => {
+  setup(on, { discovery: [{ id: 'pi', installed: true }, { id: 'dsh', installed: true }, { id: 'claude', installed: true }] })
+  await start($)
+  const result = JSON.parse((await $.tool.call({ tool: 'mcp__agentx__discover' })).result)
+  expect(result[0].subagent).toBe(true)
+  expect(result[1].subagent).toBe(false)
+  expect(result[2].execution).toContain('native subagents directly')
 })

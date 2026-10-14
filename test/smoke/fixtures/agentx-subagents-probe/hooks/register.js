@@ -13,7 +13,7 @@ async function* answer(e, text) {
 }
 export function register(on) {
   on('classic.SubagentStart', async ($, e, next) => {
-    if (e.agent_type === 'agentx:codex') latestId = e.agent_id
+    if (e.agent_type.startsWith('agentx:')) latestId = e.agent_id
     return next(e)
   })
   on('turn.complete', async ($, e, next) => {
@@ -28,15 +28,24 @@ export function register(on) {
     if (e.agentId) return yield* next(e)
     if (finished) return yield* answer(e, finished)
     try {
-      const { agentId, deny } = await $.agent.spawn({ subagentType: 'agentx:codex', prompt: 'Remember the token AX_NATIVE_731. Reply with only AX_FIRST_OK.', description: 'AgentX smoke' })
-      if (deny || !agentId) throw new Error(deny ?? 'Missing native agent ID')
-      const first = await resultOf(agentId)
-      if (!first.includes('AX_FIRST_OK')) throw new Error(`First task: ${first}`)
-      results.delete(agentId)
-      const sent = await $.session.send({ to: { agentId }, text: 'Return only the token I asked you to remember.' })
-      if (!sent.isDelivered) throw new Error(sent.reason)
-      const second = await resultOf(agentId)
-      if (!second.includes('AX_NATIVE_731')) throw new Error(`Resume: ${second}`)
+      const catalog = await $.tool.call({ tool: 'mcp__agentx__discover' })
+      if (catalog.deny || catalog.isError) throw new Error(`Discovery failed: ${JSON.stringify(catalog)}`)
+      const backends = (await $.env.get('AX_SUBAGENT_SMOKE_BACKENDS') ?? 'codex').split(',')
+      const runs = await Promise.all(backends.map(async backend => {
+        const model = await $.env.get('AX_SUBAGENT_SMOKE_MODEL') ?? ''
+        const definition = await $.tool.call({ tool: 'mcp__agentx__define_agent', name: `probe-${backend}`, agent: backend, model, description: 'AgentX native smoke role', instructions: 'Follow the task exactly.' })
+        if (definition.deny || definition.isError) throw new Error(`Definition failed: ${JSON.stringify(definition)}`)
+        const { agentId, deny } = await $.agent.spawn({ subagentType: `agentx:probe-${backend}`, prompt: 'Remember the token AX_NATIVE_731. Reply with only AX_FIRST_OK.', description: 'AgentX smoke' })
+        if (deny || !agentId) throw new Error(deny ?? 'Missing native agent ID')
+        const first = await resultOf(agentId)
+        if (first.trim() !== 'AX_FIRST_OK') throw new Error(`${backend} first task: ${first}`)
+        results.delete(agentId)
+        const sent = await $.session.send({ to: { agentId }, text: 'Return only the token I asked you to remember.' })
+        if (!sent.isDelivered) throw new Error(sent.reason)
+        const second = await resultOf(agentId)
+        if (second.trim() !== 'AX_NATIVE_731') throw new Error(`${backend} resume: ${second}`)
+        return { backend, agentId, first, second }
+      }))
       const pidFile = await $.env.get('AX_SUBAGENT_SMOKE_PID_FILE')
       let cancelled
       if (pidFile) {
@@ -53,7 +62,7 @@ export function register(on) {
       }
       const agents = await $.agent.list()
       if (cancelled && !agents.some(agent => agent.id === cancelled && agent.status === 'killed')) throw new Error('Cancelled child is not marked killed')
-      finished = JSON.stringify({ status: 'AX_SMOKE_OK', agentId, first, second, agents })
+      finished = JSON.stringify({ status: 'AX_SMOKE_OK', runs, agents })
       return yield* answer(e, finished)
     } catch (error) {
       finished = `AX_SMOKE_FAILED: ${error.message}`

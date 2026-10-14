@@ -9,11 +9,15 @@ const live = process.argv.includes('--live');
 const bin = join(root, 'bin');
 mkdirSync(bin);
 if (!live) {
-  writeFileSync(join(bin, 'codex'), `#!/usr/bin/env python3
+  for (const backend of ['codex', 'pi', 'gemini']) writeFileSync(join(bin, backend), `#!/usr/bin/env python3
 import json, sys, os, subprocess, time
 prompt = sys.stdin.read()
 args = sys.argv[1:]
-resume = 'resume' in args
+backend = os.path.basename(sys.argv[0])
+if '--version' in args:
+    print('0.0.0-smoke')
+    sys.exit(0)
+resume = any(arg in args for arg in ['resume', '--resume', '--session'])
 if prompt.strip() == 'AX_CANCEL':
     child = subprocess.Popen(['sleep', '60'])
     with open(os.environ['AX_SUBAGENT_SMOKE_PID_FILE'], 'w') as file:
@@ -22,20 +26,34 @@ if prompt.strip() == 'AX_CANCEL':
     print(json.dumps({'type':'turn.started'}), flush=True)
     time.sleep(60)
     sys.exit(0)
-assert 'sandbox_mode="read-only"' in args
-assert 'approval_policy="never"' in args
+if backend == 'codex':
+    assert 'sandbox_mode="read-only"' in args
+    assert 'approval_policy="never"' in args
+elif backend == 'pi':
+    assert 'read,grep,find,ls' in args and '--no-extensions' in args
+else:
+    assert '--approval-mode' in args and 'plan' in args
+assert args[args.index('--model') + 1] == 'smoke-model'
 if resume:
     assert '0199a213-81c0-7800-8aa1-bbab2a035a53' in args
     assert 'Return only the token' in prompt
     assert 'Remember the token' not in prompt
+    assert 'Follow the task exactly.' not in prompt
 else:
     assert 'Remember the token' in prompt
-for event in [
+    assert 'Follow the task exactly.' in prompt
+events = [
     {'type':'thread.started','thread_id':'0199a213-81c0-7800-8aa1-bbab2a035a53'},
     {'type':'turn.started'},
     {'type':'item.completed','item':{'type':'agent_message','text':'AX_NATIVE_731' if resume else 'AX_FIRST_OK'}},
     {'type':'turn.completed','usage':{'input_tokens':0,'output_tokens':0}},
-]:
+ ]
+answer = 'AX_NATIVE_731' if resume else 'AX_FIRST_OK'
+if backend == 'pi':
+    events = [{'type':'session','id':'0199a213-81c0-7800-8aa1-bbab2a035a53'}, {'type':'agent_start'}, {'type':'message_end','message':{'role':'assistant','stopReason':'stop','content':[{'type':'text','text':answer}]}}, {'type':'agent_end'}]
+elif backend == 'gemini':
+    events = [{'type':'init','session_id':'0199a213-81c0-7800-8aa1-bbab2a035a53'}, {'type':'message','role':'user'}, {'type':'message','role':'assistant','content':answer,'delta':True}, {'type':'result','status':'success'}]
+for event in events:
     print(json.dumps(event), flush=True)
 `, { mode: 0o700 });
 }
@@ -43,8 +61,10 @@ for (const plugin of ['internal/subagents/claude', 'test/smoke/fixtures/agentx-s
   const check = spawnSync('claude', ['plugin', 'validate', plugin, '--strict'], { encoding: 'utf8' });
   if (check.status !== 0) throw new Error(check.stdout + check.stderr);
 }
-const env = { ...process.env, AX_LOG: 'debug' };
+const env = { ...process.env, AX_LOG: 'debug', AX_SUBAGENT_SMOKE_MODEL: process.env.AX_SUBAGENT_SMOKE_MODEL ?? process.env.AX_SUBAGENT_CODEX_MODEL ?? '' };
 if (!live) {
+  env.AX_SUBAGENT_SMOKE_BACKENDS = 'codex,pi,gemini';
+  env.AX_SUBAGENT_SMOKE_MODEL = 'smoke-model';
   env.PATH = bin + delimiter + env.PATH;
   env.AX_SUBAGENT_SMOKE_PID_FILE = join(root, 'cancelled-pids.json');
 }

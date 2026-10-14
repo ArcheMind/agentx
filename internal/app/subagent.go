@@ -28,8 +28,8 @@ func (a App) prepareSubagents(request *runtime.RunRequest, write bool) error {
 }
 
 func (a App) execAgent(ctx context.Context, args []string) error {
-	if len(args) == 0 || args[0] != "codex" {
-		return fmt.Errorf("usage: ax agent exec codex [--model <model>] [--resume <session-id>] [--cwd <path>] [--dry-run] < prompt.txt")
+	if len(args) == 0 {
+		return fmt.Errorf("usage: ax agent exec <codex|pi|gemini> [--model <model>] [--resume <session-id>] [--cwd <path>] [--dry-run] < prompt.txt")
 	}
 	model, resume, cwd := "", "", ""
 	dryRun := false
@@ -73,7 +73,7 @@ func (a App) execAgent(ctx context.Context, args []string) error {
 	if !info.IsDir() {
 		return fmt.Errorf("working directory %s is not a directory", cwd)
 	}
-	plan, err := drivers.CodexExecPlan(cwd, model, resume)
+	plan, err := drivers.ExecPlan(args[0], cwd, model, resume)
 	if err != nil {
 		return err
 	}

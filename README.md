@@ -67,39 +67,42 @@ ax dsh -- --profile headless "review this change"
 ax dsh -- --profile acp
 ```
 
-## Native Claude subagents backed by Codex
+## Native Claude subagents with external agents and models
 
 ```bash
 ax claude --subagents
 ```
 
-Ask Claude to use `agentx:codex` for a read-only research or review task. Claude
-creates a native subagent; the AgentX mod answers its `turn.step` through Codex
-without an intermediary Claude model request. Continue the same subagent with
-Claude's native `SendMessage`; AgentX resumes its exact Codex session.
+Claude can use `mcp__agentx__discover` to inspect installed agents and their native
+model lists, then `mcp__agentx__define_agent` to register roles backed by Codex, Pi,
+or Gemini. Each role chooses its own agent, model, description and instructions.
+Claude decides how many roles to create and how to combine them using its native
+Agent tool. `agentx:codex` is also available immediately.
 
-Requires Claude Code 2.1.296 or later with Mods enabled, plus an installed,
-authenticated Codex CLI. Select the external model with
-`AX_SUBAGENT_CODEX_MODEL=<model> ax claude --subagents`; otherwise Codex uses its
-native default. Restart a Claude session with the same flag when resuming it.
+For example, ask Claude:
 
-The first integration is read-only and supports one external agent per native
-subagent. Agent combinations and arbitrary external model APIs are not yet
-implemented. Codex runs with its own tools and configuration, a read-only sandbox,
-and no interactive approval requests. Claude tool allowlists do not become Codex
-tool policies. Native task rows and returned answers are retained; Codex's internal
-tool trace stays in its native session. External failures return an explicit
-`AgentX execution failed` answer, not a successful result or a Claude fallback;
-the native task row can still show completed because that error answer was delivered.
-External token usage is not reported as Claude usage.
+> Use AgentX to find available models. Create a Codex reviewer and a Pi reviewer,
+> have them review this change independently, then compare their findings.
 
-See [subagent integration](docs/subagents.md) for lifecycle boundaries and validation.
-The underlying non-interactive command reads a prompt from stdin and streams native
-Codex JSONL; `--json`/`--yaml` apply only to its dry-run plan:
+Creation, parallel tasks, task rows, `SendMessage` and `TaskStop` remain native
+Claude features. AgentX replaces the child's inference step with the selected
+agent's native CLI; there is no extra Claude inference call for that child.
+External agents retain their own credentials, tools and conversation storage.
+
+Requires Claude Code 2.1.296 or later with Mods enabled, and the selected external
+CLI installed and authenticated. Restart with `--subagents` when resuming a Claude
+session. The integration currently exposes read-only execution. Gemini additionally
+requires its native workspace trust and plan-mode prerequisites. Discovery reports
+unsupported model catalogs and execution adapters explicitly; OpenCode and DSH
+remain available through ordinary AgentX launch, not this subagent bridge.
+
+See [subagent integration](docs/subagents.md) for exact tool inputs and boundaries.
+The execution command reads stdin and streams the selected CLI's native JSONL:
 
 ```bash
-ax agent exec codex --cwd . < prompt.txt
-ax agent exec codex --resume <session-uuid> < follow-up.txt
+ax agent exec codex --model <native-model-id> --cwd . < prompt.txt
+ax agent exec pi --model <provider/model> < prompt.txt
+ax agent exec gemini --resume <session-uuid> < follow-up.txt
 ax --json agent exec codex --dry-run
 ```
 
