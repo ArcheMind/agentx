@@ -57,7 +57,7 @@ func testServer(t *testing.T, r runtime.Runner) *Server {
 	if err := SaveConfig(home, c); err != nil {
 		t.Fatal(err)
 	}
-	s := &Server{Home: home, Cwd: t.TempDir(), Runner: r, ctx: context.Background(), out: io.Discard, agents: map[string]*AgentState{}, names: map[string]string{}}
+	s := &Server{Home: home, Cwd: t.TempDir(), Runner: r, ctx: context.Background(), out: io.Discard, agents: map[string]*ExternalSubagentState{}, names: map[string]string{}}
 	t.Cleanup(func() {
 		s.mu.Lock()
 		for _, a := range s.agents {
@@ -95,18 +95,18 @@ func waitAgent(t *testing.T, s *Server, id string) {
 func TestLifecycleQueueNamesResumeAndDisable(t *testing.T) {
 	r := &testRunner{started: make(chan int, 8), release: make(chan struct{})}
 	s := testServer(t, r)
-	text := callTest(t, s, "Agent", map[string]any{"description": "remember", "prompt": "secret-token", "name": "reviewer"})
+	text := callTest(t, s, "ExternalSubagent", map[string]any{"description": "remember", "prompt": "secret-token", "name": "reviewer"})
 	if !strings.Contains(text, "queued") {
 		t.Fatal(text)
 	}
 	<-r.started
-	callTest(t, s, "SendMessage", map[string]any{"to": "reviewer", "message": "recall"})
+	callTest(t, s, "SendExternalSubagentMessage", map[string]any{"to": "reviewer", "message": "recall"})
 	config, _ := LoadConfig(s.Home)
 	config.Enabled = false
 	if err := SaveConfig(s.Home, config); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.call("SendMessage", []byte(`{"to":"reviewer","message":"rejected"}`)); err == nil {
+	if _, err := s.call("SendExternalSubagentMessage", []byte(`{"to":"reviewer","message":"rejected"}`)); err == nil {
 		t.Fatal("disabled accepted work")
 	}
 	close(r.release)
@@ -121,7 +121,7 @@ func TestLifecycleQueueNamesResumeAndDisable(t *testing.T) {
 	s.mu.Lock()
 	old := s.names["reviewer"]
 	s.mu.Unlock()
-	callTest(t, s, "Agent", map[string]any{"description": "independent", "prompt": "new", "name": "reviewer", "run_in_background": false})
+	callTest(t, s, "ExternalSubagent", map[string]any{"description": "independent", "prompt": "new", "name": "reviewer", "run_in_background": false})
 	s.mu.Lock()
 	current := s.names["reviewer"]
 	_, err := s.target(old)
@@ -136,7 +136,7 @@ func TestLifecycleQueueNamesResumeAndDisable(t *testing.T) {
 	r.mu.Unlock()
 	config.Options[0].Model = "changed"
 	SaveConfig(s.Home, config)
-	if _, err := s.call("SendMessage", []byte(`{"to":"reviewer","message":"must reject"}`)); err == nil {
+	if _, err := s.call("SendExternalSubagentMessage", []byte(`{"to":"reviewer","message":"must reject"}`)); err == nil {
 		t.Fatal("silently rebound option")
 	}
 }
@@ -145,11 +145,11 @@ func TestCancelTargetsOnlyOneNativeExecution(t *testing.T) {
 	r := &testRunner{started: make(chan int, 8), release: make(chan struct{})}
 	s := testServer(t, r)
 	for _, name := range []string{"one", "two"} {
-		callTest(t, s, "Agent", map[string]any{"description": "wait", "prompt": "wait", "name": name})
+		callTest(t, s, "ExternalSubagent", map[string]any{"description": "wait", "prompt": "wait", "name": name})
 		<-r.started
 	}
-	callTest(t, s, "SendMessage", map[string]any{"to": "one", "message": "queued"})
-	text := callTest(t, s, "TaskStop", map[string]any{"task_id": "one"})
+	callTest(t, s, "SendExternalSubagentMessage", map[string]any{"to": "one", "message": "queued"})
+	text := callTest(t, s, "StopExternalSubagent", map[string]any{"task_id": "one"})
 	if !strings.Contains(text, "cancelled") {
 		t.Fatal(text)
 	}
@@ -162,10 +162,10 @@ func TestCancelTargetsOnlyOneNativeExecution(t *testing.T) {
 	}
 	close(r.release)
 	waitAgent(t, s, "two")
-	if _, err := s.call("TaskStop", []byte(`{"task_id":"missing"}`)); err == nil {
+	if _, err := s.call("StopExternalSubagent", []byte(`{"task_id":"missing"}`)); err == nil {
 		t.Fatal("unknown target accepted")
 	}
-	if text := callTest(t, s, "TaskStop", map[string]any{"task_id": "two"}); !strings.Contains(text, "already ended") {
+	if text := callTest(t, s, "StopExternalSubagent", map[string]any{"task_id": "two"}); !strings.Contains(text, "already ended") {
 		t.Fatal(text)
 	}
 }
@@ -173,26 +173,26 @@ func TestCancelTargetsOnlyOneNativeExecution(t *testing.T) {
 func TestAgentContractRejectsUnsupportedAndUnknownInputs(t *testing.T) {
 	s := testServer(t, &testRunner{})
 	for _, raw := range []string{`{}`, `{"prompt":"x"}`, `{"description":"x","prompt":"x","agent":"pi"}`, `{"description":"x","prompt":"x","name":"_bad"}`, `{"description":"x","prompt":"x","effort":"max"}`, `{"description":"x","prompt":"x","subagent_type":"pi"}`, `{"description":"x","prompt":"x","isolation":"remote"}`, `{"description":"x","prompt":"x","model":"unknown"}`, `{"description":"x","prompt":"x","mode":"root"}`, `{"description":"x","prompt":"x","run_in_background":null}`, `{"description":"x","prompt":"x","run_in_background":"false"}`} {
-		if _, err := s.call("Agent", []byte(raw)); err == nil {
+		if _, err := s.call("ExternalSubagent", []byte(raw)); err == nil {
 			t.Fatalf("accepted %s", raw)
 		}
 	}
-	callTest(t, s, "Agent", map[string]any{"description": "x", "prompt": "x", "effort": "low", "team_name": "ignored", "mode": "bypassPermissions", "run_in_background": false})
+	callTest(t, s, "ExternalSubagent", map[string]any{"description": "x", "prompt": "x", "effort": "low", "team_name": "ignored", "mode": "bypassPermissions", "run_in_background": false})
 	config, _ := LoadConfig(s.Home)
 	config.Default = ""
 	SaveConfig(s.Home, config)
-	if _, err := s.call("Agent", []byte(`{"description":"x","prompt":"x"}`)); err == nil {
+	if _, err := s.call("ExternalSubagent", []byte(`{"description":"x","prompt":"x"}`)); err == nil {
 		t.Fatal("chose hidden default")
 	}
 	config.Options[0].Enabled = false
 	SaveConfig(s.Home, config)
-	if _, err := s.call("Agent", []byte(`{"description":"x","prompt":"x","model":"review"}`)); err == nil {
+	if _, err := s.call("ExternalSubagent", []byte(`{"description":"x","prompt":"x","model":"review"}`)); err == nil {
 		t.Fatal("disabled option accepted")
 	}
 }
 
 func TestParseFailuresAndUnknownUsage(t *testing.T) {
-	a := &AgentState{Option: Option{Agent: "codex"}}
+	a := &ExternalSubagentState{Option: Option{Agent: "codex"}}
 	for _, output := range []string{`not json`, "{\"type\":\"turn.failed\",\"error\":{\"message\":\"authentication failed\"}}", `{"type":"turn.completed"}`} {
 		if _, _, err := parseOutput(a, output); err == nil {
 			t.Fatal("failure became success")
@@ -216,7 +216,7 @@ func (failureRunner) Execute(context.Context, runtime.CommandPlan, runtime.Execu
 
 func TestExternalFailureIsToolErrorAndCannotResume(t *testing.T) {
 	s := testServer(t, failureRunner{})
-	result, err := s.handle("tools/call", []byte(`{"name":"Agent","arguments":{"description":"failure","prompt":"x","name":"broken","run_in_background":false}}`))
+	result, err := s.handle("tools/call", []byte(`{"name":"ExternalSubagent","arguments":{"description":"failure","prompt":"x","name":"broken","run_in_background":false}}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -224,14 +224,14 @@ func TestExternalFailureIsToolErrorAndCannotResume(t *testing.T) {
 	if !strings.Contains(string(data), `"isError":true`) || !strings.Contains(string(data), "model unavailable") {
 		t.Fatal(string(data))
 	}
-	if _, err := s.call("SendMessage", []byte(`{"to":"broken","message":"retry"}`)); err == nil {
+	if _, err := s.call("SendExternalSubagentMessage", []byte(`{"to":"broken","message":"retry"}`)); err == nil {
 		t.Fatal("failed session restarted")
 	}
 }
 
 func TestMissingPiSessionAndNativeIdentityChangeFail(t *testing.T) {
 	s := testServer(t, &testRunner{})
-	a := &AgentState{ID: "pi", Session: filepath.Join(t.TempDir(), "missing.jsonl"), Option: Option{Name: "review", Agent: "pi", Model: "provider/model", Enabled: true, Description: "test"}}
+	a := &ExternalSubagentState{ID: "pi", Session: filepath.Join(t.TempDir(), "missing.jsonl"), Option: Option{Name: "review", Agent: "pi", Model: "provider/model", Enabled: true, Description: "test"}}
 	c := Config{Enabled: true, Options: []Option{a.Option}}
 	if err := SaveConfig(s.Home, c); err != nil {
 		t.Fatal(err)
@@ -290,7 +290,7 @@ func TestConnectionStatusMatchesCurrentClientAndCleansUp(t *testing.T) {
 func TestStrictConfigRejectsSilentDowngradesAndWrongFieldCase(t *testing.T) {
 	s := testServer(t, &testRunner{})
 	for _, raw := range []string{`{"Description":"x","prompt":"x"}`, `{"description":"x","prompt":"x","name":""}`, `{"description":"x","prompt":"x","effort":""}`, `{"description":"x","prompt":"x","isolation":"worktree"}`} {
-		if _, err := s.call("Agent", []byte(raw)); err == nil {
+		if _, err := s.call("ExternalSubagent", []byte(raw)); err == nil {
 			t.Fatal(raw)
 		}
 	}
@@ -318,10 +318,10 @@ func TestQueuedCancellationNotifiesEveryAcceptedTask(t *testing.T) {
 	s := testServer(t, r)
 	out := &lockedOutput{}
 	s.out = out
-	callTest(t, s, "Agent", map[string]any{"description": "first", "prompt": "first", "name": "worker"})
+	callTest(t, s, "ExternalSubagent", map[string]any{"description": "first", "prompt": "first", "name": "worker"})
 	<-r.started
-	callTest(t, s, "SendMessage", map[string]any{"to": "worker", "message": "second"})
-	callTest(t, s, "TaskStop", map[string]any{"task_id": "worker"})
+	callTest(t, s, "SendExternalSubagentMessage", map[string]any{"to": "worker", "message": "second"})
+	callTest(t, s, "StopExternalSubagent", map[string]any{"task_id": "worker"})
 	s.workers.Wait()
 	lines := strings.Split(strings.TrimSpace(out.text()), "\n")
 	if len(lines) != 2 {
@@ -357,9 +357,9 @@ func (r ignoringCancelRunner) Execute(ctx context.Context, p runtime.CommandPlan
 func TestUnconfirmedCancellationDoesNotBecomeCancelled(t *testing.T) {
 	r := ignoringCancelRunner{started: make(chan struct{})}
 	s := testServer(t, r)
-	callTest(t, s, "Agent", map[string]any{"description": "test", "prompt": "test", "name": "ignores-cancel"})
+	callTest(t, s, "ExternalSubagent", map[string]any{"description": "test", "prompt": "test", "name": "ignores-cancel"})
 	<-r.started
-	_, err := s.call("TaskStop", []byte(`{"task_id":"ignores-cancel"}`))
+	_, err := s.call("StopExternalSubagent", []byte(`{"task_id":"ignores-cancel"}`))
 	if err == nil || !strings.Contains(err.Error(), "cancellation was not confirmed") {
 		t.Fatal(err)
 	}
@@ -369,5 +369,57 @@ func TestUnconfirmedCancellationDoesNotBecomeCancelled(t *testing.T) {
 	s.mu.Unlock()
 	if status != "completed" {
 		t.Fatal(status)
+	}
+}
+
+func TestExternalSubagentToolNamesAndUnchangedContract(t *testing.T) {
+	s := testServer(t, &testRunner{})
+	tools := s.tools().(map[string]any)["tools"].([]any)
+	want := []string{"ExternalSubagent", "SendExternalSubagentMessage", "StopExternalSubagent", "listExternalSubagentSessions"}
+	if len(tools) != len(want) {
+		t.Fatal(tools)
+	}
+	for i, raw := range tools {
+		tool := raw.(map[string]any)
+		if tool["name"] != want[i] {
+			t.Fatal(tool["name"])
+		}
+		schema := tool["inputSchema"].(map[string]any)
+		if schema["additionalProperties"] != false {
+			t.Fatal("unknown fields became accepted")
+		}
+	}
+	create := tools[0].(map[string]any)["inputSchema"].(map[string]any)
+	props := create["properties"].(map[string]any)
+	for _, key := range []string{"description", "prompt", "model", "subagent_type", "effort", "run_in_background", "name", "isolation", "team_name", "mode"} {
+		if props[key] == nil {
+			t.Fatal("changed parameter", key)
+		}
+	}
+	if len(props) != 10 || !Contains(props["model"].(map[string]any)["enum"].([]string), "review") {
+		t.Fatal("changed model selection contract")
+	}
+	for _, old := range []string{"Agent", "SendMessage", "TaskStop", "ListAgents"} {
+		if _, err := s.call(old, []byte(`{}`)); err == nil || !strings.Contains(err.Error(), "unknown tool") {
+			t.Fatalf("old name %s still accepted: %v", old, err)
+		}
+	}
+	if len(s.agents) != 0 {
+		t.Fatal("old aliases created work")
+	}
+	if text := callTest(t, s, "listExternalSubagentSessions", map[string]any{}); !strings.Contains(text, "No AgentX ExternalSubagents") {
+		t.Fatal(text)
+	}
+	result, err := s.handle("initialize", []byte(`{"clientInfo":{"name":"test","version":"1"}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	initialized := result.(map[string]any)
+	if initialized["serverInfo"].(map[string]any)["name"] != "AgentX" || initialized["protocolVersion"] != "2024-11-05" {
+		t.Fatal("changed server identity or transport")
+	}
+	instructions := initialized["instructions"].(string)
+	if !strings.Contains(instructions, "ExternalSubagent") || strings.Contains(instructions, "Option ") || strings.Contains(instructions, "When asked") {
+		t.Fatal("inconsistent concept or rejected catalog guidance", instructions)
 	}
 }

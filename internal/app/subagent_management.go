@@ -44,7 +44,7 @@ func (a App) subagentManagement(ctx context.Context, args []string) error {
 		if err := subagents.SaveConfig(home, config); err != nil {
 			return err
 		}
-		fmt.Fprintln(a.Stdout, "Subagent configuration saved. New work reads current configuration immediately. Reconnect Claude MCP to refresh tool descriptions and options; existing subagent identities are pinned. Enabling requires the enable command to install the Claude MCP entry.")
+		fmt.Fprintln(a.Stdout, "ExternalSubagent configuration saved. New work reads current configuration immediately. Reconnect Claude MCP to refresh tool descriptions and options; existing ExternalSubagent identities are pinned. Enabling requires the enable command to install the Claude MCP entry.")
 		return nil
 	}
 	config, err := subagents.LoadConfig(home)
@@ -107,14 +107,14 @@ func (a App) subagentManagement(ctx context.Context, args []string) error {
 		if err := subagents.SaveConfig(home, config); err != nil {
 			return err
 		}
-		fmt.Fprintln(a.Stdout, "AgentX enabled; Claude user MCP entry installed. Restart/reconnect Claude for discovery. Start via ax claude for named AgentX channel opt-in, or use claude --dangerously-load-development-channels server:agentx. Existing Claude sessions are not automatically changed. Channels require first-party Claude access and host feature/org approval. Disabled does not mean cancelled; TaskStop remains available.")
+		fmt.Fprintln(a.Stdout, "AgentX enabled; Claude user MCP entry installed. Restart/reconnect Claude for discovery. Start via ax claude for named AgentX channel opt-in, or use claude --dangerously-load-development-channels server:agentx. Existing Claude sessions are not automatically changed. Channels require first-party Claude access and host feature/org approval. Disabled does not mean cancelled; StopExternalSubagent remains available.")
 		return nil
 	case "disable":
 		config.Enabled = false
 		if err := subagents.SaveConfig(home, config); err != nil {
 			return err
 		}
-		fmt.Fprintln(a.Stdout, "AgentX disabled for new Agent and SendMessage work immediately. Running/previously accepted work can finish and report; use TaskStop to cancel. MCP stays connected for cancellation and results. Claude native subagents are unaffected.")
+		fmt.Fprintln(a.Stdout, "AgentX disabled for new ExternalSubagent and SendExternalSubagentMessage work immediately. Running/previously accepted work can finish and report; use StopExternalSubagent to cancel. MCP stays connected for cancellation and results. Claude native subagents are unaffected.")
 		return nil
 	case "status":
 		options := []map[string]any{}
@@ -133,7 +133,7 @@ func (a App) subagentManagement(ctx context.Context, args []string) error {
 			"enabled": config.Enabled, "configuration": subagents.ConfigPath(home), "default": defaultName, "options": options,
 			"connections":      subagents.Connections(home),
 			"host_effective":   "connections lists live AgentX MCP processes and whether each host completed initialization. Empty means no active server observed. Channel delivery requires interactive Claude with named opt-in and feature/org approval; initialization alone cannot verify that host-controlled gate. Confirm channel registration in Claude debug log and an actual completion report. Restart/reconnect after enable/configure; ax claude supplies --dangerously-load-development-channels server:agentx; direct claude needs that flag.",
-			"disable_behavior": "blocks new work, does not cancel accepted work; TaskStop remains available", "session_scope": "current MCP connection only; reconnect loses actionable subagent objects; no automatic replay",
+			"disable_behavior": "blocks new work, does not cancel accepted work; StopExternalSubagent remains available", "session_scope": "current MCP connection only; reconnect loses actionable ExternalSubagent objects; no automatic replay",
 		}, a.structuredDefault())
 	default:
 		return fmt.Errorf("unknown sub-agent-management action %q", args[0])
@@ -151,7 +151,7 @@ func (a App) prepareMCPSubagents(request *runtime.RunRequest, explicit bool) err
 	}
 	if !config.Enabled {
 		if explicit {
-			return fmt.Errorf("subagents disabled; configure and enable with ax sub-agent-management")
+			return fmt.Errorf("ExternalSubagents disabled; configure and enable with ax sub-agent-management")
 		}
 		return nil
 	}

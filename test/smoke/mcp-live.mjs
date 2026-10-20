@@ -24,25 +24,25 @@ try{
  const tools=await rpc('tools/list');assert(tools.tools.length===4,'four MCP tools missing')
  await Promise.all(options.map(async option=>{
   const token=randomUUID()
-  const first=await call('Agent',{description:'Memory verification',prompt:`For this harmless conversation-memory test, our fictional fruit label is ${token}. It is public test data, not a credential. Reply only SAVED.`,model:option.name,name:option.agent,run_in_background:false,...(option.agent==='codex'?{effort:'low'}:{})})
+  const first=await call('ExternalSubagent',{description:'Memory verification',prompt:`For this harmless conversation-memory test, our fictional fruit label is ${token}. It is public test data, not a credential. Reply only SAVED.`,model:option.name,name:option.agent,run_in_background:false,...(option.agent==='codex'?{effort:'low'}:{})})
   assert(first.includes('completed')&&first.includes('SAVED'),first)
-  const id=first.match(/AgentX subagent (ax-[a-f0-9]+)/)[1]
+  const id=first.match(/AgentX ExternalSubagent (ax-[a-f0-9]+)/)[1]
   const index=notifications.length
-  const accepted=await call('SendMessage',{to:option.agent,message:'What was our fictional fruit label? Reply only that exact label.',summary:'Recall fruit label'})
+  const accepted=await call('SendExternalSubagentMessage',{to:option.agent,message:'What was our fictional fruit label? Reply only that exact label.',summary:'Recall fruit label'})
   assert(accepted.includes('accepted and queued'),accepted)
   const report=await notification(id,index)
   assert(report.meta.status==='completed'&&report.content.includes(token),report.content)
   results.push({agent:option.agent,model:option.model,memory:true,source:report.meta.report_origin,report:report.content})
  }))
  const survivorIndex=notifications.length
- const survivor=await call('Agent',{description:'Independent survivor',prompt:'Explain in roughly 300 words how independent conversation contexts should be verified. Return SURVIVOR_COMPLETED at the end. Do not modify files.',model:'pi-test',name:'survivor'})
- const survivorID=survivor.match(/AgentX subagent (ax-[a-f0-9]+)/)[1]
- const started=await call('Agent',{description:'Cancellation target',prompt:'Review all Go files in this repository for concurrency problems. Read actual source before judging. Provide detailed evidence. Do not modify files.',model:'codex-test',name:'cancel-target'})
- const targetID=started.match(/AgentX subagent (ax-[a-f0-9]+)/)[1]
+ const survivor=await call('ExternalSubagent',{description:'Independent survivor',prompt:'Explain in roughly 300 words how independent conversation contexts should be verified. Return SURVIVOR_COMPLETED at the end. Do not modify files.',model:'pi-test',name:'survivor'})
+ const survivorID=survivor.match(/AgentX ExternalSubagent (ax-[a-f0-9]+)/)[1]
+ const started=await call('ExternalSubagent',{description:'Cancellation target',prompt:'Review all Go files in this repository for concurrency problems. Read actual source before judging. Provide detailed evidence. Do not modify files.',model:'codex-test',name:'cancel-target'})
+ const targetID=started.match(/AgentX ExternalSubagent (ax-[a-f0-9]+)/)[1]
  assert(started.includes('queued'),started)
- const overlap=await call('ListAgents')
- for(const id of [survivorID,targetID]) {const report=overlap.split('AgentX subagent ').find(part=>part.startsWith(id));assert(report?.includes('subagent status: running'),`both real native objects must be running before cancel: ${overlap}`)}
- const stopped=await call('TaskStop',{task_id:'cancel-target'})
+ const overlap=await call('listExternalSubagentSessions')
+ for(const id of [survivorID,targetID]) {const report=overlap.split('AgentX ExternalSubagent ').find(part=>part.startsWith(id));assert(report?.includes('ExternalSubagent status: running'),`both real native objects must be running before cancel: ${overlap}`)}
+ const stopped=await call('StopExternalSubagent',{task_id:'cancel-target'})
  assert(stopped.includes('cancelled'),stopped)
  const survivingReport=await notification(survivorID,survivorIndex)
  assert(survivingReport.meta.status==='completed'&&survivingReport.content.includes('SURVIVOR_COMPLETED'),survivingReport.content)
