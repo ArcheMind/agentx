@@ -34,6 +34,46 @@ historical mode.
 
 ## Environment and retained observations
 
+### Current preset DATA visibility
+
+The config-derived catalog is shared by initialization instructions and creation
+metadata/model choices. Deterministic coverage checks quoted data boundaries,
+disabled/invalid/empty/no-default states and reconnect snapshot semantics.
+
+One author-owned observation used the exact question `有哪些可用subagent选择？`,
+default native tools, deferred search and `dontAsk`, with randomized isolated
+presets. Claude Code 2.1.296 / `claude-fable-5-1` returned both presets with their
+correct engines/models and readonly limits, distinguished native types, and
+qualified static checks versus unverified remote availability. No tools were
+called. Safe answer/call evidence is `observed.json` under
+`/var/folders/34/yf5zv4k133l7nrksmz2flmw00000gn/T/agentx-preset-visibility-zex6J4`.
+This is one observed response, not a deterministic language-behavior guarantee.
+Independent reviewer-owned Claude observations (2.1.296 / `claude-fable-5-1`)
+subsequently accepted natural behavior:
+
+- A different general question listed both randomized presets, default, readonly
+  capabilities/limits and distinguished internal Agent types with zero tool calls
+  (`agentx-preset-visibility-6kzu6j`).
+- An exact-model/isolation question preserved both complete configured model IDs,
+  explicitly rejected isolation and qualified remote availability, with zero
+  tool calls (`agentx-preset-visibility-2JPu68`).
+- A created/continuable-session question used ToolSearch then
+  `listExternalSubagentSessions`, correctly reporting an empty connection rather
+  than presenting configured presets as created instances
+  (`agentx-preset-visibility-j6tjOk`).
+
+These directories share the temporary parent path above; each contains
+`observed.json`. The first two decisive observations used an isolated temporary
+working directory. An earlier exact-model question from the repository directory
+used Bash to inspect source (`agentx-preset-visibility-Ay2AvN`); it is excluded as
+evidence that metadata alone suffices. An initial general response shortened the
+Pi model ID, motivating more precise DATA labels before the accepted observations.
+Reviewer semantic judgment, not a fixed keyword assertion, determined acceptance.
+Independent `make check test test-mcp-race test-mcp-syntax smoke-mcp-contract
+smoke-mcp-management` and `git diff --check` also passed. These samples are not a
+guarantee for every future model response. The pre-rename lifecycle observations
+below are not relabeled as current discovery.
+
 | Component | Observed version / combination |
 | --- | --- |
 | Host | Interactive Claude Code 2.1.296, first-party provider |

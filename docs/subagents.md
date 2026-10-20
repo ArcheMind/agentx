@@ -68,6 +68,15 @@ subagents or cancel work. Re-enabling retains combination configuration.
 
 ## Claude discovery and background delivery
 
+MCP initialization includes a config-derived preset DATA catalog: configured
+names/default, execution agents/models, declared capability descriptions/efforts,
+readonly limits, feature enablement and static prerequisites. The same catalog
+supplies `ExternalSubagent` metadata and its selectable `model` values. Static
+checks do not verify remote availability. `model` selects a preset independently
+of the `subagent_type` role; session listing reports created objects, not presets.
+Initialization instructions are a connection snapshot: reconnect after editing
+configuration to refresh that catalog. A fresh `tools/list` reads current config.
+
 `enable` installs an `agentx` stdio MCP entry pointing to this `ax` executable.
 Restart or reconnect the host for tool discovery. `ax claude` automatically adds
 the MCP connection and opts in to **only** `server:agentx` using Claude's
@@ -198,3 +207,13 @@ To inspect one, pass `MCP_EVIDENCE_FORMAT=historical` to
 use the new names. No new live model run is implied by renaming a harness.
 `smoke-mcp-contract` checks the built binary over stdio without creating work;
 set `AX_MCP_BINARY` to verify an installed binary through the same Make target.
+
+`make smoke-mcp-presets` records an isolated real Claude natural-language
+observation with randomized preset names. Override `MCP_PRESET_PROMPT` for
+reviewer-owned questions; default judgment records content without a prescribed
+answer. The host starts in the temporary directory, not the source repository
+(`MCP_PRESET_CWD` can override it). Only ToolSearch and readonly external-session
+listing calls are accepted.
+`MCP_PRESET_JUDGMENT=presets` enables an optional fixed preset-answer diagnostic,
+not a substitute for semantic review. Evidence records host version/model,
+answer and tool calls; raw private logs stay in the printed temporary directory.
