@@ -78,7 +78,7 @@ func LoadConfig(home string) (Config, error) {
 		return config, err
 	}
 	if err := StrictDecode(data, &config); err != nil {
-		return config, fmt.Errorf("invalid subagent configuration: %w", err)
+		return config, fmt.Errorf("invalid ExternalSubagent configuration: %w", err)
 	}
 	if err := config.Validate(); err != nil {
 		return config, err

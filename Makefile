@@ -1,5 +1,6 @@
 .PHONY: fmt check test test-subagents smoke-subagents smoke-subagents-live audit build smoke smoke-live smoke-clean smoke-hooks-live smoke-skills-clean smoke-skills-live verify clean
 .PHONY: smoke-mcp-management smoke-mcp-live smoke-mcp-channel smoke-mcp-host-live verify-mcp-host-evidence test-mcp-race test-mcp-syntax
+.PHONY: smoke-mcp-contract
 
 fmt:
 	gofmt -w cmd internal
@@ -32,13 +33,16 @@ smoke-mcp-host-live: build
 	node test/smoke/mcp-channel.mjs "$(CURDIR)/bin/ax" --live
 
 verify-mcp-host-evidence:
-	node test/smoke/mcp-host-evidence.mjs "$(MCP_EVIDENCE_DIR)" "$(MCP_TRANSCRIPT)"
+	node test/smoke/mcp-host-evidence.mjs "$(MCP_EVIDENCE_DIR)" "$(MCP_TRANSCRIPT)" $(if $(filter historical,$(MCP_EVIDENCE_FORMAT)),--historical,)
 
 smoke-mcp-live: build
 	node test/smoke/mcp-live.mjs "$(CURDIR)/bin/ax"
 
 smoke-mcp-management: build
 	node test/smoke/mcp-management.mjs "$(CURDIR)/bin/ax"
+
+smoke-mcp-contract: build
+	node test/smoke/mcp-contract.mjs "$(CURDIR)/bin/ax"
 
 test-mcp-race:
 	go test -race ./internal/subagents ./internal/app

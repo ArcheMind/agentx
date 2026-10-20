@@ -1,8 +1,8 @@
-# AgentX MCP subagents
+# AgentX MCP ExternalSubagents
 
-AgentX exposes `Agent`, `SendMessage`, `TaskStop`, and `ListAgents` over stdio MCP.
-These are explicitly AgentX tools, not official Claude subagents. The external
-agent executes directly, without a Claude relay inference call. Claude chooses
+AgentX exposes `ExternalSubagent`, `SendExternalSubagentMessage`, `StopExternalSubagent`, and `listExternalSubagentSessions` over stdio MCP.
+These are explicitly AgentX tools, not official Claude subagents. The selected
+native agent executes directly, without a Claude relay inference call. Claude chooses
 the combination and any orchestration; AgentX imposes no review/voting workflow.
 
 ## Configure and manage
@@ -57,13 +57,13 @@ entries. An identical AgentX entry is reused; a conflicting entry is rejected.
 Enable/disable state persists across tasks and sessions. `configure` stores the
 whole supplied configuration, including `enabled`. Reconnect/refresh MCP after
 editing options to refresh the schema; new work reads current configuration.
-Existing subagents retain their original combination. Changed/removed/disabled
+Existing ExternalSubagents retain their original combination. Changed/removed/disabled
 options reject continuation instead of rebinding it. A queued task also checks
 that its original option still exists unchanged before native submission.
 
-Disabling takes effect for new `Agent` and `SendMessage` submissions immediately.
+Disabling takes effect for new `ExternalSubagent` and `SendExternalSubagentMessage` submissions immediately.
 Previously accepted work, including queued messages, can finish and deliver
-results. `TaskStop` remains available. Disabling does not affect Claude native
+results. `StopExternalSubagent` remains available. Disabling does not affect Claude native
 subagents or cancel work. Re-enabling retains combination configuration.
 
 ## Claude discovery and background delivery
@@ -97,11 +97,11 @@ hosts is not claimed.
 ## Tool contract
 
 ```text
-Agent({"description":"Review authentication", "prompt":"Review token refresh logic",
+ExternalSubagent({"description":"Review authentication", "prompt":"Review token refresh logic",
        "model":"codex-review", "name":"reviewer", "run_in_background":true})
-SendMessage({"to":"reviewer", "message":"Now inspect logout handling", "summary":"Check logout"})
-TaskStop({"task_id":"reviewer"})
-ListAgents({})
+SendExternalSubagentMessage({"to":"reviewer", "message":"Now inspect logout handling", "summary":"Check logout"})
+StopExternalSubagent({"task_id":"reviewer"})
+listExternalSubagentSessions({})
 ```
 
 `description` and `prompt` are required strings. `subagent_type` is optional and
@@ -121,20 +121,20 @@ unsupported values are rejected.
 
 Omitted/true `run_in_background` returns a task identity immediately and pushes
 its terminal result. False waits for a terminal result; failure/cancellation is
-a tool error, not successful submission. `SendMessage` accepts text and returns
-queued acknowledgement, never a claim of completion. Busy subagents process
+a tool error, not successful submission. `SendExternalSubagentMessage` accepts text and returns
+queued acknowledgement, never a claim of completion. Busy ExternalSubagents process
 messages in order using the same native context. Every accepted message has its
 own task ID and terminal notification, including cancellation or prior-turn
-failure. Completed subagents resume via their exact native session.
+failure. Completed ExternalSubagents resume via their exact native session.
 
-Every Agent call creates an independent object. Reusing a name makes that name
+Every ExternalSubagent call creates an independent object. Reusing a name makes that name
 refer to the newest object; previous objects remain addressable by ID. Cancel
 targets only that object's process group and queued work, waits for termination,
 and distinguishes already-finished and unknown targets. Failed/cancelled agents
 cannot resume an uncertain context; the error is explicit and no replacement
 session or repeat task is created.
 
-Objects and ListAgents are scoped to the current MCP connection. Reconnecting
+Objects and listExternalSubagentSessions are scoped to the current MCP connection. Reconnecting
 loses actionable objects; native transcript files may remain, but AgentX does
 not claim cross-connection recovery. This scope also applies when the parent
 Claude session resumes. Session loss or identity mismatch is failure, not retry.
@@ -152,9 +152,9 @@ from Claude. AgentX does not widen permissions for deprecated `mode`. Other
 agents (including Gemini) remain available for ordinary AgentX launch/exec but
 are not delivered MCP combinations in this integration.
 
-Reports identify option, execution agent, actual selected model, subagent/task
+Reports identify option, execution agent, actual selected model, ExternalSubagent/task
 IDs, status, failure reason, and continuation/cancellation instructions. Reports
-and channels are labelled untrusted external subagent content and never user
+and channels are labelled untrusted ExternalSubagent content and never user
 authorization. Available native usage is shown as backend-reported external
 usage with native field names; unknown usage stays unknown. Codex resume usage
 may include context/cumulative fields; AgentX does not reinterpret it as Claude
@@ -167,6 +167,7 @@ stdout, stderr and errors to stderr; it may contain task contents.
 make verify
 make test-mcp-race
 make smoke-mcp-management
+make smoke-mcp-contract
 make smoke-mcp-live
 make smoke-mcp-channel
 make smoke-mcp-host-live
@@ -183,3 +184,17 @@ host-consumption evidence from actual-backend evidence. Neither fixture tests
 nor a server notification alone prove native execution or host delivery.
 
 See [acceptance evidence](subagents-acceptance.md) for scenarios and limitations.
+
+The four names above replace the earlier MCP `Agent`, `SendMessage`, `TaskStop`
+and `ListAgents` names. Old names are rejected; there are no compatibility aliases.
+The parameter keys, `model` combination selection, `subagent_type` role,
+configuration and lifecycle are unchanged. Reconnect Claude MCP after upgrading
+to refresh tool metadata; update any explicit MCP tool permission rules to the
+new names. Native Claude tools retain their own names and behavior.
+
+Saved host transcripts from before this rename remain historical evidence.
+To inspect one, pass `MCP_EVIDENCE_FORMAT=historical` to
+`make verify-mcp-host-evidence`; the default parser and current smoke harnesses
+use the new names. No new live model run is implied by renaming a harness.
+`smoke-mcp-contract` checks the built binary over stdio without creating work;
+set `AX_MCP_BINARY` to verify an installed binary through the same Make target.

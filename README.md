@@ -67,7 +67,7 @@ ax dsh -- --profile headless "review this change"
 ax dsh -- --profile acp
 ```
 
-## MCP subagents with external agents and models
+## MCP ExternalSubagent tools
 
 ```bash
 ax sub-agent-management configure < combinations.json
@@ -77,8 +77,8 @@ ax claude
 ```
 
 Users persistently configure allowed Agent × Model combinations. Claude discovers
-four MCP tools: `Agent`, `SendMessage`, `TaskStop`, and `ListAgents`. A single
-`mcp__agentx__Agent` call starts an independent Codex or Pi subagent; `model`
+four MCP tools: `ExternalSubagent`, `SendExternalSubagentMessage`, `StopExternalSubagent`, and `listExternalSubagentSessions`. A single
+`mcp__agentx__ExternalSubagent` call starts an independent Codex or Pi ExternalSubagent; `model`
 selects a configured combination. No per-task registration is required.
 
 For example, ask Claude:
@@ -98,7 +98,7 @@ these unsolicited channel results; use foreground tasks there. Execution is
 read-only; Pi uses a tool allowlist, not an OS sandbox. Disabling blocks new work
 without cancelling accepted tasks. MCP reconnect loses actionable task objects.
 
-See [subagent integration](docs/subagents.md) for exact tool inputs and boundaries.
+See [ExternalSubagent integration](docs/subagents.md) for exact tool inputs and boundaries.
 The execution command reads stdin and streams the selected CLI's native JSONL:
 
 ```bash

@@ -6,6 +6,32 @@ contract/error/concurrency behavior. Live tests separately establish native
 engine operation and actual Claude notification consumption. Fixture passes are
 never counted as real inference requests.
 
+## Current ExternalSubagent naming
+
+The current tools are `ExternalSubagent`, `SendExternalSubagentMessage`,
+`StopExternalSubagent`, and `listExternalSubagentSessions`. They replace the
+earlier `Agent`, `SendMessage`, `TaskStop`, and `ListAgents` MCP names without
+aliases. Parameter keys, configured combination names, permissions and lifecycle
+semantics remain unchanged. The server identity and channel source remain AgentX
+and `agentx`; native Claude tools are not renamed.
+
+The live observations and quoted tool names below are historical pre-rename
+records. They establish lifecycle behavior before this naming change, not a new
+live run of the renamed tools or natural-language discovery. Current mechanical
+coverage verifies the four names/schema/dispatch, old-name rejection, unchanged
+parameter/model selection, and lifecycle regressions without additional model
+inference. Current smoke harnesses use new names; saved old transcripts require
+explicit `MCP_EVIDENCE_FORMAT=historical` when running
+`make verify-mcp-host-evidence`.
+
+Rename verification passed via `make verify test-mcp-race test-mcp-syntax
+smoke-mcp-management smoke-mcp-contract`. The stdio binary check exposed exactly
+the four new names, rejected all four old names, preserved the ten creation
+parameter keys/server identity/protocol, and listed the empty current connection
+without creating any work. It used no model inference. Existing lifecycle tests
+now call the renamed tools; historical host evidence is read only in explicit
+historical mode.
+
 ## Environment and retained observations
 
 | Component | Observed version / combination |
