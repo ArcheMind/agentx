@@ -25,7 +25,8 @@ var agentColors = map[string]string{
 }
 
 func colorEnabled(writer io.Writer) bool {
-	if os.Getenv("NO_COLOR") != "" || os.Getenv("TERM") == "dumb" {
+	_, noColor := os.LookupEnv("NO_COLOR")
+	if noColor || os.Getenv("TERM") == "dumb" {
 		return false
 	}
 	file, ok := writer.(*os.File)
