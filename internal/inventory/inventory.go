@@ -81,12 +81,49 @@ func Union(values []string, extra ...string) []string {
 // Normalize uses source identity, never resource names or contents, to merge projections.
 func Normalize(input []Source) Result {
 	result := Result{Sources: []Source{}}
+	input = append([]Source{}, input...)
+	sort.SliceStable(input, func(i, j int) bool {
+		if input[i].Preferred != input[j].Preferred {
+			return input[i].Preferred
+		}
+		return len(input[i].Path) < len(input[j].Path)
+	})
 	for _, source := range input {
+		source.Resources = append([]Resource{}, source.Resources...)
 		for i := range source.Resources {
 			source.Resources[i].Evidence = source.Resources[i].Evidence.Verified()
 			source.Resources[i].Observations = mergeObservations(source.Resources[i].Observations, []Evidence{source.Resources[i].Evidence})
 		}
-		source.Resources = append([]Resource{}, source.Resources...)
+		originalCount := len(source.Resources)
+		remaining := []Resource{}
+		for _, item := range source.Resources {
+			found := false
+			for si := range result.Sources {
+				prior := &result.Sources[si]
+				if prior.Scope != source.Scope {
+					continue
+				}
+				for ri := range prior.Resources {
+					existing := &prior.Resources[ri]
+					if item.Path != "" && existing.Name == item.Name && existing.Path == item.Path {
+						mergeResource(existing, item)
+						prior.Agents = Union(prior.Agents, item.Agents...)
+						found = true
+						break
+					}
+				}
+				if found {
+					break
+				}
+			}
+			if !found {
+				remaining = append(remaining, item)
+			}
+		}
+		source.Resources = remaining
+		if originalCount > 0 && len(remaining) == 0 && source.Status == "ok" {
+			continue
+		}
 		index := -1
 		for i, prior := range result.Sources {
 			if prior.Scope == source.Scope && prior.Path == source.Path {
@@ -110,10 +147,7 @@ func Normalize(input []Source) Result {
 			for i := range prior.Resources {
 				existing := &prior.Resources[i]
 				if existing.Name == item.Name && existing.Path == item.Path {
-					existing.Agents = Union(existing.Agents, item.Agents...)
-					existing.Projections = mergeProjections(existing.Projections, item.Projections)
-					existing.Observations = mergeObservations(existing.Observations, item.Observations)
-					existing.Evidence = summarizeEvidence(existing.Observations)
+					mergeResource(existing, item)
 					found = true
 					break
 				}
@@ -136,6 +170,9 @@ func Normalize(input []Source) Result {
 	for i := range result.Sources {
 		source := &result.Sources[i]
 		sort.Slice(source.Resources, func(i, j int) bool { return source.Resources[i].Name < source.Resources[j].Name })
+		if source.Status == "empty" && len(source.Resources) > 0 {
+			source.Status = "ok"
+		}
 		if source.Status == "ok" && len(source.Resources) == 0 {
 			source.Status = "empty"
 		}
@@ -281,4 +318,11 @@ func summarizeEvidence(observations []Evidence) Evidence {
 		}
 	}
 	return result
+}
+
+func mergeResource(existing *Resource, item Resource) {
+	existing.Agents = Union(existing.Agents, item.Agents...)
+	existing.Projections = mergeProjections(existing.Projections, item.Projections)
+	existing.Observations = mergeObservations(existing.Observations, item.Observations)
+	existing.Evidence = summarizeEvidence(existing.Observations)
 }

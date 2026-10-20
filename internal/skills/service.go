@@ -24,6 +24,8 @@ const (
 	ScopeProject Scope = "project"
 )
 
+var errNoFrontmatter = errors.New("SKILL.md must begin with YAML frontmatter")
+
 var skillNamePattern = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
 
 type Skill struct {
@@ -266,7 +268,7 @@ func readMetadataFile(path string) (metadata, error) {
 	defer file.Close()
 	scanner := bufio.NewScanner(file)
 	if !scanner.Scan() || scanner.Text() != "---" {
-		return metadata{}, errors.New("SKILL.md must begin with YAML frontmatter")
+		return metadata{}, errNoFrontmatter
 	}
 	var frontmatter strings.Builder
 	foundEnd := false

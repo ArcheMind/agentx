@@ -192,3 +192,62 @@ func TestUserOverrides(t *testing.T) {
 		}
 	}
 }
+
+func TestNestedProjectionIdentity(t *testing.T) {
+	home, project := t.TempDir(), t.TempDir()
+	source := filepath.Join(project, ".agents", "skills", "group", "alpha")
+	writeSkill(t, source, "nested", "nested")
+	projection := filepath.Join(project, ".claude", "skills", "linked")
+	if err := os.MkdirAll(filepath.Dir(projection), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(source, projection); err != nil {
+		t.Fatal(err)
+	}
+	count := 0
+	for _, block := range (Service{Home: home, Project: project}).Inventory().Sources {
+		for _, item := range block.Resources {
+			if item.Name == "nested" {
+				count++
+				if !block.Preferred || len(item.Projections) == 0 {
+					t.Fatalf("source=%+v", block)
+				}
+			}
+		}
+	}
+	if count != 1 {
+		t.Fatalf("count=%d", count)
+	}
+}
+
+func TestPiOverrideFlatAndInvalidMetadata(t *testing.T) {
+	home, project, override := t.TempDir(), t.TempDir(), t.TempDir()
+	t.Setenv("PI_CODING_AGENT_DIR", override)
+	root := filepath.Join(override, "skills")
+	if err := os.MkdirAll(root, 0755); err != nil {
+		t.Fatal(err)
+	}
+	for name, content := range map[string]string{"valid.md": "---\nname: valid\ndescription: valid\n---\n", "plain.md": "# ordinary notes", "invalid.md": "---\nname: [\n---\n"} {
+		if err := os.WriteFile(filepath.Join(root, name), []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeSkill(t, filepath.Join(root, "empty-description"), "empty-description", "")
+	found, failures := false, 0
+	for _, source := range (Service{Home: home, Project: project}).Inventory().Sources {
+		if source.Status == "failed" {
+			failures++
+		}
+		for _, item := range source.Resources {
+			if item.Name == "valid" {
+				found = true
+			}
+			if item.Name == "empty-description" {
+				t.Fatal("invalid bundle accepted")
+			}
+		}
+	}
+	if !found || failures != 2 {
+		t.Fatalf("found=%v failures=%d", found, failures)
+	}
+}

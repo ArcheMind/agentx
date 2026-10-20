@@ -100,3 +100,24 @@ func TestInvalidServersDoNotBecomeEmpty(t *testing.T) {
 		t.Fatal("source missing")
 	}
 }
+
+func TestClaudeConfigOverride(t *testing.T) {
+	home, project, override := t.TempDir(), t.TempDir(), t.TempDir()
+	t.Setenv("CLAUDE_CONFIG_DIR", override)
+	put(t, filepath.Join(override, ".claude.json"), `{"mcpServers":{"override":{}}}`)
+	put(t, filepath.Join(home, ".claude.json"), `{"mcpServers":{"wrong":{}}}`)
+	found := false
+	for _, source := range (Service{Home: home, Project: project}).List().Sources {
+		for _, item := range source.Resources {
+			if item.Name == "wrong" {
+				t.Fatal("wrong default Claude home read")
+			}
+			if item.Name == "override" {
+				found = true
+			}
+		}
+	}
+	if !found {
+		t.Fatal("override missing")
+	}
+}

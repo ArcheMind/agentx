@@ -38,6 +38,9 @@ func (s Service) List() inventory.Result {
 		}
 		if scope == "user" {
 			candidates[0].path = filepath.Join(base, ".claude.json")
+			if value := os.Getenv("CLAUDE_CONFIG_DIR"); value != "" {
+				candidates[0].path = filepath.Join(value, ".claude.json")
+			}
 			if value := os.Getenv("CODEX_HOME"); value != "" {
 				candidates[2].path = filepath.Join(value, "config.toml")
 			}

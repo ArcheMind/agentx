@@ -2,6 +2,7 @@ package skills
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -138,6 +139,12 @@ func (s Service) Inventory() inventory.Result {
 				if !top {
 					if _, err := os.Stat(filepath.Join(path, "SKILL.md")); err == nil {
 						metadata, err := readMetadata(path)
+						if err == nil && metadata.Description == "" {
+							err = fmt.Errorf("skill description is required: %s", path)
+						}
+						if err == nil && metadata.Name == "" {
+							metadata.Name = filepath.Base(path)
+						}
 						if err != nil {
 							failed := source
 							failed.Path = path
@@ -199,7 +206,7 @@ func (s Service) Inventory() inventory.Result {
 					} else if strings.HasSuffix(strings.ToLower(child), ".md") && entry.Name() != "SKILL.md" {
 						agents := []string{}
 						for _, agent := range root.agents {
-							if agent == "dsh" && top || agent == "pi" && (!top || strings.Contains(root.path, string(filepath.Separator)+".pi"+string(filepath.Separator))) {
+							if agent == "dsh" && top || agent == "pi" && (!top || root.path == filepath.Join(inventory.UserDirectory(s.Home, "pi"), "skills") || root.path == filepath.Join(s.Project, ".pi", "skills")) {
 								agents = append(agents, agent)
 							}
 						}
@@ -207,7 +214,18 @@ func (s Service) Inventory() inventory.Result {
 							continue
 						}
 						metadata, err := readMetadataFile(child)
-						if err != nil || metadata.Description == "" {
+						if errors.Is(err, errNoFrontmatter) {
+							continue
+						}
+						if err == nil && metadata.Description == "" {
+							err = fmt.Errorf("skill description is required: %s", child)
+						}
+						if err != nil {
+							failed := source
+							failed.Path = child
+							failed.Status = "failed"
+							failed.Error = err.Error()
+							sources = append(sources, failed)
 							continue
 						}
 						if metadata.Name == "" {
