@@ -67,34 +67,36 @@ ax dsh -- --profile headless "review this change"
 ax dsh -- --profile acp
 ```
 
-## Native Claude subagents with external agents and models
+## MCP subagents with external agents and models
 
 ```bash
-ax claude --subagents
+ax sub-agent-management configure < combinations.json
+ax sub-agent-management enable
+ax sub-agent-management status
+ax claude
 ```
 
-Claude can use `mcp__agentx__discover` to inspect installed agents and their native
-model lists, then `mcp__agentx__define_agent` to register roles backed by Codex, Pi,
-or Gemini. Each role chooses its own agent, model, description and instructions.
-Claude decides how many roles to create and how to combine them using its native
-Agent tool. `agentx:codex` is also available immediately.
+Users persistently configure allowed Agent × Model combinations. Claude discovers
+four MCP tools: `Agent`, `SendMessage`, `TaskStop`, and `ListAgents`. A single
+`mcp__agentx__Agent` call starts an independent Codex or Pi subagent; `model`
+selects a configured combination. No per-task registration is required.
 
 For example, ask Claude:
 
-> Use AgentX to find available models. Create a Codex reviewer and a Pi reviewer,
-> have them review this change independently, then compare their findings.
+> Use the configured Codex and Pi combinations to review this change independently,
+> then compare their findings.
 
-Creation, parallel tasks, task rows, `SendMessage` and `TaskStop` remain native
-Claude features. AgentX replaces the child's inference step with the selected
-agent's native CLI; there is no extra Claude inference call for that child.
-External agents retain their own credentials, tools and conversation storage.
+These are AgentX MCP tools, with familiar task parameters and independent native
+backend sessions. There is no extra Claude inference call to relay a task or
+wrap its answer. Background completion uses AgentX channel notifications.
 
-Requires Claude Code 2.1.296 or later with Mods enabled, and the selected external
-CLI installed and authenticated. Restart with `--subagents` when resuming a Claude
-session. The integration currently exposes read-only execution. Gemini additionally
-requires its native workspace trust and plan-mode prerequisites. Discovery reports
-unsupported model catalogs and execution adapters explicitly; OpenCode and DSH
-remain available through ordinary AgentX launch, not this subagent bridge.
+Validated with interactive Claude Code 2.1.296 and locally authenticated Codex/Pi.
+The launcher opts in only to the named AgentX development channel; Claude asks
+users to acknowledge its local-development warning. First-party Claude access and
+host channel feature/org approval are required. Headless Claude does not deliver
+these unsolicited channel results; use foreground tasks there. Execution is
+read-only; Pi uses a tool allowlist, not an OS sandbox. Disabling blocks new work
+without cancelling accepted tasks. MCP reconnect loses actionable task objects.
 
 See [subagent integration](docs/subagents.md) for exact tool inputs and boundaries.
 The execution command reads stdin and streams the selected CLI's native JSONL:

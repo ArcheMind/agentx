@@ -1,4 +1,5 @@
 .PHONY: fmt check test test-subagents smoke-subagents smoke-subagents-live audit build smoke smoke-live smoke-clean smoke-hooks-live smoke-skills-clean smoke-skills-live verify clean
+.PHONY: smoke-mcp-management smoke-mcp-live smoke-mcp-channel smoke-mcp-host-live verify-mcp-host-evidence test-mcp-race test-mcp-syntax
 
 fmt:
 	gofmt -w cmd internal
@@ -11,15 +12,11 @@ test:
 	go test ./...
 
 test-subagents:
-	claude plugin validate test/smoke/fixtures/agentx-subagents-probe --strict
-	claude plugin validate internal/subagents/claude --strict
-	claude plugin test internal/subagents/claude
+	go test ./internal/subagents ./internal/app
 
-smoke-subagents: build
-	node test/smoke/subagents.mjs "$(CURDIR)/bin/ax"
+smoke-subagents: smoke-mcp-channel
 
-smoke-subagents-live: build
-	node test/smoke/subagents.mjs "$(CURDIR)/bin/ax" --live
+smoke-subagents-live: smoke-mcp-live smoke-mcp-channel
 
 audit:
 	go test ./internal/app ./internal/drivers -run 'Consistency|Capabilities|Grammar|Terminology|Structured'
@@ -27,6 +24,28 @@ audit:
 build:
 	mkdir -p bin
 	go build -trimpath -o bin/ax ./cmd/ax
+
+smoke-mcp-channel: build
+	node test/smoke/mcp-channel.mjs "$(CURDIR)/bin/ax"
+
+smoke-mcp-host-live: build
+	node test/smoke/mcp-channel.mjs "$(CURDIR)/bin/ax" --live
+
+verify-mcp-host-evidence:
+	node test/smoke/mcp-host-evidence.mjs "$(MCP_EVIDENCE_DIR)" "$(MCP_TRANSCRIPT)"
+
+smoke-mcp-live: build
+	node test/smoke/mcp-live.mjs "$(CURDIR)/bin/ax"
+
+smoke-mcp-management: build
+	node test/smoke/mcp-management.mjs "$(CURDIR)/bin/ax"
+
+test-mcp-race:
+	go test -race ./internal/subagents ./internal/app
+
+test-mcp-syntax:
+	for file in test/smoke/mcp-*.mjs; do node --check "$$file"; done
+	python3 -c 'import ast; from pathlib import Path; ast.parse(Path("test/smoke/pty-host.py").read_text())'
 
 smoke: build
 	./bin/ax version

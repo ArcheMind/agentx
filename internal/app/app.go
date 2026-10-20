@@ -103,6 +103,8 @@ func (a App) Run(ctx context.Context, args []string) error {
 		return a.skill(ctx, args[1:])
 	case "hook":
 		return a.hook(ctx, args[1:])
+	case "sub-agent-management":
+		return a.subagentManagement(ctx, args[1:])
 	case "convert":
 		return a.convert(args[1:])
 	default:
@@ -373,7 +375,9 @@ func (a App) runAgent(ctx context.Context, args []string) error {
 		if agent.ID != "claude" {
 			return fmt.Errorf("--subagents is only supported by Claude Code")
 		}
-		if err := a.prepareSubagents(&request, !dryRun); err != nil {
+	}
+	if agent.ID == "claude" {
+		if err := a.prepareMCPSubagents(&request, withSubagents); err != nil {
 			return err
 		}
 	}
@@ -911,7 +915,8 @@ Usage:
   ax [--json|--yaml] session <list|show|resume> [args...]
   ax [--json|--yaml] skill <list|show|install> [args...]
   ax [--json|--yaml] hook list
-  ax claude --subagents [-- <native args...>]
+  ax sub-agent-management <configure|enable|disable|status>
+  ax claude [-- <native args...>]
   ax agent exec <codex|pi|gemini> [--model <model>] [--resume <session-id>] [--cwd <path>] [--dry-run] < prompt.txt
 
   ax convert --to <provider> [< unified.json]

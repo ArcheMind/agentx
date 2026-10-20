@@ -1,6 +1,0 @@
-{
-  "name": "agentx",
-  "version": "0.1.0",
-  "author": { "name": "ArcheMind" },
-  "description": "Native Claude subagents executed by AgentX without intermediary Claude inference"
-}

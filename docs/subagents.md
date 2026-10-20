@@ -1,127 +1,185 @@
-# Native external subagents
+# AgentX MCP subagents
 
-Start with `ax claude --subagents`. AgentX loads a content-addressed Claude mod
-through `--plugin-dir`, without editing user-owned Claude settings. Claude Code
-2.1.296 or newer with Mods enabled is required. If Mods are disabled, no external
-agent definitions are registered and no Claude-backed substitute is offered.
+AgentX exposes `Agent`, `SendMessage`, `TaskStop`, and `ListAgents` over stdio MCP.
+These are explicitly AgentX tools, not official Claude subagents. The external
+agent executes directly, without a Claude relay inference call. Claude chooses
+the combination and any orchestration; AgentX imposes no review/voting workflow.
 
-## What Claude uses
+## Configure and manage
 
-These tools are available directly, without ToolSearch:
+Create a JSON configuration with explicit native model IDs:
 
-```text
-mcp__agentx__discover({})
-mcp__agentx__discover({"agent":"pi"})
-mcp__agentx__define_agent({
-  "name":"reviewer",
-  "agent":"pi",
-  "model":"provider/model",
-  "description":"Review changes for correctness",
-  "instructions":"Check failure handling and report concrete findings."
-})
-→ {"subagent_type":"agentx:reviewer", ...}
-Agent(subagent_type="agentx:reviewer", prompt="Review the current change")
-SendMessage(to=<native agent ID>, message="Check the second concern")
-TaskStop(task_id=<native agent ID>)
+```json
+{
+  "enabled": false,
+  "default": "codex-review",
+  "options": [
+    {
+      "name": "codex-review",
+      "agent": "codex",
+      "model": "gpt-5.6-luna",
+      "description": "Research and code review with the native Codex runtime",
+      "enabled": true,
+      "efforts": ["low", "medium", "high"]
+    },
+    {
+      "name": "pi-review",
+      "agent": "pi",
+      "model": "openai-codex/gpt-5.6-luna",
+      "description": "Independent review using Pi and its read-only tools",
+      "enabled": true
+    }
+  ]
+}
 ```
 
-Discovery reuses `ax --json agent list` and `ax --json agent models <agent>`.
-It reports installation and subagent execution support separately. Model discovery
-is native: unavailable catalogs produce an explicit error, not an invented list.
-An omitted model uses the external CLI's default; an explicit ID is passed intact.
-The backend reports whether that model is actually available to the account.
+```sh
+ax sub-agent-management configure < combinations.json
+ax sub-agent-management enable
+ax sub-agent-management status
+ax claude
+ax sub-agent-management disable
+```
 
-Registration creates a native agent type and makes no inference request. Definitions
-are scoped to the Claude session and restored on its next start with `--subagents`.
-A name cannot be rebound to another configuration; use another role name. Different
-roles may be registered concurrently without overwriting one another. Each child
-retains its own binding and native external session, even when several children
-use the same role. Role instructions are prepended to the first delegated task;
-they do not replace the backend's own system prompt.
+Configuration lives at `~/.config/agentx/subagents.json`. `AX_SUBAGENT_HOME`
+overrides AgentX's configuration/state root for isolated environments; it does
+not change native agent credentials. Exact enabled options and their capability
+descriptions, static availability, limits, and efforts appear in the MCP tool
+description before selection. Missing executables and invalid configuration are
+errors, not confirmed remote availability. Remote authentication and model access
+are established only by execution. Codex efforts must match actual model support;
+native rejection is returned as failure. Pi efforts are rejected because its
+runtime may silently clamp unsupported levels. Omit `default` to require explicit
+selection. No native-default model or automatic fallback is used.
 
-`agentx:codex` is registered by default. Its model can be set before session creation
-with `AX_SUBAGENT_CODEX_MODEL`; custom roles choose their model through the tool.
-AgentX supplies no scheduler, voting scheme or fixed agent combination. Claude
-chooses the roles, their models, parallelism and follow-up work with native tools.
+`enable` uses Claude's user-scoped MCP configuration command and preserves other
+entries. An identical AgentX entry is reused; a conflicting entry is rejected.
+Enable/disable state persists across tasks and sessions. `configure` stores the
+whole supplied configuration, including `enabled`. Reconnect/refresh MCP after
+editing options to refresh the schema; new work reads current configuration.
+Existing subagents retain their original combination. Changed/removed/disabled
+options reject continuation instead of rebinding it. A queued task also checks
+that its original option still exists unchanged before native submission.
 
-## Backends and access
+Disabling takes effect for new `Agent` and `SendMessage` submissions immediately.
+Previously accepted work, including queued messages, can finish and deliver
+results. `TaskStop` remains available. Disabling does not affect Claude native
+subagents or cancel work. Re-enabling retains combination configuration.
 
-| Backend | Execution | Resume | Native read-only setting |
+## Claude discovery and background delivery
+
+`enable` installs an `agentx` stdio MCP entry pointing to this `ax` executable.
+Restart or reconnect the host for tool discovery. `ax claude` automatically adds
+the MCP connection and opts in to **only** `server:agentx` using Claude's
+`--dangerously-load-development-channels` flag. Claude asks for acknowledgement
+of its local-development channel warning. Direct Claude invocation needs:
+
+```sh
+claude --dangerously-load-development-channels server:agentx
+```
+
+The channel path requires interactive Claude Code, first-party provider access,
+host feature approval, and organization approval where applicable. AgentX
+negotiates MCP `2024-11-05` (legacy); modern protocol revisions do not support
+this unsolicited path in Claude Code 2.1.296. Tool discovery alone does not prove
+channel delivery. `status` distinguishes persistent enablement, live MCP server
+connections, static native prerequisites, and unverified host channel delivery.
+Each tool response and background report includes a connection ID. Match it to
+`status.connections` to identify the current host, its client name/version and
+whether it sent `notifications/initialized`. A running server without that
+handshake is not reported as an initialized host.
+Claude's debug log should show `Channel notifications registered`; an actual
+completion report confirms delivery. Headless/print Claude does not register
+this interactive channel handler: use `run_in_background:false` there. Other MCP
+clients may consume the named notification themselves; background push in other
+hosts is not claimed.
+
+## Tool contract
+
+```text
+Agent({"description":"Review authentication", "prompt":"Review token refresh logic",
+       "model":"codex-review", "name":"reviewer", "run_in_background":true})
+SendMessage({"to":"reviewer", "message":"Now inspect logout handling", "summary":"Check logout"})
+TaskStop({"task_id":"reviewer"})
+ListAgents({})
+```
+
+`description` and `prompt` are required strings. `subagent_type` is optional and
+supports only `general-purpose`; it never selects the execution agent. `model`
+selects one configured combination, or uses the explicitly configured default.
+`effort` accepts `low`, `medium`, `high`, `xhigh`, `max` at the schema level; set
+it only when the user or relevant instructions explicitly request it. Each option
+must declare supported levels; unsupported values are rejected. Codex `max` and
+all Pi efforts are currently unsupported. `isolation` accepts native spellings
+`worktree` and `remote` in the schema but both are explicitly rejected by current
+adapters, never substituted with local execution. Names start with an ASCII
+letter or digit and contain 1–64 ASCII letters, digits, `_`, or `-`.
+Deprecated `team_name` and native `mode` values (`acceptEdits`, `auto`,
+`bypassPermissions`, `default`, `dontAsk`, `plan`) are accepted and ignored;
+they do not grant permissions. Unknown properties, nulls, wrong types, and
+unsupported values are rejected.
+
+Omitted/true `run_in_background` returns a task identity immediately and pushes
+its terminal result. False waits for a terminal result; failure/cancellation is
+a tool error, not successful submission. `SendMessage` accepts text and returns
+queued acknowledgement, never a claim of completion. Busy subagents process
+messages in order using the same native context. Every accepted message has its
+own task ID and terminal notification, including cancellation or prior-turn
+failure. Completed subagents resume via their exact native session.
+
+Every Agent call creates an independent object. Reusing a name makes that name
+refer to the newest object; previous objects remain addressable by ID. Cancel
+targets only that object's process group and queued work, waits for termination,
+and distinguishes already-finished and unknown targets. Failed/cancelled agents
+cannot resume an uncertain context; the error is explicit and no replacement
+session or repeat task is created.
+
+Objects and ListAgents are scoped to the current MCP connection. Reconnecting
+loses actionable objects; native transcript files may remain, but AgentX does
+not claim cross-connection recovery. This scope also applies when the parent
+Claude session resumes. Session loss or identity mismatch is failure, not retry.
+
+## Native execution and permission limits
+
+| Adapter | Boundary | Native continuation | Effort |
 | --- | --- | --- | --- |
-| Codex | `exec --json` | `exec resume <UUID>` | `sandbox_mode="read-only"`, `approval_policy="never"` |
-| Pi | `--print --mode json` | `--session <UUID>` | `--tools read,grep,find,ls --no-extensions` |
-| Gemini | `--output-format stream-json` | `--resume <UUID>` | `--approval-mode plan` |
-| Claude | Use native Claude subagents directly | Native | Native |
-| OpenCode, DSH | No execution adapter in this bridge | — | — |
+| Codex | `sandbox_mode="read-only"`, `approval_policy="never"` | Exact thread UUID | Explicit configured low/medium/high/xhigh; native errors remain errors |
+| Pi | `--tools read,grep,find,ls --no-extensions --no-skills --no-prompt-templates --no-approve` | Dedicated exact session path and pinned native ID | Unsupported; requests rejected |
 
-OpenCode and DSH remain available through the ordinary AgentX launch interface.
-Gemini requires its own workspace trust and plan-mode prerequisites; AgentX does
-not override trust. Pi extensions are disabled to keep the advertised built-in
-read-only tool set. There is no general sandbox guarantee across the three CLIs:
-the table describes their different native policies, not a shared enforcement layer.
+Pi's allowlist is not an OS sandbox. Native authentication/configuration and
+project context still apply; these credentials and policies are not inherited
+from Claude. AgentX does not widen permissions for deprecated `mode`. Other
+agents (including Gemini) remain available for ordinary AgentX launch/exec but
+are not delivered MCP combinations in this integration.
 
-Only delegated child user messages are sent. No parent transcript, Claude tool
-allowlist, skills or system prompt is translated into backend configuration.
-The backend loads its own project instructions and credentials. Claude's native
-child working directory is passed to the external process.
-
-## Lifecycle and failure behavior
-
-The mod answers `turn.step` without calling its native model continuation, yielding
-text and stop chunks with `usage: null`. There is no intermediary Claude inference
-request for the external child. Ordinary parent reasoning and external inference
-still consume tokens; external usage is not reported as Claude usage.
-
-The bridge records the external session ID from native events and resumes that
-exact ID. It advances the delivered-message cursor when the backend accepts a
-turn. Subsequent turns deliver only new user messages. Missing or shortened child
-context, changed external session IDs, malformed output, incomplete answers and
-provider errors are explicit failures; none silently falls back to Claude.
-
-Native `SendMessage` resumes the same external session. Native cancellation closes
-the process iterator and stops AgentX; on Unix AgentX kills the backend process
-group as well. Windows descendant-process cleanup remains unverified. Backend tool
-traces remain in backend transcripts. An error is returned as an explicit answer,
-so Claude's native task row may say completed even though external execution failed.
-
-Persisted state contains role definitions, native child/external session bindings
-and delivery cursors. It does not duplicate the native conversation stores. Plugin
-projections live under `~/.cache/agentx/subagents`. `AX_LOG=debug` records raw external
-commands, input, output and errors through AgentX's runner and the mod debug log.
+Reports identify option, execution agent, actual selected model, subagent/task
+IDs, status, failure reason, and continuation/cancellation instructions. Reports
+and channels are labelled untrusted external subagent content and never user
+authorization. Available native usage is shown as backend-reported external
+usage with native field names; unknown usage stays unknown. Codex resume usage
+may include context/cumulative fields; AgentX does not reinterpret it as Claude
+usage or fabricate tool counts. `AX_LOG=debug` logs raw command plans, stdin,
+stdout, stderr and errors to stderr; it may contain task contents.
 
 ## Verification
 
-```bash
+```sh
 make verify
-make test-subagents
-make smoke-subagents
-AX_SUBAGENT_SMOKE_MODEL=gpt-5.6-luna make smoke-subagents-live
-AX_SUBAGENT_SMOKE_BACKENDS=pi AX_SUBAGENT_SMOKE_MODEL=openai-codex/gpt-5.6-luna make smoke-subagents-live
-AX_SUBAGENT_SMOKE_BACKENDS=gemini make smoke-subagents-live
+make test-mcp-race
+make smoke-mcp-management
+make smoke-mcp-live
+make smoke-mcp-channel
+make smoke-mcp-host-live
 ```
 
-Use model IDs available to your own native account. Live smoke incurs external
-model usage. The probe replaces parent inference only for the test and rejects
-unexpected child inference. All Claude result records must have empty model usage.
-Answers must match the expected tokens exactly, so echoed prompts inside diagnostic
-errors cannot make a failing backend pass.
+The live backend suite uses existing native logins, isolated AgentX configuration,
+and Codex `gpt-5.6-luna` / Pi `openai-codex/gpt-5.6-luna`. Override
+`AX_MCP_CODEX_MODEL` / `AX_MCP_PI_MODEL` with exact accessible models. It verifies
+native inference, independent memory continuation and actual cancellation. The
+channel suite starts real interactive Claude in a PTY with a deterministic
+delayed backend fixture; it requires both channel registration and a subsequent
+assistant transcript containing a token absent from its prompt. This separates
+host-consumption evidence from actual-backend evidence. Neither fixture tests
+nor a server notification alone prove native execution or host delivery.
 
-The deterministic smoke runs a real Claude engine with fake external executables.
-It discovers capabilities, registers three distinct backend roles in parallel,
-spawns and resumes each native child, and checks native cancellation plus Unix
-external descendant cleanup. Mod tests cover model/role routing, failure behavior,
-concurrent definitions, persisted definitions and native discovery.
-
-On 2026-10-13, live Codex and Pi each passed dynamic registration, native creation
-and memory-preserving resume with `gpt-5.6-luna` (Pi's ID includes `openai-codex/`).
-Both reported zero Claude model usage. Gemini execution was refused by its native
-workspace trust check in this checkout; its real successful inference/resume is
-not claimed. Its protocol adapter is covered by mod tests and deterministic native
-engine smoke.
-
-References: [Claude turn events](https://code.claude.com/docs/en/plugins/mods/events#follow-a-turn),
-[version-specific declarations](https://code.claude.com/docs/en/plugins/mods/create#get-the-types-for-your-build),
-[Codex non-interactive execution](https://developers.openai.com/codex/noninteractive).
-Implementation was also checked against the installed Pi print-mode/session loader
-and Gemini headless/session resolver, rather than inferring their protocol from
-command names.
+See [acceptance evidence](subagents-acceptance.md) for scenarios and limitations.

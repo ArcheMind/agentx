@@ -1,0 +1,167 @@
+# MCP subagent acceptance evidence
+
+Recorded 2026-10-20. These checks concern the new single-call MCP contract,
+not the removed discover/define/native-Agent bridge. Deterministic tests verify
+contract/error/concurrency behavior. Live tests separately establish native
+engine operation and actual Claude notification consumption. Fixture passes are
+never counted as real inference requests.
+
+## Environment and retained observations
+
+| Component | Observed version / combination |
+| --- | --- |
+| Host | Interactive Claude Code 2.1.296, first-party provider |
+| Codex | CLI 0.147.0, exact `gpt-5.6-luna`, native read-only sandbox |
+| Pi | CLI 0.84.4, exact `openai-codex/gpt-5.6-luna`, readonly tool allowlist |
+| MCP | stdio, legacy revision `2024-11-05`, server `agentx` |
+
+`make smoke-mcp-live` passed with both real backends concurrently. Each first
+task received a distinct public fictional fruit label. Subsequent SendMessage
+recalled it without the caller repeating it:
+
+| Backend | AgentX object | First-turn-only label returned after native resume |
+| --- | --- | --- |
+| Codex | `ax-bf742411ae2e3a7cca5b203b52bdd897` | `bb2f4fce-0cc4-44b4-8445-9a4331489d9f` |
+| Pi | `ax-ef216c867c92b6c0418cc5428112d907` | `76e84bd6-6640-4f75-ac8a-a16a21012aea` |
+
+Both reports were terminal `completed` with native backend usage. Codex used
+explicit `low` effort. Its resume report contained `input_tokens:30463`,
+`cached_input_tokens:14976`, `output_tokens:49`, `reasoning_output_tokens:11`.
+Pi contained `input:2386`, `output:39`, `reasoning:12`, `totalTokens:2425`.
+These retain raw native meanings, not Claude usage or normalized per-turn totals.
+
+A separate real Codex object `ax-4d6b914f3e5f6070f8a556d2310576d1` was
+cancelled. TaskStop waited for native execution to return after cancellation and
+reported `cancelled`, with unknown usage. Controlled runner tests separately
+cover cancellation that is ignored: a completed native result stays completed
+and TaskStop returns an explicit unconfirmed-cancellation error.
+
+Raw native command/debug evidence was retained at
+`/var/folders/34/yf5zv4k133l7nrksmz2flmw00000gn/T/agentx-mcp-live-qBrdJ6/`
+(`mcp.jsonl`, `external-debug.jsonl`). Temporary raw files may expire; the
+observations above and reproducible source harness are the durable record.
+Debug logs contain native plans, stdin, stdout, stderr and errors.
+
+`make smoke-mcp-channel` passed with actual interactive Claude and a delayed
+deterministic Pi-shaped fixture. The fixture token was absent from the user's
+task. Claude invoked Agent once, got its immediate queued response, then consumed
+a separate completion channel and produced `CHANNEL_RECEIVED_8f326c` in a later
+assistant message. Debug lines included:
+
+```text
+MCP server "agentx": Channel notifications registered
+MCP server "agentx": notifications/claude/channel: AgentX subagent ...
+```
+
+Host transcript:
+`/Users/agent/.claude/projects/-Users-agent-work-agentx/0800b2c3-e18c-4e6c-9153-b4f9492a64f7.jsonl`.
+PTY/debug evidence:
+`/var/folders/34/yf5zv4k133l7nrksmz2flmw00000gn/T/agentx-channel-rlzfCJ/`.
+The final harness additionally asserts the registration debug line. Channel
+metadata was later renamed from `source` to `report_origin` to avoid duplicating
+Claude's authoritative `<channel source="agentx">` attribute; a regression
+asserts no `source` metadata key remains.
+
+`make smoke-mcp-management` passed using the real Claude MCP configuration CLI
+under isolated HOME. It preserved an unrelated server, enabled twice, disabled
+and re-enabled without losing options, and rejected a conflicting user-owned
+AgentX entry without mutation. Evidence:
+`/var/folders/34/yf5zv4k133l7nrksmz2flmw00000gn/T/agentx-mcp-management-aswCF4/`.
+This management test did not install a live entry in normal user settings.
+Native Claude startup may update its own ordinary caches.
+
+The integrated actual-host/both-engine run established actual Claude→Codex/Pi
+creation, busy SendMessage acceptance on each worker, both IDs running in the
+same ListAgents observation, and both backend-only recalled labels in later
+assistant output. A strict transcript parser rechecked exact tool call IDs,
+names/models, result identities and actual channel attachments:
+
+| Worker | AgentX object | Label known only to native backend until recall |
+| --- | --- | --- |
+| codex-worker | `ax-6e768c3ee59fd7e7b02b05c821633dfb` | `f22f62eb-5a25-4843-917e-8ce7065993b6` |
+| pi-worker | `ax-9339206f5690d83c2d49028a62deaa9e` | `17662fa4-a1e6-434a-b5a0-562c371ad9b9` |
+
+Neither first-turn label appeared in the parent task; each was read by its native
+backend from a separate public test-data file. The parsed parent assistant made
+no Read/Bash call. Exactly one Agent and one busy SendMessage per named worker
+were observed. Both completed-recall channel attachments and final assistant
+labels were verified. Evidence directory:
+`/var/folders/34/yf5zv4k133l7nrksmz2flmw00000gn/T/agentx-channel-1FfUv1/`;
+transcript:
+`/Users/agent/.claude/projects/-Users-agent-work-agentx/724aadfa-c0d2-4c5b-9fb0-204fb2dc80cc.jsonl`.
+`make verify-mcp-host-evidence` passed with these paths in `MCP_EVIDENCE_DIR` and
+`MCP_TRANSCRIPT`. The original combined run's extra cancellation target finished
+naturally before TaskStop, so that particular cancellation assertion failed and
+is not counted as a successful cancellation. The maintained host-live harness
+now concentrates on host/both-engine/busy-continuation delivery.
+
+The extended `make smoke-mcp-live` subsequently passed real concurrent
+cancellation independently: ListAgents showed Pi survivor
+`ax-106e8abb6796eb8260b597a53a00bad2` and Codex target
+`ax-85a279c8e29cbd2b6fc6fffbbf42907b` both `running`; TaskStop reported only
+the target `cancelled`; Pi later completed with `SURVIVOR_COMPLETED`.
+Evidence:
+`/var/folders/34/yf5zv4k133l7nrksmz2flmw00000gn/T/agentx-mcp-live-tc7FXh/`.
+This run also reverified real memory continuation on both engines. Cancellation
+and host notification claims are supported by their respective actual runs,
+not inferred from an all-mock suite or from the failed natural-finish attempt.
+
+## Scenario matrix
+
+“Deterministic” means controlled Go runner tests. “Live” means installed native
+CLI/host behavior. Injection does not establish a real provider outage; policy
+checks are not a sandbox penetration test.
+
+| Scenario | Evidence / observation |
+| --- | --- |
+| A01 First use | Live isolated management installs persistent MCP entry. Actual Claude discovers and invokes both configured real engine choices without registration. |
+| A02 Single call | Actual Claude creates each real backend object in one Agent call. Separate live foreground calls return terminal native reports, identities and hints. |
+| A03 Defaults | Deterministic configured-default execution; removing default rejects omitted model. |
+| A04 Constraints | Unknown/disabled choices and unsupported role/effort/isolation reject; capabilities/limits visible in generated tool description. |
+| A05 Fore/background | Live both engines false waits; real Claude true returns queued then consumes channel. Deterministic omitted background returns queued immediately. |
+| A06 Memory | Live distinct first-turn labels recalled via both native sessions, no caller history replay. |
+| A07 Busy message | Actual Claude's exact SendMessage results report each matching real worker running and message accepted/queued; both later recall their own context through channel results. |
+| A08 Parallel/addressing | Live different engines parallel with distinct contexts; deterministic same-combination fresh sessions, name reassignment and old-ID access. |
+| A09 Cancellation | Real ListAgents shows Pi survivor and Codex target running together; cancelling Codex terminates it while Pi later completes. Deterministic per-queued-task notifications and unknown/already-ended cases supplement this. |
+| A10 Disable/re-enable | Live isolated management preserves options; deterministic new-work rejection and completion of accepted queue while disabled. |
+| A11 Configuration changes | Each new task reads current config. Original option pinned at acceptance/dequeue; changed or removed identity rejects continuation. |
+| A12 Parameters | Deterministic required/optional/unknown/null/wrong-type/case/empty checks. Deprecated mode/team_name cannot alter readonly native plan. Live Codex low effort; Pi effort and all isolation reject. |
+| A13 Failures | Injected unavailable-model/execution failure is a tool error. Malformed/incomplete output, missing Pi session, changed native ID fail without retry. Ignored cancellation is explicitly unconfirmed, not cancelled. |
+| A14 Usage/source | Live raw usage or unknown; labelled untrusted external reports; native plans call selected Codex/Pi, no Claude relay. |
+| A15 Documentation | Management, fields, native constraints, host gates, connection scope and test commands documented. Only listed models have actual native inference evidence. |
+
+## Requirement mapping
+
+| Requirements | Implementation / checks |
+| --- | --- |
+| U01–U05 | Persistent strict user configuration; management and exact-entry MCP registration; connection IDs/clientInfo/initialized status identify current host separately from channel gate. Live management/discovery. |
+| U06 | Explicit default or model-required error; default/no-default regression. |
+| U07–U08 | Gate read on every new Agent/SendMessage; accepted queue may finish; TaskStop works disabled. |
+| U09 | Original option/model/native session pinned; configuration/session mismatch rejected. |
+| U10 | Distinct queued/running/completed/failed/cancelled states; failed/cancelled foreground tool errors. |
+| C01–C04 | Four MCP tools; familiar exact Agent fields; model contains configured combination; visible strengths and limits; no registration or extra agent field. |
+| C05–C08 | General-purpose role independent of model; no forced orchestration; strict inputs; unsupported values reject; deprecated fields never grant permission. |
+| L01–L04 | Fresh objects, immediate backgrounds, terminal foregrounds, exact native resume; live memory and host channel consumption. |
+| L05–L07 | FIFO messages and per-task terminal notifications; native completed-object resume; names/IDs and name reassignment. |
+| L08–L10 | Targeted process-group cancellation waits; unconfirmed cancellation honest; independent objects; lost session never silently recreated or replayed. |
+| R01–R03 | Readable reports, provenance and interaction hints; injected/native failures distinct from successful reports. |
+| R04–R05 | Native external usage or unknown; CLI delegation with no Claude relay. |
+| R06–R08 | Native readonly policy/allowlist; rejected unsupported settings; no permission inheritance claim/fallback; acceptance/running/terminal states distinct. |
+
+## Explicit limits
+
+- Background delivery is verified for interactive first-party Claude Code
+  2.1.296 with allowed channel policy. Headless print did not register this
+  handler; use foreground there. No organization/feature policy is bypassed.
+- MCP has no channel presentation acknowledgement. Status identifies live
+  initialized connections, but cannot certify their host UI gate. Actual
+  completion evidence independently establishes that path.
+- General-purpose, local readonly native execution and configured Codex effort
+  are supported. Pi explicit effort, worktree/remote isolation, other MCP engine
+  adapters and cross-connection recovery are unsupported and rejected/reported.
+- Pi's allowlist is not an OS sandbox. Native credentials/context do not inherit
+  Claude permissions. Deprecated mode never grants extra access.
+
+Reproduce deterministic/management checks with
+`make verify test-mcp-race smoke-mcp-management`. Paid native/host checks use
+`make smoke-mcp-live smoke-mcp-channel smoke-mcp-host-live` and existing logins.

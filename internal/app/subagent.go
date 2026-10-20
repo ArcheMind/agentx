@@ -11,21 +11,7 @@ import (
 
 	"github.com/ArcheMind/agentx/internal/drivers"
 	"github.com/ArcheMind/agentx/internal/runtime"
-	"github.com/ArcheMind/agentx/internal/subagents"
 )
-
-func (a App) prepareSubagents(request *runtime.RunRequest, write bool) error {
-	executable, err := os.Executable()
-	if err != nil {
-		return err
-	}
-	root, err := subagents.Prepare(a.Hooks.Home, executable, write)
-	if err != nil {
-		return err
-	}
-	request.PassthroughArgs = append([]string{"--plugin-dir", root}, request.PassthroughArgs...)
-	return nil
-}
 
 func (a App) execAgent(ctx context.Context, args []string) error {
 	if len(args) == 0 {

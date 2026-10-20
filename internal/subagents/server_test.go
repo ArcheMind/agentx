@@ -1,0 +1,373 @@
+package subagents
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/ArcheMind/agentx/internal/runtime"
+)
+
+type testRunner struct {
+	mu      sync.Mutex
+	plans   []runtime.CommandPlan
+	prompts []string
+	started chan int
+	release chan struct{}
+}
+
+func (r *testRunner) Execute(ctx context.Context, p runtime.CommandPlan, o runtime.ExecuteOptions) (runtime.CommandResult, error) {
+	data, _ := io.ReadAll(o.Stdin)
+	r.mu.Lock()
+	n := len(r.plans)
+	r.plans = append(r.plans, p)
+	r.prompts = append(r.prompts, string(data))
+	r.mu.Unlock()
+	if r.started != nil {
+		r.started <- n
+	}
+	if r.release != nil {
+		select {
+		case <-r.release:
+		case <-ctx.Done():
+			return runtime.CommandResult{}, ctx.Err()
+		}
+	}
+	id := "12345678-1234-1234-1234-123456789abc"
+	return runtime.CommandResult{Stdout: fmt.Sprintf("{\"type\":\"thread.started\",\"thread_id\":%q}\n{\"type\":\"item.completed\",\"item\":{\"type\":\"agent_message\",\"text\":%q}}\n{\"type\":\"turn.completed\",\"usage\":{\"input_tokens\":12}}\n", id, string(data))}, nil
+}
+
+func testServer(t *testing.T, r runtime.Runner) *Server {
+	t.Helper()
+	bin := t.TempDir()
+	if err := os.WriteFile(filepath.Join(bin, "codex"), []byte("#!/bin/sh\nexit 0\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	home := t.TempDir()
+	c := Config{Enabled: true, Default: "review", Options: []Option{{Name: "review", Agent: "codex", Model: "test-model", Description: "code review", Enabled: true, Efforts: []string{"low"}}}}
+	if err := SaveConfig(home, c); err != nil {
+		t.Fatal(err)
+	}
+	s := &Server{Home: home, Cwd: t.TempDir(), Runner: r, ctx: context.Background(), out: io.Discard, agents: map[string]*AgentState{}, names: map[string]string{}}
+	t.Cleanup(func() {
+		s.mu.Lock()
+		for _, a := range s.agents {
+			if a.Cancel != nil {
+				a.Cancel()
+			}
+		}
+		s.mu.Unlock()
+		s.workers.Wait()
+	})
+	return s
+}
+func callTest(t *testing.T, s *Server, name string, input any) string {
+	t.Helper()
+	data, _ := json.Marshal(input)
+	text, err := s.call(name, data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return text
+}
+func waitAgent(t *testing.T, s *Server, id string) {
+	t.Helper()
+	s.mu.Lock()
+	a, _ := s.target(id)
+	j := a.Jobs[len(a.Jobs)-1]
+	s.mu.Unlock()
+	select {
+	case <-j.Done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("task timeout")
+	}
+}
+
+func TestLifecycleQueueNamesResumeAndDisable(t *testing.T) {
+	r := &testRunner{started: make(chan int, 8), release: make(chan struct{})}
+	s := testServer(t, r)
+	text := callTest(t, s, "Agent", map[string]any{"description": "remember", "prompt": "secret-token", "name": "reviewer"})
+	if !strings.Contains(text, "queued") {
+		t.Fatal(text)
+	}
+	<-r.started
+	callTest(t, s, "SendMessage", map[string]any{"to": "reviewer", "message": "recall"})
+	config, _ := LoadConfig(s.Home)
+	config.Enabled = false
+	if err := SaveConfig(s.Home, config); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.call("SendMessage", []byte(`{"to":"reviewer","message":"rejected"}`)); err == nil {
+		t.Fatal("disabled accepted work")
+	}
+	close(r.release)
+	waitAgent(t, s, "reviewer")
+	r.mu.Lock()
+	if len(r.plans) != 2 || !strings.Contains(strings.Join(r.plans[1].Args, " "), "resume") || r.prompts[1] != "recall" {
+		t.Fatalf("no native continuation: %#v", r.plans)
+	}
+	r.mu.Unlock()
+	config.Enabled = true
+	SaveConfig(s.Home, config)
+	s.mu.Lock()
+	old := s.names["reviewer"]
+	s.mu.Unlock()
+	callTest(t, s, "Agent", map[string]any{"description": "independent", "prompt": "new", "name": "reviewer", "run_in_background": false})
+	s.mu.Lock()
+	current := s.names["reviewer"]
+	_, err := s.target(old)
+	s.mu.Unlock()
+	if current == old || err != nil {
+		t.Fatal("name alias lost old ID")
+	}
+	r.mu.Lock()
+	if strings.Contains(strings.Join(r.plans[2].Args, " "), "resume") {
+		t.Fatal("new task reused context")
+	}
+	r.mu.Unlock()
+	config.Options[0].Model = "changed"
+	SaveConfig(s.Home, config)
+	if _, err := s.call("SendMessage", []byte(`{"to":"reviewer","message":"must reject"}`)); err == nil {
+		t.Fatal("silently rebound option")
+	}
+}
+
+func TestCancelTargetsOnlyOneNativeExecution(t *testing.T) {
+	r := &testRunner{started: make(chan int, 8), release: make(chan struct{})}
+	s := testServer(t, r)
+	for _, name := range []string{"one", "two"} {
+		callTest(t, s, "Agent", map[string]any{"description": "wait", "prompt": "wait", "name": name})
+		<-r.started
+	}
+	callTest(t, s, "SendMessage", map[string]any{"to": "one", "message": "queued"})
+	text := callTest(t, s, "TaskStop", map[string]any{"task_id": "one"})
+	if !strings.Contains(text, "cancelled") {
+		t.Fatal(text)
+	}
+	s.mu.Lock()
+	two, _ := s.target("two")
+	status := two.Status
+	s.mu.Unlock()
+	if status != "running" {
+		t.Fatal(status)
+	}
+	close(r.release)
+	waitAgent(t, s, "two")
+	if _, err := s.call("TaskStop", []byte(`{"task_id":"missing"}`)); err == nil {
+		t.Fatal("unknown target accepted")
+	}
+	if text := callTest(t, s, "TaskStop", map[string]any{"task_id": "two"}); !strings.Contains(text, "already ended") {
+		t.Fatal(text)
+	}
+}
+
+func TestAgentContractRejectsUnsupportedAndUnknownInputs(t *testing.T) {
+	s := testServer(t, &testRunner{})
+	for _, raw := range []string{`{}`, `{"prompt":"x"}`, `{"description":"x","prompt":"x","agent":"pi"}`, `{"description":"x","prompt":"x","name":"_bad"}`, `{"description":"x","prompt":"x","effort":"max"}`, `{"description":"x","prompt":"x","subagent_type":"pi"}`, `{"description":"x","prompt":"x","isolation":"remote"}`, `{"description":"x","prompt":"x","model":"unknown"}`, `{"description":"x","prompt":"x","mode":"root"}`, `{"description":"x","prompt":"x","run_in_background":null}`, `{"description":"x","prompt":"x","run_in_background":"false"}`} {
+		if _, err := s.call("Agent", []byte(raw)); err == nil {
+			t.Fatalf("accepted %s", raw)
+		}
+	}
+	callTest(t, s, "Agent", map[string]any{"description": "x", "prompt": "x", "effort": "low", "team_name": "ignored", "mode": "bypassPermissions", "run_in_background": false})
+	config, _ := LoadConfig(s.Home)
+	config.Default = ""
+	SaveConfig(s.Home, config)
+	if _, err := s.call("Agent", []byte(`{"description":"x","prompt":"x"}`)); err == nil {
+		t.Fatal("chose hidden default")
+	}
+	config.Options[0].Enabled = false
+	SaveConfig(s.Home, config)
+	if _, err := s.call("Agent", []byte(`{"description":"x","prompt":"x","model":"review"}`)); err == nil {
+		t.Fatal("disabled option accepted")
+	}
+}
+
+func TestParseFailuresAndUnknownUsage(t *testing.T) {
+	a := &AgentState{Option: Option{Agent: "codex"}}
+	for _, output := range []string{`not json`, "{\"type\":\"turn.failed\",\"error\":{\"message\":\"authentication failed\"}}", `{"type":"turn.completed"}`} {
+		if _, _, err := parseOutput(a, output); err == nil {
+			t.Fatal("failure became success")
+		}
+	}
+	output := "{\"type\":\"thread.started\",\"thread_id\":\"session\"}\n{\"type\":\"item.completed\",\"item\":{\"type\":\"agent_message\",\"text\":\"report\"}}\n{\"type\":\"turn.completed\"}"
+	text, usage, err := parseOutput(a, output)
+	if err != nil || text != "report" || usage != nil {
+		t.Fatalf("%s %v %v", text, usage, err)
+	}
+	if _, _, err := parseOutput(a, strings.ReplaceAll(output, "session", "different")); err == nil {
+		t.Fatal("replaced native session")
+	}
+}
+
+type failureRunner struct{}
+
+func (failureRunner) Execute(context.Context, runtime.CommandPlan, runtime.ExecuteOptions) (runtime.CommandResult, error) {
+	return runtime.CommandResult{Stderr: "model unavailable", ExitCode: 1}, fmt.Errorf("native request rejected")
+}
+
+func TestExternalFailureIsToolErrorAndCannotResume(t *testing.T) {
+	s := testServer(t, failureRunner{})
+	result, err := s.handle("tools/call", []byte(`{"name":"Agent","arguments":{"description":"failure","prompt":"x","name":"broken","run_in_background":false}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, _ := json.Marshal(result)
+	if !strings.Contains(string(data), `"isError":true`) || !strings.Contains(string(data), "model unavailable") {
+		t.Fatal(string(data))
+	}
+	if _, err := s.call("SendMessage", []byte(`{"to":"broken","message":"retry"}`)); err == nil {
+		t.Fatal("failed session restarted")
+	}
+}
+
+func TestMissingPiSessionAndNativeIdentityChangeFail(t *testing.T) {
+	s := testServer(t, &testRunner{})
+	a := &AgentState{ID: "pi", Session: filepath.Join(t.TempDir(), "missing.jsonl"), Option: Option{Name: "review", Agent: "pi", Model: "provider/model", Enabled: true, Description: "test"}}
+	c := Config{Enabled: true, Options: []Option{a.Option}}
+	if err := SaveConfig(s.Home, c); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := s.execute(context.Background(), a, "continue"); err == nil || !strings.Contains(err.Error(), "original Pi session unavailable") {
+		t.Fatal(err)
+	}
+	a.NativeID = "original"
+	if _, _, err := parseOutput(a, "{\"type\":\"session\",\"id\":\"different\"}"); err == nil {
+		t.Fatal("Pi native session changed")
+	}
+}
+
+func TestConnectionStatusMatchesCurrentClientAndCleansUp(t *testing.T) {
+	s := &Server{Home: t.TempDir(), Cwd: t.TempDir(), Runner: &testRunner{}}
+	input, writer := io.Pipe()
+	var out bytes.Buffer
+	done := make(chan error, 1)
+	go func() { done <- s.Serve(context.Background(), input, &out) }()
+	writer.Write([]byte("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"clientInfo\":{\"name\":\"test-host\",\"version\":\"1.2\"}}}\n"))
+	deadline := time.Now().Add(time.Second)
+	var list []Connection
+	for time.Now().Before(deadline) {
+		list = Connections(s.Home)
+		if len(list) > 0 && list[0].ClientInfo != nil {
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if len(list) != 1 || list[0].ID == "" {
+		t.Fatal(list)
+	}
+	writer.Write([]byte("{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}\n"))
+	for time.Now().Before(deadline) {
+		list = Connections(s.Home)
+		if len(list) > 0 && strings.Contains(list[0].Status, "active MCP connection") {
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if len(list) != 1 || !strings.Contains(list[0].Status, "active MCP connection") {
+		t.Fatal(list)
+	}
+	writer.Close()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	if len(Connections(s.Home)) != 0 {
+		t.Fatal("closed MCP connection remained active")
+	}
+	if _, err := os.Stat(ConfigPath(s.Home)); !os.IsNotExist(err) {
+		t.Fatal("serve unexpectedly created persistent enablement")
+	}
+}
+
+func TestStrictConfigRejectsSilentDowngradesAndWrongFieldCase(t *testing.T) {
+	s := testServer(t, &testRunner{})
+	for _, raw := range []string{`{"Description":"x","prompt":"x"}`, `{"description":"x","prompt":"x","name":""}`, `{"description":"x","prompt":"x","effort":""}`, `{"description":"x","prompt":"x","isolation":"worktree"}`} {
+		if _, err := s.call("Agent", []byte(raw)); err == nil {
+			t.Fatal(raw)
+		}
+	}
+	for _, o := range []Option{{Agent: "pi", Model: "provider/model", Description: "test", Efforts: []string{"low"}}, {Agent: "pi", Model: "fuzzy-model", Description: "test"}, {Agent: "codex", Model: "model", Description: "test", Efforts: []string{"max"}}} {
+		if err := o.Validate(); err == nil {
+			t.Fatal(o)
+		}
+	}
+}
+
+type lockedOutput struct {
+	mu sync.Mutex
+	bytes.Buffer
+}
+
+func (w *lockedOutput) Write(data []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.Buffer.Write(data)
+}
+func (w *lockedOutput) text() string { w.mu.Lock(); defer w.mu.Unlock(); return w.Buffer.String() }
+
+func TestQueuedCancellationNotifiesEveryAcceptedTask(t *testing.T) {
+	r := &testRunner{started: make(chan int, 4), release: make(chan struct{})}
+	s := testServer(t, r)
+	out := &lockedOutput{}
+	s.out = out
+	callTest(t, s, "Agent", map[string]any{"description": "first", "prompt": "first", "name": "worker"})
+	<-r.started
+	callTest(t, s, "SendMessage", map[string]any{"to": "worker", "message": "second"})
+	callTest(t, s, "TaskStop", map[string]any{"task_id": "worker"})
+	s.workers.Wait()
+	lines := strings.Split(strings.TrimSpace(out.text()), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("expected two terminal notifications, got %s", out.text())
+	}
+	for _, line := range lines {
+		var event struct {
+			Method string `json:"method"`
+			Params struct {
+				Meta map[string]string `json:"meta"`
+			} `json:"params"`
+		}
+		if err := json.Unmarshal([]byte(line), &event); err != nil {
+			t.Fatal(err)
+		}
+		if event.Method != "notifications/claude/channel" || event.Params.Meta["status"] != "cancelled" || event.Params.Meta["report_origin"] != "agentx-subagent" {
+			t.Fatal(line)
+		}
+		if _, ok := event.Params.Meta["source"]; ok {
+			t.Fatal("collides with host source attribute")
+		}
+	}
+}
+
+type ignoringCancelRunner struct{ started chan struct{} }
+
+func (r ignoringCancelRunner) Execute(ctx context.Context, p runtime.CommandPlan, o runtime.ExecuteOptions) (runtime.CommandResult, error) {
+	close(r.started)
+	<-ctx.Done()
+	return runtime.CommandResult{Stdout: "{\"type\":\"thread.started\",\"thread_id\":\"12345678-1234-1234-1234-123456789abc\"}\n{\"type\":\"item.completed\",\"item\":{\"type\":\"agent_message\",\"text\":\"Finished naturally; cancel was ignored\"}}\n{\"type\":\"turn.completed\"}"}, nil
+}
+
+func TestUnconfirmedCancellationDoesNotBecomeCancelled(t *testing.T) {
+	r := ignoringCancelRunner{started: make(chan struct{})}
+	s := testServer(t, r)
+	callTest(t, s, "Agent", map[string]any{"description": "test", "prompt": "test", "name": "ignores-cancel"})
+	<-r.started
+	_, err := s.call("TaskStop", []byte(`{"task_id":"ignores-cancel"}`))
+	if err == nil || !strings.Contains(err.Error(), "cancellation was not confirmed") {
+		t.Fatal(err)
+	}
+	s.mu.Lock()
+	a, _ := s.target("ignores-cancel")
+	status := a.Status
+	s.mu.Unlock()
+	if status != "completed" {
+		t.Fatal(status)
+	}
+}

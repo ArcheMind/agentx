@@ -4,11 +4,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"os"
 	"strings"
 	"testing"
 
 	"github.com/ArcheMind/agentx/internal/runtime"
+	"github.com/ArcheMind/agentx/internal/subagents"
 )
 
 func TestSubagentLaunchDryRun(t *testing.T) {
@@ -16,6 +16,9 @@ func TestSubagentLaunchDryRun(t *testing.T) {
 	app := New(false, strings.NewReader(""), &output, &bytes.Buffer{})
 	app.Hooks.Home = t.TempDir()
 	app.Hooks.Project = t.TempDir()
+	if err := subagents.SaveConfig(app.Hooks.Home, subagents.Config{Enabled: true, Options: []subagents.Option{{Name: "test", Agent: "codex", Model: "test", Description: "test", Enabled: true}}}); err != nil {
+		t.Fatal(err)
+	}
 	if err := app.Run(context.Background(), []string{"--json", "claude", "--cwd", app.Hooks.Project, "--subagents", "--dry-run"}); err != nil {
 		t.Fatal(err)
 	}
@@ -23,11 +26,8 @@ func TestSubagentLaunchDryRun(t *testing.T) {
 	if err := json.Unmarshal(output.Bytes(), &plan); err != nil {
 		t.Fatal(err)
 	}
-	if len(plan.Args) != 2 || plan.Args[0] != "--plugin-dir" {
+	if len(plan.Args) != 4 || plan.Args[0] != "--mcp-config" || plan.Args[2] != "--dangerously-load-development-channels" || plan.Args[3] != "server:agentx" {
 		t.Fatalf("plan = %#v", plan)
-	}
-	if _, err := os.Stat(plan.Args[1]); !os.IsNotExist(err) {
-		t.Fatalf("dry run wrote projection: %v", err)
 	}
 	if err := app.Run(context.Background(), []string{"codex", "--subagents", "--dry-run"}); err == nil {
 		t.Fatal("accepted Claude flag for Codex")
