@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/ArcheMind/agentx/internal/inventory"
 	"github.com/ArcheMind/agentx/internal/skills"
 )
 
@@ -15,7 +16,7 @@ func (a App) skill(ctx context.Context, args []string) error {
 	switch args[0] {
 	case "list":
 		if len(args) != 1 {
-			return fmt.Errorf("usage: ax [--json|--yaml] skill list")
+			return fmt.Errorf("usage: ax skill list")
 		}
 		result, err := a.Skills.List()
 		if err != nil {
@@ -23,14 +24,7 @@ func (a App) skill(ctx context.Context, args []string) error {
 		}
 		return a.writeSkillList(result)
 	case "show":
-		if len(args) != 2 {
-			return fmt.Errorf("usage: ax [--json|--yaml] skill show <name>")
-		}
-		item, err := a.Skills.Show(args[1])
-		if err != nil {
-			return err
-		}
-		return a.writeSkill(item)
+		return a.inventoryCommand("skill", args, a.Skills.Inventory())
 	case "install":
 		return a.installSkill(ctx, args[1:])
 	default:
@@ -79,15 +73,7 @@ func (a App) writeSkillList(result skills.ListResult) error {
 	if a.Output != OutputText {
 		return writeStructured(a.Stdout, result, a.Output)
 	}
-	if len(result.Skills) == 0 {
-		fmt.Fprintln(a.Stdout, "No skills installed.")
-	} else {
-		for _, item := range result.Skills {
-			fmt.Fprintf(a.Stdout, "%-24s %-8s %s\n", item.Name, item.Scope, strings.Join(item.Agents, ","))
-		}
-	}
-	fmt.Fprintln(a.Stdout, "dsh: unsupported")
-	return nil
+	return a.writeInventory(inventory.Result{Sources: result.Sources})
 }
 
 func (a App) writeSkill(item skills.Skill) error {

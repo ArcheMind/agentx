@@ -10,9 +10,9 @@ import (
 	"path/filepath"
 	"regexp"
 	goruntime "runtime"
-	"sort"
 	"strings"
 
+	"github.com/ArcheMind/agentx/internal/inventory"
 	"github.com/ArcheMind/agentx/internal/runtime"
 	"gopkg.in/yaml.v3"
 )
@@ -23,6 +23,8 @@ const (
 	ScopeUser    Scope = "user"
 	ScopeProject Scope = "project"
 )
+
+var errNoFrontmatter = errors.New("SKILL.md must begin with YAML frontmatter")
 
 var skillNamePattern = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
 
@@ -43,8 +45,9 @@ type AgentSupport struct {
 }
 
 type ListResult struct {
-	Skills []Skill        `json:"skills" yaml:"skills"`
-	Agents []AgentSupport `json:"agents" yaml:"agents"`
+	Sources []inventory.Source `json:"sources" yaml:"sources"`
+	Skills  []Skill            `json:"skills" yaml:"skills"`
+	Agents  []AgentSupport     `json:"agents" yaml:"agents"`
 }
 
 type InstallOptions struct {
@@ -85,81 +88,23 @@ func New(runner runtime.Runner) Service {
 }
 
 func (s Service) List() (ListResult, error) {
-	type root struct {
-		path      string
-		scope     Scope
-		canonical bool
+	result := s.Inventory()
+	items := []Skill{}
+	for _, source := range result.Sources {
+		for _, item := range source.Resources {
+			items = append(items, Skill{Name: item.Name, Description: item.Description, Scope: Scope(source.Scope), Source: "filesystem", Origin: item.Path, Path: item.Path, Enabled: true, Agents: item.Agents})
+		}
 	}
-	roots := []root{
-		{filepath.Join(s.Home, ".agents", "skills"), ScopeUser, true},
-		{filepath.Join(s.Project, ".agents", "skills"), ScopeProject, true},
-		{filepath.Join(s.Home, ".claude", "skills"), ScopeUser, false},
-		{filepath.Join(s.Project, ".claude", "skills"), ScopeProject, false},
-	}
-	byPhysicalPath := map[string]*Skill{}
-	for _, candidate := range roots {
-		origins, err := readOrigins(candidate.path)
-		if err != nil {
-			return ListResult{}, err
-		}
-		entries, err := os.ReadDir(candidate.path)
-		if errors.Is(err, os.ErrNotExist) {
-			continue
-		}
-		if err != nil {
-			return ListResult{}, fmt.Errorf("read skill directory %s: %w", candidate.path, err)
-		}
-		for _, entry := range entries {
-			path := filepath.Join(candidate.path, entry.Name())
-			info, err := os.Stat(path)
-			if err != nil || !info.IsDir() {
-				continue
-			}
-			metadata, err := readMetadata(path)
-			if err != nil {
-				continue
-			}
-			physical, err := filepath.EvalSymlinks(path)
-			if err != nil {
-				physical = path
-			}
-			physical, _ = filepath.Abs(physical)
-			item := byPhysicalPath[physical]
-			if item == nil {
-				agents := []string{"claude"}
-				if candidate.canonical {
-					agents = []string{"codex", "gemini", "pi"}
-				}
-				source, origin := "filesystem", physical
-				if record, ok := origins[metadata.Name]; ok && candidate.canonical {
-					source, origin = record.Source, record.Origin
-				}
-				item = &Skill{Name: metadata.Name, Description: metadata.Description, Scope: candidate.scope, Source: source, Origin: origin, Path: path, Enabled: true, Agents: agents}
-				byPhysicalPath[physical] = item
-			} else if candidate.canonical {
-				item.Path = path
-				item.Scope = candidate.scope
-				if record, ok := origins[metadata.Name]; ok {
-					item.Source, item.Origin = record.Source, record.Origin
-				}
-				item.Agents = appendUnique(item.Agents, "codex", "gemini", "pi")
-			} else {
-				item.Agents = appendUnique(item.Agents, "claude")
+	// Origin records describe installation provenance, not discovery identity.
+	for i := range items {
+		records, err := readOrigins(filepath.Dir(items[i].Path))
+		if err == nil {
+			if record, ok := records[items[i].Name]; ok {
+				items[i].Source, items[i].Origin = record.Source, record.Origin
 			}
 		}
 	}
-	items := make([]Skill, 0, len(byPhysicalPath))
-	for _, item := range byPhysicalPath {
-		sort.Strings(item.Agents)
-		items = append(items, *item)
-	}
-	sort.Slice(items, func(i, j int) bool {
-		if items[i].Name == items[j].Name {
-			return items[i].Path < items[j].Path
-		}
-		return items[i].Name < items[j].Name
-	})
-	return ListResult{Skills: items, Agents: supportMatrix()}, nil
+	return ListResult{Skills: items, Agents: supportMatrix(), Sources: result.Sources}, nil
 }
 
 func (s Service) Show(name string) (Skill, error) {
@@ -177,7 +122,7 @@ func (s Service) Show(name string) (Skill, error) {
 		return Skill{}, fmt.Errorf("skill %q is not installed", name)
 	}
 	if len(matches) > 1 {
-		return Skill{}, fmt.Errorf("skill %q is ambiguous across scopes", name)
+		return Skill{}, fmt.Errorf("skill %q is ambiguous; use skill show with --scope and --source", name)
 	}
 	return matches[0], nil
 }
@@ -312,14 +257,18 @@ type metadata struct {
 }
 
 func readMetadata(root string) (metadata, error) {
-	file, err := os.Open(filepath.Join(root, "SKILL.md"))
+	return readMetadataFile(filepath.Join(root, "SKILL.md"))
+}
+
+func readMetadataFile(path string) (metadata, error) {
+	file, err := os.Open(path)
 	if err != nil {
 		return metadata{}, err
 	}
 	defer file.Close()
 	scanner := bufio.NewScanner(file)
 	if !scanner.Scan() || scanner.Text() != "---" {
-		return metadata{}, errors.New("SKILL.md must begin with YAML frontmatter")
+		return metadata{}, errNoFrontmatter
 	}
 	var frontmatter strings.Builder
 	foundEnd := false

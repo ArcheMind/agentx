@@ -99,6 +99,8 @@ func (a App) Run(ctx context.Context, args []string) error {
 		return a.auth(ctx, args[1:])
 	case "session":
 		return a.sessions(ctx, args[1:])
+	case "mcp":
+		return a.mcp(args[1:])
 	case "skill":
 		return a.skill(ctx, args[1:])
 	case "hook":
@@ -927,6 +929,7 @@ Usage:
 Running ax without arguments starts an interactive session resume. The ax <agent>
 shortcut launches an installed agent directly.
 
+MCP inventory: ax mcp list | ax mcp show <name> [--scope project|user] [--source <path>]
 Agents: claude, codex, dsh, gemini, opencode, pi
 
 Set AX_LOG=debug or pass --verbose before the command to log raw external input,
