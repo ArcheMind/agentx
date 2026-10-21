@@ -9,27 +9,23 @@ import {fileURLToPath} from 'node:url'
 const binary=resolve(process.argv[2]??'bin/ax')
 const base=await realpath(await mkdtemp(join(tmpdir(),'agentx-roles-effort-')))
 const home=join(base,'home'),work=join(base,'work')
-for(const dir of [join(home,'.config','agentx'),work])await mkdir(dir,{recursive:true})
+for(const dir of [home,work])await mkdir(dir,{recursive:true})
 spawnSync('git',['init','-q'],{cwd:work})
 const codexHome=process.env.AX_MCP_CODEX_HOME??join(homedir(),'.codex'),piAgentDir=process.env.AX_MCP_PI_AGENT_DIR??join(homedir(),'.pi','agent')
 const codexModel=process.env.AX_MCP_CODEX_MODEL??'gpt-5.6-luna',piModel=process.env.AX_MCP_PI_MODEL??'openai-codex/gpt-5.6-luna'
 // A Pi reasoning model without xhigh/max mappings, so Pi clamps max to high: the clamp must be detected, not passed.
 // Every ChatGPT-accessible openai-codex model in Pi 0.84.4 maps the whole low..max range.
-const piClampModel=process.env.AX_MCP_PI_CLAMP_MODEL??'deepseek/deepseek-flash',piClampAuthMethod=process.env.AX_MCP_PI_CLAMP_AUTH_METHOD??'api_key'
-const codexAuth={source:'codex-home',path:codexHome,method:process.env.AX_MCP_CODEX_AUTH_METHOD??'chatgpt'},piAuth={source:'pi-agent-dir',path:piAgentDir,method:process.env.AX_MCP_PI_AUTH_METHOD??'oauth'}
-const readOnly={policy:'read-only',approval:'never'}
+const piClampModel=process.env.AX_MCP_PI_CLAMP_MODEL??'deepseek/deepseek-flash'
 const codexLevels=['none','minimal','low','medium','high','xhigh','max','ultra'],piLevels=['low','medium','high','xhigh','max']
 const presets=[{name:'codex-role',agent:'codex',model:codexModel,effort:'low'},{name:'pi-role',agent:'pi',model:piModel},{name:'pi-clamp',agent:'pi',model:piClampModel,effort:'max'},...codexLevels.map(effort=>({name:`codex-${effort}`,agent:'codex',model:codexModel,effort})),...piLevels.map(effort=>({name:`pi-${effort}`,agent:'pi',model:piModel,effort}))]
-const grants={}
-for(const p of presets){const dir=join(home,'.agentx','presets',p.name);await mkdir(dir,{recursive:true});await writeFile(join(dir,'PRESET.md'),`---\nagent: ${p.agent}\nmodel: ${p.model}\n${p.effort?`effort: ${p.effort}\n`:''}---\n\nRoles and effort acceptance ${p.name}\n`);grants[p.name]={execution:readOnly,auth:p.agent==='codex'?codexAuth:p.name==='pi-clamp'?{...piAuth,method:piClampAuthMethod}:piAuth}}
-await writeFile(join(home,'.config','agentx','subagents.json'),JSON.stringify({enabled:true,grants}))
+for(const p of presets){const dir=join(home,'.agentx','presets',p.name);await mkdir(dir,{recursive:true});await writeFile(join(dir,'PRESET.md'),`---\nagent: ${p.agent}\nmodel: ${p.model}\n${p.effort?`effort: ${p.effort}\n`:''}---\n\nRoles and effort acceptance ${p.name}\n`)}
 const alphaToken=`ALPHA-${randomUUID().slice(0,8)}`,betaToken=`BETA-${randomUUID().slice(0,8)}`
 const roleFile=(name,description,body)=>({name,description,body})
 const roles=[roleFile('alpha','Security reviewer persona',`You are a security reviewer. Begin every reply with the word SECURITY: and end every reply with a final line containing exactly ${alphaToken}.`),roleFile('beta','Documentation editor persona',`You are a documentation editor. Begin every reply with the word DOCS: and end every reply with a final line containing exactly ${betaToken}.`)]
 const writeRole=async role=>{const dir=join(home,'.agentx','roles',role.name);await mkdir(dir,{recursive:true});await writeFile(join(dir,'ROLE.md'),`---\ndescription: ${role.description}\n---\n\n${role.body}\n`)}
 for(const role of roles)await writeRole(role)
 
-const child=spawn(binary,['sub-agent-management','serve'],{cwd:work,env:{...process.env,AX_SUBAGENT_HOME:home,AX_LOG:'debug'},stdio:['pipe','pipe','pipe']})
+const child=spawn(binary,['sub-agent-management','serve'],{cwd:work,env:{...process.env,AX_SUBAGENT_HOME:home,AX_LOG:'debug',CODEX_HOME:codexHome,PI_CODING_AGENT_DIR:piAgentDir},stdio:['pipe','pipe','pipe']})
 let stderr='',pending='',counter=0
 const waiting=new Map(),notifications=[]
 child.stderr.on('data',chunk=>stderr+=chunk)

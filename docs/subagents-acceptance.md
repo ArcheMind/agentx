@@ -95,6 +95,20 @@ effect from integrate/wave-1 commit 0b7dbf3 ("Reject only the affected preset
 when grants and presets disagree"). The missing/orphan-grant rejection verified
 above reflects the earlier semantics.
 
+Note (2026-10-21, later the same day): the user removed the grants model and
+`subagents.json` altogether (integrate/wave-2, commit 6d474f7 "Replace
+subagents.json and grants with call-time write scope"). The presets and roles
+collections are the only configuration; enable/disable is the Claude user MCP
+registration; write scope is requested per `ExternalSubagent` call (`write`,
+`writable_roots`, or `write` with `isolation:"worktree"`, where the worktree is
+the only writable root); `approval` no longer exists as a setting (Codex still
+runs with `approval_policy="never"`); auth is discovered per turn from
+`CODEX_HOME`/`PI_CODING_AGENT_DIR` or the native default and reported, not
+declared. Every grant, `bounded-write`, `approval` and auth-method statement in
+this document, including the policy, roles/effort and isolation sections below,
+was verified under the earlier model. Re-verification under the new model is
+recorded in a later section.
+
 ## Roles and effort (backlog 004 G04, G09)
 
 IDs in this section are backlog 004 acceptance IDs (A05, A12, A13), not the
