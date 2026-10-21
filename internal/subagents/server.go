@@ -193,8 +193,8 @@ func (s *Server) tools() any {
 		modelSchema["enum"] = models
 	}
 	return map[string]any{"tools": []any{
-		tool("ExternalSubagent", description, map[string]any{"description": str("Short task description"), "prompt": str("Task for the ExternalSubagent"), "subagent_type": enum("general-purpose"), "model": modelSchema, "run_in_background": map[string]any{"type": "boolean", "default": true}, "name": map[string]any{"type": "string", "pattern": NamePattern.String()}, "isolation": enum("worktree", "remote"), "team_name": str("Deprecated, ignored"), "mode": enum("acceptEdits", "auto", "bypassPermissions", "default", "dontAsk", "plan")}, "description", "prompt"),
-		tool("SendExternalSubagentMessage", "Send a text task to an AgentX ExternalSubagent by exact name or ID. Accepted means queued, not completed. Busy ExternalSubagents process messages in order in the same native context. Completed ExternalSubagents resume. Feature must be enabled; original option identity must still be configured and available. Summary is display-only.", map[string]any{"to": str("AgentX name or ID"), "message": str("Text task"), "summary": str("Optional display summary")}, "to", "message"),
+		tool("ExternalSubagent", description, map[string]any{"description": str("Short task description"), "prompt": str("Task for the ExternalSubagent"), "subagent_type": enum("general-purpose"), "model": modelSchema, "run_in_background": map[string]any{"type": "boolean", "default": true}, "name": map[string]any{"type": "string", "pattern": presets.NamePattern.String()}, "isolation": enum("worktree", "remote"), "team_name": str("Deprecated, ignored"), "mode": enum("acceptEdits", "auto", "bypassPermissions", "default", "dontAsk", "plan")}, "description", "prompt"),
+		tool("SendExternalSubagentMessage", "Send a text task to an AgentX ExternalSubagent by exact name or ID. Accepted means queued, not completed. Busy ExternalSubagents process messages in order in the same native context. Completed ExternalSubagents resume. Feature must be enabled; the original preset must still exist unchanged and be available. Summary is display-only.", map[string]any{"to": str("AgentX name or ID"), "message": str("Text task"), "summary": str("Optional display summary")}, "to", "message"),
 		tool("StopExternalSubagent", "Cancel running and queued work for one AgentX ExternalSubagent by name or ID. Waits for native process termination before confirming. Works while disabled. Already ended is not cancellation.", map[string]any{"task_id": str("AgentX name or ID")}, "task_id"),
 		tool("listExternalSubagentSessions", "List ExternalSubagent sessions already created in this AgentX MCP connection, with status, report and pending messages. No other users, connections or Claude native subagents.", map[string]any{}),
 	}}
@@ -265,7 +265,7 @@ func (s *Server) call(name string, raw json.RawMessage) (string, error) {
 			s.mu.Unlock()
 			return "", fmt.Errorf("unsupported subagent_type: %s", in.SubagentType)
 		}
-		if in.Name != "" && !NamePattern.MatchString(in.Name) {
+		if in.Name != "" && !presets.NamePattern.MatchString(in.Name) {
 			s.mu.Unlock()
 			return "", fmt.Errorf("invalid name")
 		}
@@ -273,7 +273,7 @@ func (s *Server) call(name string, raw json.RawMessage) (string, error) {
 			s.mu.Unlock()
 			return "", fmt.Errorf("isolation %q unsupported; no task started", in.Isolation)
 		}
-		if in.Mode != "" && !Contains([]string{"acceptEdits", "auto", "bypassPermissions", "default", "dontAsk", "plan"}, in.Mode) {
+		if in.Mode != "" && !presets.Contains([]string{"acceptEdits", "auto", "bypassPermissions", "default", "dontAsk", "plan"}, in.Mode) {
 			s.mu.Unlock()
 			return "", fmt.Errorf("invalid deprecated mode")
 		}
@@ -330,7 +330,7 @@ func (s *Server) call(name string, raw json.RawMessage) (string, error) {
 		}
 		if !reflect.DeepEqual(o, a.Option) {
 			s.mu.Unlock()
-			return "", fmt.Errorf("original option %s changed; cannot resume this ExternalSubagent without changing its identity", a.Option.Name)
+			return "", fmt.Errorf("original preset %s changed; cannot resume this ExternalSubagent without changing its identity", a.Option.Name)
 		}
 		if a.Status == "failed" || a.Status == "cancelled" {
 			s.mu.Unlock()
@@ -516,7 +516,7 @@ func (s *Server) completion(a *ExternalSubagentState, job *Job) {
 
 func (s *Server) execute(ctx context.Context, a *ExternalSubagentState, prompt string) (string, any, error) {
 	if current, err := presets.Read(s.Home, a.Option.Name); err != nil || current != a.Option {
-		return "", nil, fmt.Errorf("original option %s changed or was removed before execution; no replacement selected", a.Option.Name)
+		return "", nil, fmt.Errorf("original preset %s changed or was removed before execution; no replacement selected", a.Option.Name)
 	}
 	if a.Session != "" {
 		if a.Option.Agent == "pi" {

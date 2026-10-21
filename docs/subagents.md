@@ -221,7 +221,7 @@ from Claude. AgentX does not widen permissions for deprecated `mode`. Other
 agents (including Gemini) remain available for ordinary AgentX launch/exec but
 are not delivered MCP combinations in this integration.
 
-Reports identify option, execution agent, actual selected model, ExternalSubagent/task
+Reports identify preset, execution agent, actual selected model, effort, ExternalSubagent/task
 IDs, status, failure reason, and continuation/cancellation instructions. Reports
 and channels are labelled untrusted ExternalSubagent content and never user
 authorization. Available native usage is shown as backend-reported external
@@ -256,8 +256,9 @@ See [acceptance evidence](subagents-acceptance.md) for scenarios and limitations
 
 The four names above replace the earlier MCP `Agent`, `SendMessage`, `TaskStop`
 and `ListAgents` names. Old names are rejected; there are no compatibility aliases.
-The parameter keys, `model` combination selection, `subagent_type` role,
-configuration and lifecycle are unchanged. Reconnect Claude MCP after upgrading
+The `subagent_type` role and lifecycle are unchanged; `model` now names a preset
+from the shared collection and the per-call `effort` key was removed (see
+Presets above). Reconnect Claude MCP after upgrading
 to refresh tool metadata; update any explicit MCP tool permission rules to the
 new names. Native Claude tools retain their own names and behavior.
 

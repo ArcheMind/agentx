@@ -94,7 +94,7 @@ func (p Preset) Validate() error {
 		if len(rule.Efforts) == 0 {
 			return fmt.Errorf("explicit effort is not supported for %s: %s; remove effort to use the native default", rule.Name, rule.EffortNote)
 		}
-		if !contains(rule.Efforts, p.Effort) {
+		if !Contains(rule.Efforts, p.Effort) {
 			return fmt.Errorf("effort %q is not a %s level; supported: %s", p.Effort, rule.Name, strings.Join(rule.Efforts, ", "))
 		}
 	}
@@ -363,7 +363,7 @@ func entryName(name string) error {
 	return nil
 }
 
-func contains(values []string, value string) bool {
+func Contains(values []string, value string) bool {
 	for _, item := range values {
 		if item == value {
 			return true

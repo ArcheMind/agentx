@@ -210,20 +210,20 @@ func (a App) startPreset(ctx context.Context, reader *bufio.Reader, home string,
 		return false, fmt.Errorf("read working directory: %w", err)
 	}
 	request := runtime.RunRequest{Cwd: cwd, Model: p.Model, PassthroughArgs: p.LaunchArgs()}
-	if problem == "" && agent.ID == "claude" {
-		if err := a.prepareMCPSubagents(&request, false); err != nil {
-			problem = err.Error()
-		}
-	}
 	if problem != "" {
-		return a.startFailure(ctx, reader, home, p, problem)
+		return a.startFailure(ctx, reader, home, p, problem, true)
+	}
+	if agent.ID == "claude" {
+		if err := a.prepareMCPSubagents(&request, false); err != nil {
+			return a.startFailure(ctx, reader, home, p, err.Error(), false)
+		}
 	}
 	if err := a.prepareHooks(&request, agent.ID, true); err != nil {
 		return false, err
 	}
 	plan, err := agent.Launch.PlanRun(request)
 	if err != nil {
-		return a.startFailure(ctx, reader, home, p, err.Error())
+		return a.startFailure(ctx, reader, home, p, err.Error(), true)
 	}
 	fmt.Fprintf(a.Stdout, "Starting a new %s session with preset %s: model %s · effort %s · %s\n", presets.AgentName(p.Agent), p.Name, p.Model, presets.EffortLabel(p.Effort), cwd)
 	result, err := a.Runner.Execute(ctx, plan, runtime.ExecuteOptions{Interactive: true, Stdin: a.Stdin, Stdout: a.Stdout, Stderr: a.Stderr})
@@ -234,9 +234,14 @@ func (a App) startPreset(ctx context.Context, reader *bufio.Reader, home string,
 	return true, nil
 }
 
-func (a App) startFailure(ctx context.Context, reader *bufio.Reader, home string, p presets.Preset, problem string) (bool, error) {
+// startFailure offers Edit preset only when editing the preset can fix the problem.
+func (a App) startFailure(ctx context.Context, reader *bufio.Reader, home string, p presets.Preset, problem string, editable bool) (bool, error) {
 	fmt.Fprintf(a.Stdout, "\n%s\n%s\n", colorize(a.Color, ansiBold, "Start · "+p.Name), colorize(a.Color, ansiRed, "Error: "+problem))
 	fmt.Fprintln(a.Stdout, colorize(a.Color, ansiDim, "No session was started and no other agent, model or effort was substituted."))
+	if !editable {
+		_, err := a.pick(reader, "", []string{"Back to presets"})
+		return false, err
+	}
 	choice, err := a.pick(reader, "", []string{"Edit preset", "Back to presets"})
 	if err != nil || choice == 1 {
 		return false, err
@@ -256,6 +261,7 @@ const (
 type presetDraft struct {
 	preset       presets.Preset
 	listed       *runtime.Model
+	unlisted     string
 	effortStatus string
 }
 
@@ -277,7 +283,7 @@ func (a App) presetWizard(ctx context.Context, reader *bufio.Reader, home string
 		if err := a.askModel(ctx, reader, &draft); err != nil {
 			return cancelled()
 		}
-		if err := a.askEffort(reader, &draft); err != nil {
+		if err := a.askEffort(ctx, reader, &draft); err != nil {
 			return cancelled()
 		}
 		if mode == wizardCreate {
@@ -363,15 +369,15 @@ func (a App) changeField(ctx context.Context, reader *bufio.Reader, home string,
 			err = a.askModel(ctx, reader, draft)
 		}
 		if err == nil {
-			err = a.askEffort(reader, draft)
+			err = a.askEffort(ctx, reader, draft)
 		}
 	case "Model (then effort)":
 		err = a.askModel(ctx, reader, draft)
 		if err == nil {
-			err = a.askEffort(reader, draft)
+			err = a.askEffort(ctx, reader, draft)
 		}
 	case "Effort":
-		err = a.askEffort(reader, draft)
+		err = a.askEffort(ctx, reader, draft)
 	case "Name":
 		err = a.askName(reader, home, draft)
 	case "Description":
@@ -408,10 +414,45 @@ func (a App) askAgent(reader *bufio.Reader, draft *presetDraft) error {
 		draft.preset.Agent = agent
 		draft.preset.Model = ""
 		draft.preset.Effort = ""
-		draft.listed = nil
+		draft.listed, draft.unlisted = nil, ""
 		draft.effortStatus = ""
 	}
 	return nil
+}
+
+// listModels returns the agent's reliable model list, or a limitation sentence when there is none.
+func (a App) listModels(ctx context.Context, agent runtime.Agent) ([]runtime.Model, string) {
+	if _, unsupported := agent.Models.(drivers.UnsupportedModels); unsupported || !hasCapability(agent.Capabilities, runtime.CapabilityModelList) {
+		return nil, fmt.Sprintf("%s has no reliable local model list.", agent.Name)
+	}
+	if _, err := exec.LookPath(agent.Binary); err != nil {
+		return nil, fmt.Sprintf("%s is not installed, so its models cannot be listed.", agent.Name)
+	}
+	fmt.Fprintf(a.Stdout, "Loading %s models (model metadata only; no inference)...\n", agent.Name)
+	models, err := agent.Models.ListModels(ctx, a.Runner)
+	if err != nil {
+		return nil, fmt.Sprintf("Model list unavailable: %v.", err)
+	}
+	if len(models) == 0 {
+		return nil, fmt.Sprintf("%s listed no models.", agent.Name)
+	}
+	return models, ""
+}
+
+// matchListed records whether the draft model's effort levels are confirmed by the agent's list.
+func matchListed(draft *presetDraft, agent runtime.Agent, models []runtime.Model, limitation string) {
+	draft.listed, draft.unlisted = nil, ""
+	for index := range models {
+		if models[index].ID == draft.preset.Model {
+			draft.listed = &models[index]
+			return
+		}
+	}
+	if len(models) > 0 {
+		draft.unlisted = fmt.Sprintf("%s is not in the %s model list, so its levels were not confirmed", draft.preset.Model, agent.Name)
+		return
+	}
+	draft.unlisted = strings.TrimSuffix(limitation, ".") + "; the levels for " + draft.preset.Model + " could not be confirmed"
 }
 
 func (a App) askModel(ctx context.Context, reader *bufio.Reader, draft *presetDraft) error {
@@ -419,25 +460,7 @@ func (a App) askModel(ctx context.Context, reader *bufio.Reader, draft *presetDr
 	if err != nil {
 		return err
 	}
-	var models []runtime.Model
-	limitation := ""
-	_, unsupported := agent.Models.(drivers.UnsupportedModels)
-	switch {
-	case unsupported || !hasCapability(agent.Capabilities, runtime.CapabilityModelList):
-		limitation = fmt.Sprintf("%s has no reliable local model list.", agent.Name)
-	default:
-		if _, err := exec.LookPath(agent.Binary); err != nil {
-			limitation = fmt.Sprintf("%s is not installed, so its models cannot be listed.", agent.Name)
-			break
-		}
-		fmt.Fprintf(a.Stdout, "Loading %s models (model metadata only; no inference)...\n", agent.Name)
-		models, err = agent.Models.ListModels(ctx, a.Runner)
-		if err != nil {
-			limitation = fmt.Sprintf("Model list unavailable: %v.", err)
-		} else if len(models) == 0 {
-			limitation = fmt.Sprintf("%s listed no models.", agent.Name)
-		}
-	}
+	models, limitation := a.listModels(ctx, agent)
 	if len(models) > 0 {
 		labels := make([]string, 0, len(models)+1)
 		selected := 0
@@ -465,7 +488,7 @@ func (a App) askModel(ctx context.Context, reader *bufio.Reader, draft *presetDr
 				draft.preset.Effort, draft.effortStatus = "", ""
 			}
 			draft.preset.Model = models[index].ID
-			draft.listed = &models[index]
+			draft.listed, draft.unlisted = &models[index], ""
 			return nil
 		}
 		fmt.Fprintln(a.Stdout, colorize(a.Color, ansiDim, "A manually entered model is not checked against the list; it is verified only when a session starts."))
@@ -490,7 +513,7 @@ func (a App) askModel(ctx context.Context, reader *bufio.Reader, draft *presetDr
 			draft.preset.Effort, draft.effortStatus = "", ""
 		}
 		draft.preset.Model = value
-		draft.listed = nil
+		matchListed(draft, agent, models, limitation)
 		return nil
 	}
 }
@@ -506,7 +529,7 @@ func effortChoices(draft presetDraft) (string, []effortChoice) {
 	case draft.preset.Agent == "codex" && draft.listed != nil && len(draft.listed.Efforts) > 0:
 		var skipped []string
 		for _, effort := range draft.listed.Efforts {
-			if !contains(rule.Efforts, effort) {
+			if !presets.Contains(rule.Efforts, effort) {
 				skipped = append(skipped, effort)
 				continue
 			}
@@ -524,7 +547,10 @@ func effortChoices(draft presetDraft) (string, []effortChoice) {
 	case draft.preset.Agent == "codex" && draft.listed != nil:
 		return "Explicit effort not applicable: Codex lists no reasoning levels for this model.", choices
 	case len(rule.Efforts) > 0:
-		source := "This model was entered manually, so Codex did not confirm its levels"
+		source := draft.unlisted
+		if source == "" {
+			source = "Codex did not confirm the levels for this model"
+		}
 		if draft.preset.Agent != "codex" {
 			source = rule.EffortNote
 		}
@@ -537,7 +563,13 @@ func effortChoices(draft presetDraft) (string, []effortChoice) {
 	}
 }
 
-func (a App) askEffort(reader *bufio.Reader, draft *presetDraft) error {
+func (a App) askEffort(ctx context.Context, reader *bufio.Reader, draft *presetDraft) error {
+	if draft.preset.Agent == "codex" && draft.listed == nil && draft.unlisted == "" {
+		if agent, err := a.Registry.Get(draft.preset.Agent); err == nil {
+			models, limitation := a.listModels(ctx, agent)
+			matchListed(draft, agent, models, limitation)
+		}
+	}
 	note, choices := effortChoices(*draft)
 	fmt.Fprintln(a.Stdout, colorize(a.Color, ansiDim, note))
 	rows := make([]contentRow, len(choices))
@@ -858,13 +890,4 @@ func wrapText(value string, width int) []string {
 		lines = append(lines, line)
 	}
 	return lines
-}
-
-func contains(values []string, value string) bool {
-	for _, item := range values {
-		if item == value {
-			return true
-		}
-	}
-	return false
 }
