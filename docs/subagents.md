@@ -196,8 +196,11 @@ not bound side effects. That gap stays open until Pi, or AgentX around it,
 provides a real boundary.
 
 Approval is a user-selected independent policy, not host inheritance. With
-`never`, out-of-scope operations are denied by the sandbox and the denial is
-returned to the agent. No human is asked, and Claude's permission mode or
+`never`, out-of-scope operations are refused and the refusal is returned to the
+agent, in one of two layers. Shell commands fail in Codex's OS sandbox
+(`operation not permitted`). `apply_patch` outside the roots is rejected earlier
+by Codex's application-level patch approval (`rejected by user approval
+settings`). No human is asked, and Claude's permission mode or
 approvals do not apply. Other approval values (such as on-request routing to a
 human or Codex automatic review) are rejected because no approval path is wired.
 
@@ -215,7 +218,10 @@ use an inherited `OPENAI_API_KEY` when the selected directory has no login. If
 the source is not logged in, not ready for the model's provider, or logged in
 with a different method, the task fails with a reason that ends `no fallback
 identity`, and no native execution starts. AgentX never copies credentials
-between runtimes.
+between runtimes. Identity means the configured source directory plus its login
+method (for Pi also the model's provider). The account inside that source is not
+checked: switching accounts within the same `CODEX_HOME` or Pi agent directory
+is not detected.
 
 Each callable preset's grant summary and the actual enforcing layer appear in the preset
 catalog (MCP initialization and tool metadata), in `status` (`execution`, `auth`)
@@ -363,7 +369,11 @@ nor a server notification alone prove native execution or host delivery.
 
 `smoke-mcp-policy-live` runs real Codex and Pi through AgentX MCP. It covers
 bounded-write and read-only Codex, read-only Pi, and missing or mismatched auth
-sources, then checks results by filesystem state and logs. Override
+sources. Each Codex probe is one command in its own ExternalSubagent. Codex code
+mode keeps nested shell and patch calls out of `exec --json`, so the smoke reads
+each probe's rollout (`$CODEX_HOME/sessions/**/rollout-*-<thread>.jsonl`). From
+it, the smoke asserts the attempt and the runtime's denial, then checks
+filesystem state. Override
 `AX_MCP_CODEX_HOME`, `AX_MCP_PI_AGENT_DIR`, `AX_MCP_CODEX_AUTH_METHOD` and
 `AX_MCP_PI_AUTH_METHOD` to select the auth sources the live smokes use (defaults:
 `~/.codex` chatgpt, `~/.pi/agent` oauth).

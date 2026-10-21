@@ -212,3 +212,24 @@ func TestGrantChangeCannotRebindExistingSession(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+type leakingRunner struct{}
+
+func (leakingRunner) Execute(_ context.Context, p runtime.CommandPlan, _ runtime.ExecuteOptions) (runtime.CommandResult, error) {
+	if result, ok := authCheck(p); ok {
+		return result, nil
+	}
+	return runtime.CommandResult{Stderr: "auth header Bearer abcdefghijklmnopqrstuvwxyz0123 key sk-proj-abcdefghijklmnopqrstuvwxyz", ExitCode: 1}, os.ErrPermission
+}
+
+func TestNativeFailureReturnedToClaudeIsRedacted(t *testing.T) {
+	s := testServer(t, leakingRunner{})
+	_, err := s.call("ExternalSubagent", []byte(`{"description":"x","prompt":"x","model":"review","run_in_background":false}`))
+	if err == nil || strings.Contains(err.Error(), "abcdefghijklmnop") || !strings.Contains(err.Error(), "<redacted>") {
+		t.Fatal(err)
+	}
+	a := &ExternalSubagentState{Option: presets.Preset{Agent: "codex"}}
+	if _, _, err := parseOutput(a, `{"type":"turn.failed","error":{"message":"bad key sk-proj-abcdefghijklmnopqrstuvwxyz"}}`); err == nil || strings.Contains(err.Error(), "abcdefghijklmnop") {
+		t.Fatal(err)
+	}
+}

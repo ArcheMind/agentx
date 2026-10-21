@@ -573,7 +573,7 @@ func (s *Server) execute(ctx context.Context, a *ExternalSubagentState, prompt s
 		if ctx.Err() != nil {
 			return "", nil, &executionCancelled{cause: err}
 		}
-		return "", nil, fmt.Errorf("%s execution failed: %w; stderr: %s", a.Option.Agent, err, result.Stderr)
+		return "", nil, fmt.Errorf("%s execution failed: %s; stderr: %s", a.Option.Agent, runtime.RedactSecrets(err.Error()), runtime.RedactSecrets(result.Stderr))
 	}
 	return parseOutput(a, result.Stdout)
 }
@@ -678,7 +678,7 @@ func parseOutput(a *ExternalSubagentState, output string) (string, any, error) {
 		return "", nil, err
 	}
 	if failure != "" {
-		return "", usage, fmt.Errorf("ExternalSubagent failed: %s", failure)
+		return "", usage, fmt.Errorf("ExternalSubagent failed: %s", runtime.RedactSecrets(failure))
 	}
 	if !completed || text == "" || !sessionSeen {
 		return "", usage, fmt.Errorf("ExternalSubagent exited without a complete report and native session; no implicit retry")
