@@ -32,6 +32,45 @@ without creating any work. It used no model inference. Existing lifecycle tests
 now call the renamed tools; historical host evidence is read only in explicit
 historical mode.
 
+## Execution policy, approval and authentication (backlog 004 G01–G03)
+
+Recorded 2026-10-21 with Codex CLI 0.163.0 (`gpt-5.6-luna`, `low`) and Pi CLI
+0.84.4 (`openai-codex/gpt-5.6-luna`). The runs are real native execution
+through the built AgentX stdio MCP server, not through a Claude host. Results
+were checked by filesystem state after execution, not by agent reports or logs.
+Two consecutive `make smoke-mcp-policy-live` runs passed. Evidence directories:
+`/private/var/folders/34/yf5zv4k133l7nrksmz2flmw00000gn/T/agentx-mcp-policy-CQJxZn`
+and `…/agentx-mcp-policy-c8VtRd`, each with `server-debug.log`.
+
+| ID | Status | Observation |
+| --- | --- | --- |
+| A01 | Pass (Codex); Pi write gap open | Codex `bounded-write` (roots `root`, `extra`) created `root/in.txt` and `extra/extra.txt` with the requested content. Codex `read-only` in the same directory left `root/ro.txt` absent (shell exit 1). Pi `read-only` left `root/pi.txt` absent; Pi reported no write tool. Every report carried its actual `Grant:` line. Pi `bounded-write` is rejected at configuration time. |
+| A02 | Pass (Codex) | Outside the roots: new `outside/out.txt` absent; existing `outside/existing.txt` still `original`; `/tmp` probe absent; `apply_patch` to `outside/patched.txt` refused. Explicitly denied target `root/.git/agentx-denied.txt` (Codex-protected inside a writable root) absent. User-configurable deny subpaths are not offered because no runtime enforcement was established. |
+| A03 | Partial | Covered: the no-approver scenario (`approval:"never"`). Out-of-scope operations are denied by the OS sandbox and returned to the agent, observed above. Pending: approve and deny scenarios. Non-interactive Codex/Pi execution has no approval route to a human, and AgentX does not forward runtime approval requests to Claude. Non-`never` values are rejected rather than claimed. Pi's boundary is described everywhere as a tool allowlist, not an OS sandbox. |
+| A04 | Pass | Configured sources: `CODEX_HOME=~/.codex` (chatgpt) and `PI_CODING_AGENT_DIR=~/.pi/agent` (oauth), visible in reports, catalog and `status`. An empty `CODEX_HOME` failed with `Not logged in; no fallback identity`. A method mismatch (configured `api-key`, actual ChatGPT) failed. An empty Pi dir failed with `credentials_not_configured; no fallback identity`. None of these started native execution (debug log). Twelve inherited credential-like variables were removed. Seven credential values (from `OPENAI_API_KEY` and both `auth.json` files) appeared in neither debug logs nor reports. Direct check: `PI_CODING_AGENT_DIR=<empty> pi auth check --model openai/gpt-5` is `ready` via the inherited `OPENAI_API_KEY`, and `not_ready` once it is removed. This is the implicit fallback AgentX now blocks. |
+
+What each runtime actually enforces:
+
+| Restriction | Codex | Pi |
+| --- | --- | --- |
+| File writes | Native OS sandbox (`read-only` / `workspace-write` with roots) | Tool allowlist `read,grep,find,ls` only; application-level, not OS |
+| Network from commands | Sandbox blocks | No shell tool is enabled; not OS-enforced |
+| Reads | Not path-restricted | Not path-restricted |
+| User MCP servers/hooks/notify | Not loaded (`--ignore-user-config --ignore-rules --disable hooks`); before this change user MCP servers such as a node REPL ran outside the sandbox | Extensions, skills, prompt templates and project approval disabled |
+| Approval | `approval_policy="never"`; no human path | None exists |
+| Auth source | `CODEX_HOME` + `codex login status` preflight | `PI_CODING_AGENT_DIR` + `pi auth check` preflight |
+
+Deterministic coverage (`go test ./internal/subagents ./internal/runtime`) adds
+the following:
+- Grant validation rejects missing or orphan grants, unknown or empty policies,
+  non-`never` approval, bad roots, Pi `bounded-write`, and wrong auth sources or
+  methods.
+- Policy maps to the expected Codex flags.
+- A working directory outside the roots is rejected before any work starts.
+- Auth failures never reach native execution.
+- A grant change rejects continuation.
+- Debug logs redact credentials, and unset variables do not reach the child.
+
 ## Environment and retained observations
 
 ### Current preset DATA visibility
@@ -225,9 +264,14 @@ checks are not a sandbox penetration test.
 - General-purpose, local readonly native execution and configured Codex effort
   are supported. Pi explicit effort, worktree/remote isolation, other MCP engine
   adapters and cross-connection recovery are unsupported and rejected/reported.
-- Pi's allowlist is not an OS sandbox. Native credentials/context do not inherit
-  Claude permissions. Deprecated mode never grants extra access.
+- Pi's allowlist is not an OS sandbox. Pi `bounded-write` is rejected; a real
+  Pi write boundary (004 G02 for Pi) remains open. Approve and deny approval
+  scenarios (004 A03) remain pending: only `approval:"never"` exists, and host
+  approvals are not inherited. Native context does not inherit Claude
+  permissions, and authentication comes only from each grant's source.
+  Deprecated mode never grants extra access.
 
 Reproduce deterministic/management checks with
 `make verify test-mcp-race smoke-mcp-management`. Paid native/host checks use
-`make smoke-mcp-live smoke-mcp-channel smoke-mcp-host-live` and existing logins.
+`make smoke-mcp-live smoke-mcp-channel smoke-mcp-host-live smoke-mcp-policy-live`
+and the logins selected by each grant's auth source.

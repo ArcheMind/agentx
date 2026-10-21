@@ -662,11 +662,11 @@ func (a App) printAvailability(p presets.Preset) {
 
 func (a App) presetChangeNote(home string) {
 	fmt.Fprintln(a.Stdout, "New sessions use the saved presets now.")
-	config, err := subagents.LoadConfig(home)
+	config, _, _, err := subagents.LoadValidated(home)
 	var note string
 	switch {
 	case err != nil:
-		note = "MCP: cannot read ExternalSubagent configuration: " + err.Error()
+		note = "MCP: ExternalSubagent configuration rejected: " + err.Error()
 	case !config.Enabled:
 		note = "MCP: ExternalSubagents are disabled (ax sub-agent-management enable); nothing to refresh."
 	default:

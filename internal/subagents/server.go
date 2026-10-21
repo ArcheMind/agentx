@@ -43,11 +43,12 @@ type executionCancelled struct{ cause error }
 func (e *executionCancelled) Error() string { return e.cause.Error() }
 
 type ExternalSubagentState struct {
-	ID, Name, Session, NativeID, Cwd, Effort, Status string
-	Option                                           presets.Preset
-	Jobs                                             []*Job
-	Running                                          bool
-	Cancel                                           context.CancelFunc
+	ID, Name, Session, NativeID, Cwd, Status string
+	Option                                   presets.Preset
+	Grant                                    Grant
+	Jobs                                     []*Job
+	Running                                  bool
+	Cancel                                   context.CancelFunc
 }
 
 type Server struct {
@@ -194,31 +195,31 @@ func (s *Server) tools() any {
 	}
 	return map[string]any{"tools": []any{
 		tool("ExternalSubagent", description, map[string]any{"description": str("Short task description"), "prompt": str("Task for the ExternalSubagent"), "subagent_type": enum("general-purpose"), "model": modelSchema, "run_in_background": map[string]any{"type": "boolean", "default": true}, "name": map[string]any{"type": "string", "pattern": NamePattern.String()}, "isolation": enum("worktree", "remote"), "team_name": str("Deprecated, ignored"), "mode": enum("acceptEdits", "auto", "bypassPermissions", "default", "dontAsk", "plan")}, "description", "prompt"),
-		tool("SendExternalSubagentMessage", "Send a text task to an AgentX ExternalSubagent by exact name or ID. Accepted means queued, not completed. Busy ExternalSubagents process messages in order in the same native context. Completed ExternalSubagents resume. Feature must be enabled; original option identity must still be configured and available. Summary is display-only.", map[string]any{"to": str("AgentX name or ID"), "message": str("Text task"), "summary": str("Optional display summary")}, "to", "message"),
+		tool("SendExternalSubagentMessage", "Send a text task to an AgentX ExternalSubagent by exact name or ID. Accepted means queued, not completed. Busy ExternalSubagents process messages in order in the same native context. Completed ExternalSubagents resume. Feature must be enabled; original preset and its grant must still be configured unchanged and available. Summary is display-only.", map[string]any{"to": str("AgentX name or ID"), "message": str("Text task"), "summary": str("Optional display summary")}, "to", "message"),
 		tool("StopExternalSubagent", "Cancel running and queued work for one AgentX ExternalSubagent by name or ID. Waits for native process termination before confirming. Works while disabled. Already ended is not cancellation.", map[string]any{"task_id": str("AgentX name or ID")}, "task_id"),
 		tool("listExternalSubagentSessions", "List ExternalSubagent sessions already created in this AgentX MCP connection, with status, report and pending messages. No other users, connections or Claude native subagents.", map[string]any{}),
 	}}
 }
 
-func (s *Server) enabledOption(name string) (presets.Preset, error) {
-	config, err := LoadConfig(s.Home)
+func (s *Server) enabledOption(name string) (presets.Preset, Grant, error) {
+	config, _, _, err := LoadValidated(s.Home)
 	if err != nil {
-		return presets.Preset{}, err
+		return presets.Preset{}, Grant{}, err
 	}
 	if !config.Enabled {
-		return presets.Preset{}, fmt.Errorf("ExternalSubagents disabled; enable with ax sub-agent-management enable")
+		return presets.Preset{}, Grant{}, fmt.Errorf("ExternalSubagents disabled; enable with ax sub-agent-management enable")
 	}
 	if name == "" {
-		return presets.Preset{}, fmt.Errorf("model is required: name one preset from the AgentX preset list; there is no default preset")
+		return presets.Preset{}, Grant{}, fmt.Errorf("model is required: name one preset from the AgentX preset list; there is no default preset")
 	}
 	if err := presets.ValidName(name); err != nil {
-		return presets.Preset{}, fmt.Errorf("model %q is not a preset name: %w", name, err)
+		return presets.Preset{}, Grant{}, fmt.Errorf("model %q is not a preset name: %w", name, err)
 	}
 	o, err := presets.Read(s.Home, name)
 	if err != nil {
-		return presets.Preset{}, fmt.Errorf("preset %s unavailable: %w. If it was renamed or deleted after this MCP connection started, reconnect AgentX MCP to refresh the preset list; no other preset was substituted", name, err)
+		return presets.Preset{}, Grant{}, fmt.Errorf("preset %s unavailable: %w. If it was renamed or deleted after this MCP connection started, reconnect AgentX MCP to refresh the preset list; no other preset was substituted", name, err)
 	}
-	return o, Ready(o)
+	return o, config.Grants[o.Name], config.Ready(o)
 }
 
 func (s *Server) staleNote() string {
@@ -251,7 +252,7 @@ func (s *Server) call(name string, raw json.RawMessage) (string, error) {
 		}
 		var fields map[string]json.RawMessage
 		json.Unmarshal(raw, &fields)
-		for _, key := range []string{"name", "model", "effort", "isolation", "subagent_type", "mode"} {
+		for _, key := range []string{"name", "model", "isolation", "subagent_type", "mode"} {
 			if value, ok := fields[key]; ok && string(value) == `""` {
 				s.mu.Unlock()
 				return "", fmt.Errorf("%s must not be empty when supplied", key)
@@ -277,12 +278,16 @@ func (s *Server) call(name string, raw json.RawMessage) (string, error) {
 			s.mu.Unlock()
 			return "", fmt.Errorf("invalid deprecated mode")
 		}
-		o, err := s.enabledOption(in.Model)
+		o, g, err := s.enabledOption(in.Model)
 		if err != nil {
 			s.mu.Unlock()
 			return "", err
 		}
-		a := &ExternalSubagentState{ID: "ax-" + randomID(), Name: in.Name, Option: o, Cwd: s.Cwd, Effort: o.Effort, Status: "queued"}
+		if _, err := g.ResolvedRoots(s.Cwd); err != nil {
+			s.mu.Unlock()
+			return "", err
+		}
+		a := &ExternalSubagentState{ID: "ax-" + randomID(), Name: in.Name, Option: o, Grant: g, Cwd: s.Cwd, Status: "queued"}
 		s.agents[a.ID] = a
 		if a.Name != "" {
 			s.names[a.Name] = a.ID
@@ -323,14 +328,14 @@ func (s *Server) call(name string, raw json.RawMessage) (string, error) {
 			s.mu.Unlock()
 			return "", err
 		}
-		o, err := s.enabledOption(a.Option.Name)
+		o, g, err := s.enabledOption(a.Option.Name)
 		if err != nil {
 			s.mu.Unlock()
 			return "", err
 		}
-		if !reflect.DeepEqual(o, a.Option) {
+		if !reflect.DeepEqual(o, a.Option) || !reflect.DeepEqual(g, a.Grant) {
 			s.mu.Unlock()
-			return "", fmt.Errorf("original option %s changed; cannot resume this ExternalSubagent without changing its identity", a.Option.Name)
+			return "", fmt.Errorf("original preset %s or its grant changed; cannot resume this ExternalSubagent without changing its identity, permissions or auth source", a.Option.Name)
 		}
 		if a.Status == "failed" || a.Status == "cancelled" {
 			s.mu.Unlock()
@@ -423,7 +428,7 @@ func (s *Server) call(name string, raw json.RawMessage) (string, error) {
 }
 
 func (s *Server) render(a *ExternalSubagentState, j *Job) string {
-	text := fmt.Sprintf("AgentX ExternalSubagent %s (name=%q; preset=%s; agent=%s; actual model=%s; effort=%s; connection=%s)\nTask %s: %s; ExternalSubagent status: %s.\n", a.ID, a.Name, a.Option.Name, a.Option.Agent, a.Option.Model, describeEffort(a.Effort), s.connectionID, j.ID, j.Status, a.Status)
+	text := fmt.Sprintf("AgentX ExternalSubagent %s (name=%q; preset=%s; agent=%s; actual model=%s; effort=%s; connection=%s)\nGrant: %s\nTask %s: %s; ExternalSubagent status: %s.\n", a.ID, a.Name, a.Option.Name, a.Option.Agent, a.Option.Model, describeEffort(a.Option.Effort), s.connectionID, a.Grant.Summary(), j.ID, j.Status, a.Status)
 	if j.Summary != "" {
 		text += "Summary: " + j.Summary + "\n"
 	}
@@ -515,8 +520,12 @@ func (s *Server) completion(a *ExternalSubagentState, job *Job) {
 }
 
 func (s *Server) execute(ctx context.Context, a *ExternalSubagentState, prompt string) (string, any, error) {
-	if current, err := presets.Read(s.Home, a.Option.Name); err != nil || current != a.Option {
-		return "", nil, fmt.Errorf("original option %s changed or was removed before execution; no replacement selected", a.Option.Name)
+	config, _, _, err := LoadValidated(s.Home)
+	if err != nil {
+		return "", nil, err
+	}
+	if current, err := presets.Read(s.Home, a.Option.Name); err != nil || current != a.Option || !reflect.DeepEqual(config.Grants[a.Option.Name], a.Grant) {
+		return "", nil, fmt.Errorf("original preset %s or its grant changed or was removed before execution; no replacement selected", a.Option.Name)
 	}
 	if a.Session != "" {
 		if a.Option.Agent == "pi" {
@@ -525,19 +534,30 @@ func (s *Server) execute(ctx context.Context, a *ExternalSubagentState, prompt s
 			}
 		}
 	}
-	plan, err := drivers.ExecPlan(a.Option.Agent, a.Cwd, a.Option.Model, "")
+	if err := a.Grant.Ready(); err != nil {
+		return "", nil, err
+	}
+	roots, err := a.Grant.ResolvedRoots(a.Cwd)
 	if err != nil {
 		return "", nil, err
 	}
+	if err := s.verifyAuth(ctx, a.Option, a.Grant); err != nil {
+		return "", nil, err
+	}
+	var plan runtime.CommandPlan
 	if a.Option.Agent == "codex" {
-		plan, err = drivers.ExecPlan("codex", a.Cwd, a.Option.Model, a.Session)
+		plan, err = drivers.CodexPolicyExecPlan(a.Cwd, a.Option.Model, a.Session, a.Grant.Execution.Policy, roots, a.Option.Effort)
 		if err != nil {
 			return "", nil, err
 		}
-		if a.Effort != "" {
-			plan.Args = append(plan.Args[:len(plan.Args)-1], "-c", fmt.Sprintf("model_reasoning_effort=%q", a.Effort), "-")
-		}
 	} else {
+		if a.Grant.Execution.Policy != drivers.PolicyReadOnly {
+			return "", nil, fmt.Errorf("Pi supports only the read-only policy")
+		}
+		plan, err = drivers.ExecPlan("pi", a.Cwd, a.Option.Model, "")
+		if err != nil {
+			return "", nil, err
+		}
 		if a.Session == "" {
 			dir := filepath.Join(s.Home, ".local", "state", "agentx", "subagents", a.ID)
 			if err := os.MkdirAll(dir, 0700); err != nil {
@@ -546,10 +566,8 @@ func (s *Server) execute(ctx context.Context, a *ExternalSubagentState, prompt s
 			a.Session = filepath.Join(dir, "session.jsonl")
 		}
 		plan.Args = append(plan.Args, "--session", a.Session, "--no-skills", "--no-prompt-templates", "--no-approve")
-		if a.Effort != "" {
-			plan.Args = append(plan.Args, "--thinking", a.Effort)
-		}
 	}
+	plan.Env, plan.UnsetEnv = authEnvironment(a.Option, a.Grant)
 	result, err := s.Runner.Execute(ctx, plan, runtime.ExecuteOptions{Stdin: strings.NewReader(prompt), CancelProcessGroup: true})
 	if err != nil {
 		if ctx.Err() != nil {

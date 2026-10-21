@@ -32,6 +32,9 @@ func (a App) subagentManagement(ctx context.Context, args []string) error {
 	}
 	switch args[0] {
 	case "enable":
+		if _, _, _, err := subagents.LoadValidated(home); err != nil {
+			return err
+		}
 		executable, err := os.Executable()
 		if err != nil {
 			return err
@@ -93,17 +96,21 @@ func (a App) subagentManagement(ctx context.Context, args []string) error {
 		fmt.Fprintln(a.Stdout, "AgentX disabled for new ExternalSubagent and SendExternalSubagentMessage work immediately. Running/previously accepted work can finish and report; use StopExternalSubagent to cancel. MCP stays connected for cancellation and results. Claude native subagents are unaffected.")
 		return nil
 	case "status":
-		list, problems, err := presets.Load(home)
+		config, list, problems, err := subagents.LoadValidated(home)
 		if err != nil {
 			return err
 		}
 		options := []map[string]any{}
 		for _, o := range list {
 			reason := "static requirements satisfied; remote request not verified"
-			if err := subagents.Ready(o); err != nil {
+			if err := config.Ready(o); err != nil {
 				reason = err.Error()
 			}
-			options = append(options, map[string]any{"name": o.Name, "agent": o.Agent, "model": o.Model, "effort": presets.EffortLabel(o.Effort), "description": o.Description, "limits": subagents.Limits(o), "status": reason})
+			entry := map[string]any{"name": o.Name, "agent": o.Agent, "model": o.Model, "effort": presets.EffortLabel(o.Effort), "description": o.Description, "limits": subagents.Limits(o, config.Grants[o.Name]), "status": reason}
+			if grant, ok := config.Grants[o.Name]; ok {
+				entry["execution"], entry["auth"] = grant.Execution, grant.Auth
+			}
+			options = append(options, entry)
 		}
 		invalid := append([]presets.Problem{}, problems...)
 		return writeStructured(a.Stdout, map[string]any{

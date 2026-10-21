@@ -38,7 +38,28 @@ type testRunner struct {
 	release chan struct{}
 }
 
+func authCheck(p runtime.CommandPlan) (runtime.CommandResult, bool) {
+	if len(p.Args) > 1 && p.Args[0] == "login" && p.Args[1] == "status" {
+		return runtime.CommandResult{Stderr: "Logged in using ChatGPT\n"}, true
+	}
+	if len(p.Args) > 1 && p.Args[0] == "auth" && p.Args[1] == "check" {
+		return runtime.CommandResult{Stdout: `{"status":"ready","provider":"provider","authType":"oauth"}`}, true
+	}
+	return runtime.CommandResult{}, false
+}
+
+func testGrant(t *testing.T, agent string) Grant {
+	t.Helper()
+	if agent == "pi" {
+		return Grant{Execution: ExecutionPolicy{Policy: "read-only", Approval: "never"}, Auth: AuthSource{Source: "pi-agent-dir", Path: t.TempDir(), Method: "oauth"}}
+	}
+	return Grant{Execution: ExecutionPolicy{Policy: "read-only", Approval: "never"}, Auth: AuthSource{Source: "codex-home", Path: t.TempDir(), Method: "chatgpt"}}
+}
+
 func (r *testRunner) Execute(ctx context.Context, p runtime.CommandPlan, o runtime.ExecuteOptions) (runtime.CommandResult, error) {
+	if result, ok := authCheck(p); ok {
+		return result, nil
+	}
 	data, _ := io.ReadAll(o.Stdin)
 	r.mu.Lock()
 	n := len(r.plans)
@@ -67,7 +88,7 @@ func testServer(t *testing.T, r runtime.Runner) *Server {
 	}
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	home := t.TempDir()
-	if err := SaveConfig(home, Config{Enabled: true}); err != nil {
+	if err := SaveConfig(home, Config{Enabled: true, Grants: map[string]Grant{"review": testGrant(t, "codex")}}); err != nil {
 		t.Fatal(err)
 	}
 	savePreset(t, home, reviewPreset)
@@ -206,6 +227,12 @@ func TestAgentContractRejectsUnsupportedAndUnknownInputs(t *testing.T) {
 	if err := presets.Delete(s.Home, "review"); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := s.call("ExternalSubagent", []byte(`{"description":"x","prompt":"x","model":"review"}`)); err == nil || !strings.Contains(err.Error(), `grant "review" does not match a preset`) {
+		t.Fatal("orphan grant accepted", err)
+	}
+	if err := SaveConfig(s.Home, Config{Enabled: true}); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := s.call("ExternalSubagent", []byte(`{"description":"x","prompt":"x","model":"review"}`)); err == nil || !strings.Contains(err.Error(), "reconnect") {
 		t.Fatal("deleted preset accepted", err)
 	}
@@ -227,6 +254,11 @@ func TestPresetFixesEffortAndStaleSnapshotIsReported(t *testing.T) {
 	native := reviewPreset
 	native.Name, native.Effort = "native", ""
 	savePreset(t, s.Home, native)
+	config, _ := LoadConfig(s.Home)
+	config.Grants["native"] = testGrant(t, "codex")
+	if err := SaveConfig(s.Home, config); err != nil {
+		t.Fatal(err)
+	}
 	text = callTest(t, s, "ExternalSubagent", map[string]any{"description": "x", "prompt": "x", "model": "native", "run_in_background": false})
 	if !strings.Contains(text, "effort=native default") || !strings.Contains(text, "reconnect AgentX MCP to refresh") {
 		t.Fatal(text)
@@ -255,7 +287,10 @@ func TestParseFailuresAndUnknownUsage(t *testing.T) {
 
 type failureRunner struct{}
 
-func (failureRunner) Execute(context.Context, runtime.CommandPlan, runtime.ExecuteOptions) (runtime.CommandResult, error) {
+func (failureRunner) Execute(_ context.Context, p runtime.CommandPlan, _ runtime.ExecuteOptions) (runtime.CommandResult, error) {
+	if result, ok := authCheck(p); ok {
+		return result, nil
+	}
 	return runtime.CommandResult{Stderr: "model unavailable", ExitCode: 1}, fmt.Errorf("native request rejected")
 }
 
@@ -276,8 +311,11 @@ func TestExternalFailureIsToolErrorAndCannotResume(t *testing.T) {
 
 func TestMissingPiSessionAndNativeIdentityChangeFail(t *testing.T) {
 	s := testServer(t, &testRunner{})
-	a := &ExternalSubagentState{ID: "pi", Session: filepath.Join(t.TempDir(), "missing.jsonl"), Option: presets.Preset{Name: "review", Agent: "pi", Model: "provider/model", Description: "test"}}
+	a := &ExternalSubagentState{ID: "pi", Session: filepath.Join(t.TempDir(), "missing.jsonl"), Option: presets.Preset{Name: "review", Agent: "pi", Model: "provider/model", Description: "test"}, Grant: testGrant(t, "pi")}
 	savePreset(t, s.Home, a.Option)
+	if err := SaveConfig(s.Home, Config{Enabled: true, Grants: map[string]Grant{"review": a.Grant}}); err != nil {
+		t.Fatal(err)
+	}
 	if _, _, err := s.execute(context.Background(), a, "continue"); err == nil || !strings.Contains(err.Error(), "original Pi session unavailable") {
 		t.Fatal(err)
 	}
@@ -391,6 +429,9 @@ func TestQueuedCancellationNotifiesEveryAcceptedTask(t *testing.T) {
 type ignoringCancelRunner struct{ started chan struct{} }
 
 func (r ignoringCancelRunner) Execute(ctx context.Context, p runtime.CommandPlan, o runtime.ExecuteOptions) (runtime.CommandResult, error) {
+	if result, ok := authCheck(p); ok {
+		return result, nil
+	}
 	close(r.started)
 	<-ctx.Done()
 	return runtime.CommandResult{Stdout: "{\"type\":\"thread.started\",\"thread_id\":\"12345678-1234-1234-1234-123456789abc\"}\n{\"type\":\"item.completed\",\"item\":{\"type\":\"agent_message\",\"text\":\"Finished naturally; cancel was ignored\"}}\n{\"type\":\"turn.completed\"}"}, nil
@@ -469,13 +510,19 @@ func TestExternalSubagentToolNamesAndUnchangedContract(t *testing.T) {
 func TestPresetCatalogSharedDataAndRefresh(t *testing.T) {
 	s := testServer(t, &testRunner{})
 	savePreset(t, s.Home, presets.Preset{Name: "interactive-only", Agent: "claude", Model: "opus", Description: "Interactive pairing"})
+	savePreset(t, s.Home, presets.Preset{Name: "pi-choice", Agent: "pi", Model: "provider/model", Description: "Independent analysis"})
+	config, _ := LoadConfig(s.Home)
+	config.Grants["pi-choice"] = testGrant(t, "pi")
+	if err := SaveConfig(s.Home, config); err != nil {
+		t.Fatal(err)
+	}
 	catalog, models := PresetCatalog(s.Home)
-	for _, want := range []string{presets.Dir(s.Home), "also used for interactive ax launch", "No default preset", "no per-call effort override", `execution agent="codex"`, `exact configured model ID (including provider prefix)="test-model"`, `effort="low"`, `user description="code review"`, `ExternalSubagent callable=yes`, `Read-only native sandbox`, `Isolation: rejected (worktree and remote)`, `remote execution not verified`, `- interactive-only: execution agent="claude"`, `ExternalSubagent callable=no; static prerequisites="interactive launch only`} {
+	for _, want := range []string{presets.Dir(s.Home), "also used for interactive ax launch", "No default preset", "no per-call effort override", `execution agent="codex"`, `exact configured model ID (including provider prefix)="test-model"`, `effort="low"`, `user description="code review"`, `ExternalSubagent callable=yes`, `grant="policy=read-only; approval=never; auth=codex-home`, `Execution policy: read-only, enforced by Codex native OS sandbox`, `enforced only by Pi's tool allowlist`, `not an OS sandbox`, `Isolation: rejected (worktree and remote)`, `remote execution not verified`, `- interactive-only: execution agent="claude"`, `ExternalSubagent callable=no; static prerequisites="interactive launch only`, `grant="none required (interactive launch only)"`} {
 		if !strings.Contains(catalog, want) {
 			t.Fatal("missing preset data", want, catalog)
 		}
 	}
-	if len(models) != 1 || models[0] != "review" {
+	if strings.Join(models, ",") != "pi-choice,review" {
 		t.Fatal(models)
 	}
 	initial, err := s.handle("initialize", []byte(`{"clientInfo":{"name":"test","version":"1"}}`))
@@ -489,7 +536,7 @@ func TestPresetCatalogSharedDataAndRefresh(t *testing.T) {
 		t.Fatal("initialization and metadata catalogs differ")
 	}
 	enum := tools[0].(map[string]any)["inputSchema"].(map[string]any)["properties"].(map[string]any)["model"].(map[string]any)["enum"].([]string)
-	if len(enum) != 1 || enum[0] != models[0] {
+	if strings.Join(enum, ",") != strings.Join(models, ",") {
 		t.Fatal("enum and catalog readiness differ")
 	}
 	updatedPreset := reviewPreset
@@ -515,7 +562,9 @@ func TestPresetCatalogSharedDataAndRefresh(t *testing.T) {
 
 func TestPresetCatalogDisabledInvalidAndEmpty(t *testing.T) {
 	s := testServer(t, &testRunner{})
-	if err := SaveConfig(s.Home, Config{Enabled: false}); err != nil {
+	config, _ := LoadConfig(s.Home)
+	config.Enabled = false
+	if err := SaveConfig(s.Home, config); err != nil {
 		t.Fatal(err)
 	}
 	text, _ := PresetCatalog(s.Home)
@@ -530,6 +579,9 @@ func TestPresetCatalogDisabledInvalidAndEmpty(t *testing.T) {
 		t.Fatal("broken preset hid others or was not located", text, models)
 	}
 	os.RemoveAll(presets.Dir(s.Home))
+	if err := SaveConfig(s.Home, Config{}); err != nil {
+		t.Fatal(err)
+	}
 	text, models = PresetCatalog(s.Home)
 	if len(models) != 0 || !strings.Contains(text, "No presets.") || !strings.Contains(text, "+ Create preset") {
 		t.Fatal(text, models)
