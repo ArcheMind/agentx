@@ -263,7 +263,7 @@ func (a App) runSelector(reader *bufio.Reader, options selector, allRows []conte
 		}
 		if options.footer {
 			fmt.Fprintf(a.Stdout, "\r\n%s\r\n", colorize(a.Color, ansiDim, options.help))
-			lineCount++
+			lineCount += 2
 		}
 	}
 

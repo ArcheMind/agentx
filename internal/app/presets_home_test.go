@@ -72,7 +72,7 @@ func TestHomeListsPresetsBeforeHistoryWithCreateLast(t *testing.T) {
 		t.Fatal("cancel started work")
 	}
 	output := stdout.String()
-	order := []string{"New session · Presets", "› daily        Claude · opus · native default effort  Everyday development\r\n", "  deep-review  Codex · gpt-5.6-luna · high            Review complex changes and edge cases\r\n", "  + Create preset…", "Recent sessions · Current workspace", "Fix login state", "Recent sessions · Global"}
+	order := []string{"New session · Presets", "› daily        Claude · opus                Everyday development\r\n", "  deep-review  Codex · gpt-5.6-luna · high  Review complex changes and edge cases\r\n", "  + Create preset…", "Recent sessions · Current workspace", "Fix login state", "Recent sessions · Global"}
 	position := 0
 	for _, want := range order {
 		next := strings.Index(output[position:], want)
@@ -104,7 +104,7 @@ func TestPresetRowsStayOneLineAndTruncateOnlyDescription(t *testing.T) {
 			t.Fatalf("selected=%t line = %q", selected, line)
 		}
 	}
-	if line := styledContentRow(rows[2], false, false); line != "multi   Pi · openai-codex/gpt-5.6-luna · native default effort  First line Second line" {
+	if line := styledContentRow(rows[2], false, false); line != "multi   Pi · openai-code…gpt-5.6-luna  First line Second line" || middleTruncate("short", presetModelWidth) != "short" {
 		t.Fatalf("line = %q", line)
 	}
 }
