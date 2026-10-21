@@ -72,6 +72,7 @@ ax dsh -- --profile acp
 ```bash
 ax                                  # create presets: + Create preset…, manage with m
 ax preset list
+claude mcp add --scope user agentx -- "$(command -v ax)" preset serve
 ax claude
 ```
 
@@ -93,10 +94,12 @@ wrap its answer. Background completion uses AgentX channel notifications.
 Validated with interactive Claude Code 2.1.296 and locally authenticated Codex/Pi.
 The launcher opts in only to the named AgentX development channel; Claude asks
 users to acknowledge its local-development warning. First-party Claude access and
-host channel feature/org approval are required. Headless Claude does not deliver
-these unsolicited channel results; use foreground tasks there. Execution is
-read-only; Pi uses a tool allowlist, not an OS sandbox. MCP reconnect loses
-actionable task objects.
+host channel feature/org approval are required. In headless Claude tasks are
+foreground calls (`run_in_background:false`), as with native subagents.
+Execution is read-only unless a call requests write; Pi never writes and uses a
+tool allowlist, not an OS sandbox. `claude mcp remove agentx` stops new sessions
+from starting AgentX without cancelling accepted tasks. ExternalSubagents are
+session-scoped: a reconnect starts with none.
 
 See [ExternalSubagent integration](docs/subagents.md) for exact tool inputs and boundaries.
 The execution command reads stdin and streams the selected CLI's native JSONL:

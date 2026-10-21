@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
+	"reflect"
 	"strings"
 
 	"github.com/ArcheMind/agentx/internal/presets"
@@ -43,31 +45,37 @@ func presetUsageError() error {
 	return fmt.Errorf("usage: ax [--json|--yaml] preset <list|show> [args...]")
 }
 
+func presetEntry(o presets.Preset) map[string]any {
+	reason := "static requirements satisfied; login and model access verified per execution"
+	if presets.Agents[o.Agent].Subagent {
+		if err := subagents.Ready(o); err != nil {
+			reason = err.Error()
+		}
+	} else {
+		reason = "interactive launch only; not callable as ExternalSubagent"
+	}
+	entry := map[string]any{"name": o.Name, "agent": o.Agent, "model": o.Model, "effort": presets.EffortLabel(o.Effort), "description": o.Description, "status": reason}
+	if presets.Agents[o.Agent].Subagent {
+		entry["limits"] = subagents.Limits(o)
+	}
+	return entry
+}
+
 func (a App) presetList(home string) error {
-	state, err := subagents.LoadState(home)
+	list, problems, err := presets.Load(home)
 	if err != nil {
 		return err
 	}
-	config, list, problems := state.Config, state.Presets, state.Problems
 	options := []map[string]any{}
 	for _, o := range list {
-		reason := "static requirements satisfied; remote request not verified"
-		if err := config.Ready(o); err != nil {
-			reason = err.Error()
-		}
-		entry := map[string]any{"name": o.Name, "agent": o.Agent, "model": o.Model, "effort": presets.EffortLabel(o.Effort), "description": o.Description, "limits": subagents.Limits(o, config.Grants[o.Name]), "status": reason}
-		if grant, ok := config.Grants[o.Name]; ok && presets.Agents[o.Agent].Subagent {
-			entry["execution"], entry["auth"] = grant.Execution, grant.Auth
-		}
-		options = append(options, entry)
+		options = append(options, presetEntry(o))
 	}
 	invalid := append([]presets.Problem{}, problems...)
 	if a.Output != OutputText {
 		return writeStructured(a.Stdout, map[string]any{
 			"presets_directory": presets.Dir(home),
-			"presets":          options,
-			"invalid_presets":  invalid,
-			"grant_problems":   append([]presets.Problem{}, state.GrantProblems...),
+			"presets":           options,
+			"invalid_presets":   invalid,
 		}, a.Output)
 	}
 	for _, o := range options {
@@ -80,49 +88,79 @@ func (a App) presetList(home string) error {
 }
 
 func (a App) presetShow(home string, name string) error {
-	state, err := subagents.LoadState(home)
+	list, problems, err := presets.Load(home)
 	if err != nil {
 		return err
 	}
-	config := state.Config
 	var found *presets.Preset
-	for i := range state.Presets {
-		if state.Presets[i].Name == name {
-			found = &state.Presets[i]
+	for i := range list {
+		if list[i].Name == name {
+			found = &list[i]
 			break
 		}
 	}
 	if found == nil {
-		for _, p := range state.Problems {
+		for _, p := range problems {
 			if p.Name == name {
 				return fmt.Errorf("preset %s is invalid: %s", name, p.Err)
 			}
 		}
 		return fmt.Errorf("preset %q not found in %s", name, presets.Dir(home))
 	}
-	o := *found
-	reason := "static requirements satisfied; remote request not verified"
-	if err := config.Ready(o); err != nil {
-		reason = err.Error()
-	}
-	grant := config.Grants[o.Name]
-	result := map[string]any{
-		"name": o.Name, "agent": o.Agent, "model": o.Model,
-		"effort": presets.EffortLabel(o.Effort), "description": o.Description,
-		"limits": subagents.Limits(o, grant),
-		"status": reason,
-	}
-	if _, ok := config.Grants[o.Name]; ok && presets.Agents[o.Agent].Subagent {
-		result["execution"], result["auth"] = grant.Execution, grant.Auth
-	}
+	result := presetEntry(*found)
 	if a.Output != OutputText {
 		return writeStructured(a.Stdout, result, a.Output)
 	}
-	fmt.Fprintf(a.Stdout, "Name: %s\nAgent: %s\nModel: %s\nEffort: %s\nDescription: %s\nStatus: %s\n", o.Name, o.Agent, o.Model, presets.EffortLabel(o.Effort), o.Description, reason)
-	if _, ok := config.Grants[o.Name]; ok && presets.Agents[o.Agent].Subagent {
-		fmt.Fprintf(a.Stdout, "Execution: %s\nAuth: %s %s (%s)\n", grant.Execution.Policy, grant.Auth.Source, grant.Auth.Path, grant.Auth.Method)
+	for _, key := range []string{"name", "agent", "model", "effort", "description", "status", "limits"} {
+		if value, ok := result[key]; ok {
+			fmt.Fprintf(a.Stdout, "%s: %v\n", key, value)
+		}
 	}
 	return nil
+}
+
+func claudeConfigPath(home string) string {
+	if dir := os.Getenv("CLAUDE_CONFIG_DIR"); dir != "" {
+		return filepath.Join(dir, ".claude.json")
+	}
+	return filepath.Join(home, ".claude.json")
+}
+
+// mcpRegistration reports whether Claude's user configuration has an agentx entry that runs this
+// executable as the AgentX server (claude mcp add also writes an empty env); any other agentx entry
+// is a conflict and is never replaced.
+func mcpRegistration(home string) (bool, error) {
+	executable, err := os.Executable()
+	if err != nil {
+		return false, err
+	}
+	var root struct {
+		MCPServers map[string]json.RawMessage `json:"mcpServers"`
+	}
+	data, err := os.ReadFile(claudeConfigPath(home))
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if err := json.Unmarshal(data, &root); err != nil {
+		return false, fmt.Errorf("read Claude user configuration %s: %w", claudeConfigPath(home), err)
+	}
+	existing, ok := root.MCPServers["agentx"]
+	if !ok {
+		return false, nil
+	}
+	var entry struct {
+		Type    string            `json:"type"`
+		Command string            `json:"command"`
+		Args    []string          `json:"args"`
+		Env     map[string]string `json:"env"`
+	}
+	if err := json.Unmarshal(existing, &entry); err != nil || (entry.Type != "" && entry.Type != "stdio") || entry.Command != executable || !reflect.DeepEqual(entry.Args, []string{"preset", "serve"}) || len(entry.Env) != 0 {
+		return false, fmt.Errorf("Claude user MCP entry agentx in %s does not run %s preset serve; AgentX does not use or change it. Resolve the conflict explicitly", claudeConfigPath(home), executable)
+	}
+	return true, nil
 }
 
 func (a App) presetHome() string {
@@ -132,7 +170,17 @@ func (a App) presetHome() string {
 	return a.Hooks.Home
 }
 
-func (a App) prepareMCPSubagents(request *runtime.RunRequest) error {
+func (a App) prepareMCPSubagents(request *runtime.RunRequest, explicit bool) error {
+	registered, err := mcpRegistration(a.presetHome())
+	if err != nil {
+		return err
+	}
+	if !registered {
+		if explicit {
+			return fmt.Errorf("AgentX is not registered with Claude; run: claude mcp add --scope user agentx -- %s preset serve", executableOrAx())
+		}
+		return nil
+	}
 	executable, err := os.Executable()
 	if err != nil {
 		return err
@@ -145,4 +193,11 @@ func (a App) prepareMCPSubagents(request *runtime.RunRequest) error {
 	}
 	request.PassthroughArgs = append([]string{"--mcp-config", string(entry), "--dangerously-load-development-channels", "server:agentx"}, request.PassthroughArgs...)
 	return nil
+}
+
+func executableOrAx() string {
+	if executable, err := os.Executable(); err == nil {
+		return executable
+	}
+	return "ax"
 }

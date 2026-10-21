@@ -352,6 +352,11 @@ func SerializePi(detail Detail) []map[string]any {
 				"role":      "assistant",
 				"timestamp": m.Timestamp,
 				"content":   content,
+				"usage": map[string]any{
+					"input": 0, "output": 0,
+					"cacheRead": 0, "cacheWrite": 0,
+					"reasoning": 0, "totalTokens": 0,
+				},
 			}
 			if m.Model != "" {
 				msg["model"] = m.Model

@@ -64,7 +64,9 @@ func TestValidationRejectsKnownUnsupportedCombinations(t *testing.T) {
 		{Name: "bad name", Description: "x", Agent: "codex", Model: "m"},
 		{Name: "blank", Description: "  \n ", Agent: "codex", Model: "m"},
 		{Name: "dsh", Description: "x", Agent: "dsh", Model: "m"},
-		{Name: "pi-effort", Description: "x", Agent: "pi", Model: "p/m", Effort: "low"},
+		{Name: "pi-off", Description: "x", Agent: "pi", Model: "p/m", Effort: "off"},
+		{Name: "pi-minimal", Description: "x", Agent: "pi", Model: "p/m", Effort: "minimal"},
+		{Name: "pi-ultra", Description: "x", Agent: "pi", Model: "p/m", Effort: "ultra"},
 		{Name: "pi-fuzzy", Description: "x", Agent: "pi", Model: "model"},
 		{Name: "gemini-effort", Description: "x", Agent: "gemini", Model: "m", Effort: "high"},
 		{Name: "claude-ultra", Description: "x", Agent: "claude", Model: "m", Effort: "ultra"},
@@ -75,6 +77,14 @@ func TestValidationRejectsKnownUnsupportedCombinations(t *testing.T) {
 		}
 		if err := Create(t.TempDir(), preset); err == nil {
 			t.Fatalf("saved %#v", preset)
+		}
+	}
+}
+
+func TestPiAcceptsOnlyCheckableThinkingLevels(t *testing.T) {
+	for _, effort := range []string{"low", "medium", "high", "xhigh", "max"} {
+		if err := (Preset{Name: "pi", Description: "x", Agent: "pi", Model: "p/m", Effort: effort}).Validate(); err != nil {
+			t.Fatal(effort, err)
 		}
 	}
 }
@@ -169,6 +179,7 @@ func TestLaunchArgsNeverInventEffort(t *testing.T) {
 	cases := map[string][]string{
 		"codex":  {"-c", `model_reasoning_effort="high"`},
 		"claude": {"--effort", "high"},
+		"pi":     {"--thinking", "high"},
 	}
 	for agent, want := range cases {
 		got := Preset{Agent: agent, Effort: "high"}.LaunchArgs()

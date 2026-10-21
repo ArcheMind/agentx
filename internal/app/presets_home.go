@@ -236,7 +236,7 @@ func (a App) startPreset(ctx context.Context, reader *bufio.Reader, home string,
 		return a.startFailure(ctx, reader, home, p, problem, true)
 	}
 	if agent.ID == "claude" {
-		if err := a.prepareMCPSubagents(&request); err != nil {
+		if err := a.prepareMCPSubagents(&request, false); err != nil {
 			return a.startFailure(ctx, reader, home, p, err.Error(), false)
 		}
 	}
@@ -568,6 +568,11 @@ func effortChoices(draft presetDraft) (string, []effortChoice) {
 		return note, choices
 	case draft.preset.Agent == "codex" && draft.listed != nil:
 		return "Explicit effort not applicable: Codex lists no reasoning levels for this model.", choices
+	case draft.preset.Agent == "pi":
+		for _, effort := range rule.Efforts {
+			choices = append(choices, effortChoice{value: effort, label: effort + " (checked at every ExternalSubagent turn; not checked in interactive launch)", status: "checked against Pi's provider request at every ExternalSubagent turn"})
+		}
+		return "Pi thinking levels: " + rule.EffortNote + ".", choices
 	case len(rule.Efforts) > 0:
 		source := draft.unlisted
 		if source == "" {
@@ -716,28 +721,18 @@ func (a App) printAvailability(p presets.Preset) {
 
 func (a App) presetChangeNote(home string) {
 	fmt.Fprintln(a.Stdout, "New sessions use the saved presets now.")
-	state, err := subagents.LoadState(home)
-	config := state.Config
-	if err == nil {
-		for _, p := range state.Presets {
-			if _, ok := config.Grants[p.Name]; !ok && presets.Agents[p.Agent].Subagent {
-				fmt.Fprintf(a.Stdout, "MCP: %s is not callable as ExternalSubagent until grants.%s is added to %s; other presets are unaffected.\n", p.Name, p.Name, subagents.ConfigPath(home))
-			}
-		}
-		for _, problem := range state.GrantProblems {
-			fmt.Fprintf(a.Stdout, "MCP: grant %s in %s: %s.\n", problem.Name, problem.Path, problem.Err)
-		}
-	}
+	registered, err := mcpRegistration(home)
+	count := len(subagents.Connections(home))
 	var note string
 	switch {
 	case err != nil:
-		note = "MCP: ExternalSubagent configuration rejected: " + err.Error()
+		note = "MCP: cannot read the Claude MCP registration: " + err.Error()
+	case count > 0:
+		note = fmt.Sprintf("MCP: %d running AgentX MCP connection(s) still show the preset list from when they connected. New ExternalSubagent calls already use the saved presets; reconnect AgentX in Claude (/mcp) or restart Claude to refresh the list.", count)
+	case !registered:
+		note = "MCP: AgentX is not registered with Claude (claude mcp add --scope user agentx -- <absolute path of ax> preset serve); nothing to refresh."
 	default:
-		if count := len(subagents.Connections(home)); count == 0 {
-			note = "MCP: no running AgentX MCP connection; Claude sees this change when it next connects."
-		} else {
-			note = fmt.Sprintf("MCP: %d running AgentX MCP connection(s) still show the preset list from when they connected. New ExternalSubagent calls already use the saved presets; reconnect AgentX in Claude (/mcp) or restart Claude to refresh the list.", count)
-		}
+		note = "MCP: no running AgentX MCP connection; Claude sees this change when it next connects."
 	}
 	fmt.Fprintln(a.Stdout, note)
 }

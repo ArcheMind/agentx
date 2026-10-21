@@ -5,7 +5,7 @@ import {join,resolve} from 'node:path'
 
 const home=await mkdtemp(join(tmpdir(),'agentx-mcp-contract-'))
 const binary=resolve(process.env.AX_MCP_BINARY??process.argv[2]??'bin/ax')
-const child=spawn(binary,['sub-agent-management','serve'],{env:{...process.env,AX_SUBAGENT_HOME:home},stdio:['pipe','pipe','pipe']})
+const child=spawn(binary,['preset','serve'],{env:{...process.env,AX_SUBAGENT_HOME:home},stdio:['pipe','pipe','pipe']})
 let next=0,pending='',stderr=''
 const requests=new Map()
 child.stderr.on('data',chunk=>stderr+=chunk)
@@ -21,7 +21,9 @@ try{
  const {tools}=await rpc('tools/list')
  const expected=['ExternalSubagent','SendExternalSubagentMessage','StopExternalSubagent','listExternalSubagentSessions']
  assert(JSON.stringify(tools.map(tool=>tool.name))===JSON.stringify(expected),'tools/list did not expose exactly four renamed tools')
- assert(JSON.stringify(Object.keys(tools[0].inputSchema.properties).sort())===JSON.stringify(['description','prompt','model','subagent_type','run_in_background','name','isolation','team_name','mode'].sort()),'ExternalSubagent input keys changed')
+ assert(JSON.stringify(Object.keys(tools[0].inputSchema.properties).sort())===JSON.stringify(['description','prompt','model','subagent_type','run_in_background','name','isolation','write','writable_roots','team_name','mode'].sort()),'ExternalSubagent input keys changed')
+ const props=tools[0].inputSchema.properties
+ assert(props.write.type==='boolean'&&props.write.default===false&&props.writable_roots.type==='array'&&props.writable_roots.items.type==='string'&&!tools[0].inputSchema.required.includes('write')&&props.writable_roots.description.startsWith('In write mode the MCP working directory is always writable as well (native Codex behavior); writable_roots grants additional directories.'),'write parameters changed')
  for(const old of ['Agent','SendMessage','TaskStop','ListAgents']){
   const result=await rpc('tools/call',{name:old,arguments:{}})
   assert(result.isError===true&&result.content.some(part=>part.text?.includes('unknown tool')),`${old} remained accepted`)

@@ -15,7 +15,6 @@ import (
 	"github.com/ArcheMind/agentx/internal/presets"
 	"github.com/ArcheMind/agentx/internal/runtime"
 	"github.com/ArcheMind/agentx/internal/sessions"
-	"github.com/ArcheMind/agentx/internal/subagents"
 )
 
 type presetRunner struct {
@@ -172,7 +171,7 @@ func TestCreateWithManualModelSavesWithoutInference(t *testing.T) {
 		t.Fatalf("creation ran external commands: %#v", runner.plans)
 	}
 	output := stdout.String()
-	for _, want := range []string{"Claude Code is not installed, so its models cannot be listed", "Enter the exact model ID", "unverified for this model", "Error: Invalid name", "Your other entries are kept", "Review preset", "Effort       low (unverified for this model)", "Availability Execution not verified; Claude Code is not installed", "MCP          Interactive launch only", "Saving does not run inference.", "Save and start", "Saved ", "New sessions use the saved presets now.", "› deep-review  Claude · opus-4 · low  Review complex changes\r\n"} {
+	for _, want := range []string{"Claude Code is not installed, so its models cannot be listed", "Enter the exact model ID", "unverified for this model", "Error: Invalid name", "Your other entries are kept", "Review preset", "Effort       low (unverified for this model)", "Availability Execution not verified; Claude Code is not installed", "MCP          Interactive launch only", "Saving does not run inference.", "Save and start", "Saved ", "New sessions use the saved presets now.", "MCP: AgentX is not registered with Claude", "› deep-review  Claude · opus-4 · low  Review complex changes\r\n"} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("missing %q in %q", want, output)
 		}
@@ -200,10 +199,20 @@ func TestCreateOffersOnlyListedCodexEfforts(t *testing.T) {
 }
 
 func TestEffortNotApplicableOffersOnlyNativeDefault(t *testing.T) {
-	_, choices := effortChoices(presetDraft{preset: presets.Preset{Agent: "gemini", Model: "m"}})
-	note, piChoices := effortChoices(presetDraft{preset: presets.Preset{Agent: "pi", Model: "p/m"}})
-	if len(choices) != 1 || len(piChoices) != 1 || choices[0].value != "" || !strings.Contains(note, "not applicable") {
-		t.Fatal(choices, piChoices, note)
+	note, choices := effortChoices(presetDraft{preset: presets.Preset{Agent: "gemini", Model: "m"}})
+	if len(choices) != 1 || choices[0].value != "" || !strings.Contains(note, "not applicable") {
+		t.Fatal(choices, note)
+	}
+}
+
+func TestPiEffortChoicesAreOnlyCheckableLevels(t *testing.T) {
+	note, choices := effortChoices(presetDraft{preset: presets.Preset{Agent: "pi", Model: "p/m"}})
+	var values []string
+	for _, choice := range choices {
+		values = append(values, choice.value)
+	}
+	if strings.Join(values, ",") != ",low,medium,high,xhigh,max" || !strings.Contains(note, "off and minimal are not offered") || !strings.Contains(choices[1].label, "checked at every ExternalSubagent turn") {
+		t.Fatal(values, note, choices)
 	}
 }
 
@@ -284,7 +293,7 @@ func TestBrokenPresetIsLocatedWithoutBlockingOthers(t *testing.T) {
 func TestChangeNoteTellsUserToReconnectLiveMCP(t *testing.T) {
 	application, stdout, _ := presetApp(t, "")
 	home := application.Hooks.Home
-	subagents.SaveConfig(home, subagents.Config{})
+	registerAgentx(t, home)
 	application.presetChangeNote(home)
 	if !strings.Contains(stdout.String(), "no running AgentX MCP connection") {
 		t.Fatal(stdout.String())
@@ -351,15 +360,14 @@ func TestUnlistedModelEffortNoteIsHonest(t *testing.T) {
 	}
 }
 
-func TestBrokenConfigDoesNotBlockPresetLaunch(t *testing.T) {
-	application, stdout, _ := presetApp(t, "\r"+"q", "claude")
+func TestConfigurationErrorDoesNotOfferPresetEdit(t *testing.T) {
+	application, stdout, runner := presetApp(t, "\r"+"\r"+"q", "claude")
 	home := application.Hooks.Home
 	mustCreate(t, home, presets.Preset{Name: "daily", Description: "Everyday", Agent: "claude", Model: "opus"})
-	os.MkdirAll(filepath.Dir(subagents.ConfigPath(home)), 0o700)
-	os.WriteFile(subagents.ConfigPath(home), []byte(`{"default":"x","options":[]}`), 0o600)
+	os.WriteFile(filepath.Join(home, ".claude.json"), []byte(`{not json`), 0o600)
 	application.Run(context.Background(), nil)
 	output := stdout.String()
-	if !strings.Contains(output, "Starting a new Claude session with preset daily") {
-		t.Fatal("broken config prevented launch:", output)
+	if len(runner.plans) != 0 || !strings.Contains(output, "read Claude user configuration") || strings.Contains(output, "Edit preset") {
+		t.Fatal(output)
 	}
 }

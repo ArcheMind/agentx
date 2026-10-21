@@ -48,7 +48,7 @@ var Agents = map[string]AgentRule{
 	"codex":    {Name: "Codex", Efforts: []string{"none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"}, EffortNote: "Codex reports supported levels per model", Subagent: true},
 	"gemini":   {Name: "Gemini", EffortNote: "Gemini CLI exposes no verified effort control"},
 	"opencode": {Name: "OpenCode", EffortNote: "OpenCode exposes no verified effort control"},
-	"pi":       {Name: "Pi", EffortNote: "Pi may silently clamp thinking levels, so explicit effort is not supported", Subagent: true},
+	"pi":       {Name: "Pi", Efforts: []string{"low", "medium", "high", "xhigh", "max"}, EffortNote: "Pi --thinking levels; ExternalSubagent execution fails unless Pi's provider request carries exactly this level (Pi silently clamps or remaps unsupported levels). off and minimal are not offered: for Codex-backed models Pi sends no effort for off (the server default applies) and sends low for minimal", Subagent: true},
 }
 
 var AgentOrder = []string{"claude", "codex", "gemini", "opencode", "pi"}
@@ -111,6 +111,8 @@ func (p Preset) LaunchArgs() []string {
 		return []string{"-c", fmt.Sprintf("model_reasoning_effort=%q", p.Effort)}
 	case "claude":
 		return []string{"--effort", p.Effort}
+	case "pi":
+		return []string{"--thinking", p.Effort}
 	}
 	return nil
 }

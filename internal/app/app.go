@@ -330,11 +330,14 @@ func (a App) runAgent(ctx context.Context, args []string) error {
 	}
 	request := runtime.RunRequest{}
 	dryRun := false
+	withSubagents := false
 	for index := 1; index < len(args); index++ {
 		switch args[index] {
 		case "--":
 			request.PassthroughArgs = append(request.PassthroughArgs, args[index+1:]...)
 			index = len(args)
+		case "--subagents":
+			withSubagents = true
 		case "--model":
 			index++
 			if index >= len(args) {
@@ -370,8 +373,13 @@ func (a App) runAgent(ctx context.Context, args []string) error {
 	if !info.IsDir() {
 		return fmt.Errorf("working directory %s is not a directory", request.Cwd)
 	}
+	if withSubagents {
+		if agent.ID != "claude" {
+			return fmt.Errorf("--subagents is only supported by Claude Code")
+		}
+	}
 	if agent.ID == "claude" {
-		if err := a.prepareMCPSubagents(&request); err != nil {
+		if err := a.prepareMCPSubagents(&request, withSubagents); err != nil {
 			return err
 		}
 	}
@@ -875,6 +883,8 @@ Usage:
   ax [--json|--yaml] hook list
   ax [--json|--yaml] mcp <list|show> [args...]
   ax [--json|--yaml] preset <list|show> [args...]
+  ax preset serve   (register: claude mcp add --scope user agentx -- <ax> preset serve)
+  ax claude [-- <native args...>]
   ax [--json|--yaml] convert <to|from> <provider>
 
   ax agent exec <codex|pi|gemini> [--model <model>] [--resume <session-id>] [--cwd <path>] [--dry-run] < prompt.txt
