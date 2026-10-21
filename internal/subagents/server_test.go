@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/ArcheMind/agentx/internal/presets"
+	"github.com/ArcheMind/agentx/internal/roles"
 	"github.com/ArcheMind/agentx/internal/runtime"
 )
 
@@ -77,7 +78,7 @@ func (r *testRunner) Execute(ctx context.Context, p runtime.CommandPlan, o runti
 		}
 	}
 	id := "12345678-1234-1234-1234-123456789abc"
-	return runtime.CommandResult{Stdout: fmt.Sprintf("{\"type\":\"thread.started\",\"thread_id\":%q}\n{\"type\":\"item.completed\",\"item\":{\"type\":\"agent_message\",\"text\":%q}}\n{\"type\":\"turn.completed\",\"usage\":{\"input_tokens\":12}}\n", id, string(data))}, nil
+	return runtime.CommandResult{Stderr: codexTelemetry(p, ""), Stdout: fmt.Sprintf("{\"type\":\"thread.started\",\"thread_id\":%q}\n{\"type\":\"item.completed\",\"item\":{\"type\":\"agent_message\",\"text\":%q}}\n{\"type\":\"turn.completed\",\"usage\":{\"input_tokens\":12}}\n", id, string(data))}, nil
 }
 
 func testServer(t *testing.T, r runtime.Runner) *Server {
@@ -381,7 +382,7 @@ func TestExternalFailureIsToolErrorAndCannotResume(t *testing.T) {
 
 func TestMissingPiSessionAndNativeIdentityChangeFail(t *testing.T) {
 	s := testServer(t, &testRunner{})
-	a := &ExternalSubagentState{ID: "pi", Session: filepath.Join(t.TempDir(), "missing.jsonl"), Option: presets.Preset{Name: "review", Agent: "pi", Model: "provider/model", Description: "test"}, Grant: testGrant(t, "pi")}
+	a := &ExternalSubagentState{ID: "pi", Role: roles.Role{Name: roles.GeneralPurpose}, Session: filepath.Join(t.TempDir(), "missing.jsonl"), Option: presets.Preset{Name: "review", Agent: "pi", Model: "provider/model", Description: "test"}, Grant: testGrant(t, "pi")}
 	savePreset(t, s.Home, a.Option)
 	if err := SaveConfig(s.Home, Config{Enabled: true, Grants: map[string]Grant{"review": a.Grant}}); err != nil {
 		t.Fatal(err)
@@ -444,7 +445,7 @@ func TestStrictConfigRejectsSilentDowngradesAndWrongFieldCase(t *testing.T) {
 			t.Fatal(raw)
 		}
 	}
-	for _, o := range []presets.Preset{{Name: "a", Agent: "pi", Model: "provider/model", Description: "test", Effort: "low"}, {Name: "b", Agent: "pi", Model: "fuzzy-model", Description: "test"}, {Name: "c", Agent: "codex", Model: "model", Description: "test", Effort: "turbo"}} {
+	for _, o := range []presets.Preset{{Name: "a", Agent: "pi", Model: "provider/model", Description: "test", Effort: "minimal"}, {Name: "b", Agent: "pi", Model: "fuzzy-model", Description: "test"}, {Name: "c", Agent: "codex", Model: "model", Description: "test", Effort: "turbo"}} {
 		if err := o.Validate(); err == nil {
 			t.Fatal(o)
 		}
@@ -504,7 +505,7 @@ func (r ignoringCancelRunner) Execute(ctx context.Context, p runtime.CommandPlan
 	}
 	close(r.started)
 	<-ctx.Done()
-	return runtime.CommandResult{Stdout: "{\"type\":\"thread.started\",\"thread_id\":\"12345678-1234-1234-1234-123456789abc\"}\n{\"type\":\"item.completed\",\"item\":{\"type\":\"agent_message\",\"text\":\"Finished naturally; cancel was ignored\"}}\n{\"type\":\"turn.completed\"}"}, nil
+	return runtime.CommandResult{Stderr: codexTelemetry(p, ""), Stdout: "{\"type\":\"thread.started\",\"thread_id\":\"12345678-1234-1234-1234-123456789abc\"}\n{\"type\":\"item.completed\",\"item\":{\"type\":\"agent_message\",\"text\":\"Finished naturally; cancel was ignored\"}}\n{\"type\":\"turn.completed\"}"}, nil
 }
 
 func TestUnconfirmedCancellationDoesNotBecomeCancelled(t *testing.T) {

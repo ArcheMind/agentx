@@ -148,7 +148,7 @@ func Limits(o presets.Preset, g Grant) string {
 	}
 	var text strings.Builder
 	if o.Agent == "pi" {
-		text.WriteString("Execution policy: read-only, enforced only by Pi's tool allowlist (read, grep, find, ls; no bash, edit or write); this is an application-level tool filter, not an OS sandbox; reads are not path-restricted. Extensions, skills, prompt templates and project approval disabled. Bounded-write is unavailable for Pi (no runtime sandbox). ")
+		text.WriteString("Execution policy: read-only, enforced only by Pi's tool allowlist (read, grep, find, ls; no bash, edit or write); this is an application-level tool filter, not an OS sandbox; reads are not path-restricted. User and project extensions, skills, prompt templates and project approval disabled; with a role or explicit effort AgentX loads only its own observer extension, which records each provider request's effort and role inclusion in the Pi session and changes nothing. Bounded-write is unavailable for Pi (no runtime sandbox). ")
 		text.WriteString("Approval: never (user-selected; Pi has no approval path; Claude permissions and approvals are not inherited). ")
 		fmt.Fprintf(&text, "Auth: PI_CODING_AGENT_DIR=%q expecting %s for the model's provider, verified by pi auth check before each execution. ", g.Auth.Path, g.Auth.Method)
 	} else {
@@ -161,11 +161,12 @@ func Limits(o presets.Preset, g Grant) string {
 		fmt.Fprintf(&text, "Auth: CODEX_HOME=%q expecting %s login, verified by codex login status before each execution. ", g.Auth.Path, g.Auth.Method)
 	}
 	text.WriteString("Auth identity means the configured source directory plus login method; the account inside that source is not verified. Inherited credential-like environment variables are not passed; no fallback identity. ")
-	text.WriteString("Role: general-purpose only. Isolation: rejected (worktree and remote). ")
+	text.WriteString(roleLimits(o.Agent))
+	text.WriteString("Isolation: rejected (worktree and remote). ")
 	if o.Agent == "pi" {
-		text.WriteString("Effort: native default only (Pi may silently clamp thinking levels). Exact provider/model required. ")
+		text.WriteString("Effort is fixed by the preset (--thinking low, medium, high, xhigh or max; off and minimal rejected). Each turn fails unless the Pi session's thinking level and every provider request's reasoning effort equal it, so a silent clamp or remap is a failure, not a downgrade; models whose requests carry no reasoning effort field fail explicit effort. Exact provider/model required. ")
 	} else {
-		text.WriteString("Effort is fixed by the preset; native rejection of an unsupported level is returned as failure. ")
+		text.WriteString("Effort is fixed by the preset; each turn fails unless every completed model response in Codex telemetry reports exactly that effort (for example gpt-5.6-luna silently runs ultra as max); native rejection of an unsupported level is returned as failure. ")
 	}
 	text.WriteString("Remote availability is unverified until execution.")
 	return text.String()
