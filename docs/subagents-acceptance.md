@@ -158,6 +158,104 @@ Still open or not claimed:
 - Interactive `ax` launch passes the effort (`-c model_reasoning_effort`,
   `--thinking`) but cannot verify it.
 
+## Isolation (backlog 004 G05–G06)
+
+Recorded 2026-10-21 with Codex CLI 0.163.0 (`gpt-5.6-luna`, `low`), Pi CLI
+0.84.4 (`openai-codex/gpt-5.6-luna`) and git 2.39.5, through the built AgentX
+stdio MCP server (`make smoke-mcp-isolation-live`), not through a Claude host.
+The original checkout started dirty: a modified tracked file (`sub/tracked.txt`)
+and an untracked file (`draft.txt`). The smoke snapshots `git status
+--porcelain --untracked-files=all` plus every file's content outside `.git`
+before and after all runs. Codex sandbox evidence comes from rollouts, as in the
+G01–G03 section. Evidence directory (with `server-debug.log` and
+`smoke-output.json`):
+`/private/var/folders/34/yf5zv4k133l7nrksmz2flmw00000gn/T/agentx-mcp-isolation-sNefQJ`.
+
+| ID | Status | Observation |
+| --- | --- | --- |
+| A06 | Pass (Codex, Pi read-only) | Success: bounded-write grant with root = the repository. The native plan ran in `<worktree>/sub` with `writable_roots=["<worktree>"]` and without the repository path. Rollout `…/rollout-2026-10-21T05-10-57-01a15e5f-2a8d-7350-8b22-eda5b9b39f0b.jsonl` shows `printf isolated > agent.txt` with exit 0. The file exists only in the worktree, and the report names path, branch `agentx/<id>`, base commit and `?? sub/agent.txt`. Escape: an absolute write to the original `repo/sub/escape.txt` failed with `operation not permitted` (rollout `…-01a15e5f-2a8e-7902-a74b-7305306ed11a.jsonl`), and the file is absent. Read-only Codex in a worktree: `printf readonly > ro.txt` failed with `operation not permitted`. Failure: a nonexistent model failed natively; the report named the kept worktree. Cancellation: the agent wrote `partial.txt`, then `StopExternalSubagent` confirmed `cancelled`; the report listed `?? sub/partial.txt` and the file was still present. Pi read-only ran with its working directory inside the worktree. The original snapshot was identical afterwards (`M sub/tracked.txt`, `?? draft.txt`, edit intact). All six worktrees remained in `git worktree list` after the server exited. |
+| A07 | Open (external) | `isolation:"remote"` is rejected before any work with the external reason; no native process starts. Investigated 2026-10-21: `codex cloud` (exec/status/list/diff/apply) has no cancel command. It also runs in a Codex Cloud environment bound to a pushed GitHub branch, not this working directory; this account lists no tasks, and the CLI cannot list environments. `codex exec-server --remote` registers a WebSocket exec server that the user must provision on a remote host; none exists here, and starting one locally would only alias a local directory. Pi 0.84.4 has no remote execution. |
+| A13 (isolation) | Pass | The initialization catalog, each preset's limits (`Isolation: worktree supported …; Remote: rejected …`), the tool description and the `isolation` field description all state the same support. Reports carry the worktree path, branch, base, effective writable roots, retention and the state after the last task. Isolation is fixed per ExternalSubagent: continuation reuses the same worktree. A removed worktree fails explicitly, and the task never moves to the original directory. Unknown isolation values reject. |
+
+Note (2026-10-21, after independent acceptance of `a09587c`): the reviewer
+found that a writable root spelled as a case variant of the repository
+(`/…/REPO`) was treated as an unrelated root and kept. On case-insensitive
+APFS, the Codex sandbox then allowed writes to the original checkout. A real
+Codex run modified a tracked file (rollout exit 0, original `git status` showed
+` M top.txt`). The A06 pass above did not cover that grant shape. Fix:
+containment now compares directory identity (`os.SameFile` along the ancestor
+chain), and an unidentifiable root rejects the call. Deterministic regression
+tests cover case and Unicode NFC/NFD variants of the repository and of an
+ancestor, plus the plan's effective roots; they fail on the old string
+comparison. A live re-run of `make smoke-mcp-isolation-live` with an added
+probe passed:
+- Grant roots were `[repo, REPO]`; the effective roots were only the worktree.
+- `printf escaped > …/REPO/sub/variant-escape.txt` failed with `operation not
+  permitted` (rollout
+  `~/.codex/sessions/2026/10/21/rollout-2026-10-21T05-31-03-01a15e71-8f99-7e70-864b-373b0bd9f8e1.jsonl`),
+  and the file is absent.
+- The original snapshot was unchanged, and all 7 worktrees were kept.
+
+Evidence:
+`/private/var/folders/34/yf5zv4k133l7nrksmz2flmw00000gn/T/agentx-mcp-isolation-q97496`
+(`server-debug.log`, `smoke-output.json`). The live probe covers the case
+variant only; NFD is covered deterministically.
+
+Note (2026-10-21, later the same day): the user decided on a subtraction fix
+instead, and it supersedes the directory-identity mapping of `23ead9d`.
+Isolation now overrides grant `writable_roots`: under `bounded-write` the
+sandbox's only writable root is the worktree, and no user-written path string
+reaches an isolated run. This removes the whole class of spelling variants
+(case, NFC/NFD, symlink, firmlink) rather than recognising each one.
+
+Deterministic tests use real git with a fake native runner. Grants made of a
+case or NFD variant of the repository, a variant subdirectory and an unrelated
+directory yield exactly `writable_roots=["<worktree>"]`, and the report states
+the override. A 16-way concurrent creation test also exposed a git race:
+concurrent `git worktree add` fails reading another worktree's `commondir`.
+That race first appeared in this live run. Creation is now serialized
+in-process; without the lock the test fails, with it the test passes.
+
+Live re-run of `make smoke-mcp-isolation-live` passed. Evidence:
+`/private/var/folders/34/yf5zv4k133l7nrksmz2flmw00000gn/T/agentx-mcp-isolation-VR8Eqe`
+(`server-debug.log`, `smoke-output.json`).
+- Grant roots `[…/REPO, …/unrelated]`: the effective roots were only the
+  worktree. `printf escaped > …/REPO/sub/variant-escape.txt` failed with
+  `operation not permitted` (rollout
+  `…/rollout-2026-10-21T05-34-05-01a15e74-55a6-71a1-af88-eb88ba917ac0.jsonl`),
+  and the file is absent.
+- Write inside the worktree: exit 0 (`…-01a15e74-54f8-79e2-abac-6700a4260665.jsonl`).
+- Absolute write to the original: denied (`…-01a15e74-5531-7cd2-bf89-8c7da695492b.jsonl`).
+- `printf broken > ../.git` against the worktree's `.git` file: denied
+  (`…-01a15e74-5626-7893-986a-9938b2004758.jsonl`); the file still holds its
+  `gitdir:` line.
+- The original snapshot was unchanged, and all 8 agent worktrees were kept.
+
+Enforcement under `isolation:"worktree"`:
+
+| Aspect | Codex | Pi |
+| --- | --- | --- |
+| Working directory | Worktree path of the original working directory | Same |
+| Writes | OS sandbox. `bounded-write`: the only writable root is the worktree (grant `writable_roots` do not apply); the worktree's `.git` stays protected. `read-only`: no writable root | No write tools (read-only only) |
+| Reads | Not path-restricted: the original checkout stays readable | Not path-restricted |
+| Commits | The repository's `.git` is outside the roots, so the agent cannot commit; work stays uncommitted in the worktree | Not applicable |
+
+Deterministic coverage (`go test ./internal/subagents`, real git with a fake
+native runner) covers the following:
+- Root rebasing.
+- Dirty-original preservation and plan cwd/roots.
+- Report contents.
+- Same-worktree continuation, and explicit failure when the worktree is removed.
+- Retention on failure and cancellation.
+- Rejection outside a git work tree, or when the working directory is untracked at HEAD. A rejected call leaves no worktree or branch behind.
+- Remote and unknown values rejected without native execution.
+- Pi plan cwd.
+
+Note (2026-10-21): rows A04 and A12 of the scenario matrix below, and the
+retained preset-visibility observations, predate G05. Their statement that all
+isolation is rejected was true for that run. Worktree isolation is supported
+since branch `feat/isolation`; remote stays rejected.
+
 ## Environment and retained observations
 
 ### Current preset DATA visibility
@@ -352,11 +450,12 @@ see [Roles and effort](#roles-and-effort-backlog-004-g04-g09).
 - MCP has no channel presentation acknowledgement. Status identifies live
   initialized connections, but cannot certify their host UI gate. Actual
   completion evidence independently establishes that path.
-- General-purpose and declared roles (Codex and Pi), local native execution,
-  and explicit effort verified per turn (Codex levels; Pi `low`..`max`) are
-  supported. Pi `off`/`minimal`, any effort that native evidence shows was not
-  run as requested, worktree/remote isolation, other MCP engine adapters and
-  cross-connection recovery are rejected or reported.
+- General-purpose and declared roles (Codex and Pi), local native execution
+  under each grant, worktree isolation, and explicit effort verified per turn
+  (Codex levels; Pi `low`..`max`) are supported. Pi `off`/`minimal`, any effort
+  that native evidence shows was not run as requested, remote isolation (004
+  A07, no verifiable remote environment with cancellation), other MCP engine
+  adapters and cross-connection recovery are rejected or reported.
 - Pi's allowlist is not an OS sandbox. Pi `bounded-write` is rejected; a real
   Pi write boundary (004 G02 for Pi) remains open. Approve and deny approval
   scenarios (004 A03) remain pending: only `approval:"never"` exists, and host
@@ -366,5 +465,5 @@ see [Roles and effort](#roles-and-effort-backlog-004-g04-g09).
 
 Reproduce deterministic/management checks with
 `make verify test-mcp-race smoke-mcp-management`. Paid native/host checks use
-`make smoke-mcp-live smoke-mcp-channel smoke-mcp-host-live smoke-mcp-policy-live`
+`make smoke-mcp-live smoke-mcp-channel smoke-mcp-host-live smoke-mcp-policy-live smoke-mcp-isolation-live`
 and the logins selected by each grant's auth source.

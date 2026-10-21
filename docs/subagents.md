@@ -379,9 +379,9 @@ is required and names one callable preset; there is no default preset. The prese
 fixes agent, model and effort; there is no `effort` parameter and no per-call
 override. Reports name the preset, agent, actual model, effort and role, and a
 `Native evidence:` line states the executed effort and role carriage that the
-native records show for that turn. `isolation` accepts native spellings
-`worktree` and `remote` in the schema but both are explicitly rejected by current
-adapters, never substituted with local execution. Names start with an ASCII
+native records show for that turn. `isolation` accepts the native spellings
+`worktree` (supported, see below) and `remote` (rejected, see below); other
+values are rejected. Names start with an ASCII
 letter or digit and contain 1–64 ASCII letters, digits, `_`, or `-`.
 Deprecated `team_name` and native `mode` values (`acceptEdits`, `auto`,
 `bypassPermissions`, `default`, `dontAsk`, `plan`) are accepted and ignored;
@@ -407,6 +407,97 @@ Objects and listExternalSubagentSessions are scoped to the current MCP connectio
 loses actionable objects; native transcript files may remain, but AgentX does
 not claim cross-connection recovery. This scope also applies when the parent
 Claude session resumes. Session loss or identity mismatch is failure, not retry.
+
+## Isolation
+
+`isolation:"worktree"` runs the ExternalSubagent in a new git worktree:
+
+- **What is created.** The repository is the one containing the MCP server's
+  working directory, and the worktree starts at its `HEAD` commit. It lives at
+  `~/.local/state/agentx/worktrees/<id>` on branch `agentx/<id>`, where `<id>`
+  is the ExternalSubagent ID. The native agent's working directory is the
+  matching path inside the worktree.
+- **The original checkout.** Its files are never modified. Its uncommitted and
+  untracked changes are not copied into the worktree. The original repository
+  does gain branch `agentx/<id>` and git's worktree metadata under
+  `.git/worktrees/`.
+- **Rejections.** The call is rejected before any work starts in three cases:
+  the working directory is not inside a git work tree, there is no commit at
+  `HEAD`, or the working directory is untracked at `HEAD` and therefore
+  missing from the worktree. A rejected call leaves no
+  worktree or branch behind.
+- **Repository hooks.** `git worktree add` runs the repository's own
+  `post-checkout` hook, as git always does. That hook is the repository's code,
+  not the agent's. It runs outside any agent sandbox, with AgentX's full
+  inherited environment, credential-like variables included. Choose worktree
+  isolation only for repositories whose hooks you trust.
+- **Why the worktree is outside the repository.** A nested worktree would show
+  up as an untracked entry in the original checkout, and `git add -A` there
+  would record it as an embedded repository.
+- **Writable roots under `bounded-write`.** Isolation overrides the grant's
+  `writable_roots`: the effective writable root is the worktree itself, and
+  nothing else. No granted path reaches an isolated run. Granted paths are not
+  mapped into the worktree, not narrowed to it, and not passed through as
+  unrelated roots. An isolated task is meant to produce output only in the
+  copy, and passing user-written path strings to the sandbox reopens the
+  original. An earlier mapping reopened it on case-insensitive APFS: a root
+  spelled `/x/REPO` was taken as unrelated and made the original checkout
+  writable. Codex therefore cannot write the original checkout or any granted
+  path: an absolute write there fails with `operation not permitted`. Codex
+  still protects the worktree's own `.git` file inside that root (verified).
+  Reads are not path-restricted, so the original stays readable. The grant's
+  roots still apply to non-isolated runs, and must still exist.
+- **No commits.** The repository's `.git` lies outside the roots, so the agent
+  cannot commit. Its work stays as uncommitted changes in the worktree.
+- **Read-only.** `read-only` stays read-only: the sandbox is read-only and
+  has no writable root.
+- **Concurrent creation.** Worktree creation is serialized within one AgentX
+  process, because concurrent `git worktree add` in one repository fails
+  (git 2.39 reads another worktree's half-written metadata). Separate AgentX
+  processes on the same repository can still hit this; the call then fails
+  explicitly with no task started.
+- **Pi.** Pi is read-only only, so for Pi a worktree changes only the working
+  directory. No OS boundary is added.
+
+The worktree is fixed for the ExternalSubagent's lifetime. Continuation reuses
+it and cannot rebind it. If the worktree has been removed, continuation fails
+and never falls back to the original directory.
+
+Retention: AgentX never removes a worktree, whether the task completed, failed
+or was cancelled, and including after the MCP connection ends. Continuation
+needs the worktree, and any uncommitted work in it belongs to the user. Every
+report names the path, branch, base commit and effective writable roots. After
+each task, the report also records the state: whether `HEAD` moved, plus
+`git status --porcelain`. It ends with the cleanup command:
+`git -C <repo> worktree remove <path>` (which refuses while changes remain; add
+`--force` to discard them), then `git -C <repo> branch -D agentx/<id>`. To take
+the agent's changes, inspect or copy them from the worktree, or commit them
+there yourself.
+
+Bulk cleanup. Retained worktrees accumulate until you remove them. To list
+them:
+
+```sh
+git -C <repo> worktree list                   # paths and branches, incl. AgentX ones
+git -C <repo> branch --list 'agentx/*'        # AgentX branches
+ls ~/.local/state/agentx/worktrees            # worktrees from every repository
+```
+
+Inspect each one before removing it. Then run `git -C <repo> worktree remove
+<path>` and `git -C <repo> branch -D agentx/<id>` for each. If a worktree
+directory was deleted by hand, run `git -C <repo> worktree prune` to drop its
+stale metadata. The branch stays until you delete it.
+
+`isolation:"remote"` is rejected, and nothing runs locally instead. None of the
+installed runtimes offers a remote environment whose identity, result retrieval
+and cancellation AgentX can verify:
+- Codex 0.163 `codex cloud` can submit, poll, diff and apply tasks, but it has
+  no cancel command. Its tasks run in a Codex Cloud environment bound to a
+  pushed GitHub branch, not in this working directory.
+- `codex exec-server --remote` needs a remote host that the user provisions.
+- Pi has no remote execution.
+
+This gap (004 G06/A07) stays open.
 
 ## Native execution and permission limits
 
@@ -485,6 +576,7 @@ make smoke-mcp-channel
 make smoke-mcp-host-live
 make smoke-mcp-policy-live
 make smoke-mcp-roles-effort-live
+make smoke-mcp-isolation-live
 ```
 
 The live backend suite uses existing native logins, isolated AgentX configuration,
@@ -517,6 +609,19 @@ continuation rejected after a role edit. It then runs every Codex level and Pi
 (`AX_MCP_PI_CLAMP_MODEL`, default `deepseek/deepseek-flash` with `api_key`
 auth), and direct Pi `off`/`minimal` runs with the observer to show why those
 stay rejected. Evidence is written to `evidence.json` in the printed directory.
+
+`smoke-mcp-isolation-live` starts from a dirty original checkout and runs real
+Codex and Pi with `isolation:"worktree"`. It checks five Codex cases: a write
+inside the worktree, an absolute write to the original (OS-denied per rollout),
+read-only in a worktree, native failure, and cancellation after partial output.
+It also checks Pi's working directory and the rejection of `remote`. A sixth
+Codex case grants only a case-variant spelling of the repository plus an
+unrelated directory. The sandbox must receive only the worktree, and an
+absolute write to the original through that spelling must be OS-denied per
+rollout. A seventh case writes the worktree's own `.git` file and must be
+denied. Finally it
+asserts that the original checkout's status and file contents are byte-identical
+and that every worktree is kept.
 
 See [acceptance evidence](subagents-acceptance.md) for scenarios and limitations.
 

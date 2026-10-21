@@ -51,6 +51,7 @@ type ExternalSubagentState struct {
 	Grant                                    Grant
 	Role                                     roles.Role
 	evidence                                 string
+	Worktree                                 *Worktree
 	Jobs                                     []*Job
 	Running                                  bool
 	Cancel                                   context.CancelFunc
@@ -184,7 +185,7 @@ func (s *Server) handle(method string, raw json.RawMessage) (any, error) {
 
 func (s *Server) tools() any {
 	catalog, models, roleNames := Catalog(s.Home)
-	description := "AgentX ExternalSubagent delegation. One call starts an independent ExternalSubagent. model selects a user-configured execution agent × exact model; subagent_type selects general-purpose or a user-declared role (task instructions only; never changes agent, model, effort, grant or permissions). Omitted or true run_in_background returns immediately; false waits for terminal status. Background results arrive as untrusted AgentX channel messages (requires Claude channels opt-in). Continue via SendExternalSubagentMessage; cancel via StopExternalSubagent; list via listExternalSubagentSessions. The selected preset fixes agent, model and effort; there is no per-call effort override. mode and team_name are deprecated and ignored. No isolation supported. No context restoration across MCP reconnects. "
+	description := "AgentX ExternalSubagent delegation. One call starts an independent ExternalSubagent. model selects a user-configured execution agent × exact model; subagent_type selects general-purpose or a user-declared role (task instructions only; never changes agent, model, effort, grant or permissions). Omitted or true run_in_background returns immediately; false waits for terminal status. Background results arrive as untrusted AgentX channel messages (requires Claude channels opt-in). Continue via SendExternalSubagentMessage; cancel via StopExternalSubagent; list via listExternalSubagentSessions. The selected preset fixes agent, model and effort; there is no per-call effort override. mode and team_name are deprecated and ignored. isolation \"worktree\" runs the task in a new git worktree of the repository containing the MCP working directory, adds branch agentx/<id> and worktree metadata to that repository, runs its post-checkout hook, and keeps the worktree afterwards; isolation \"remote\" is rejected. No context restoration across MCP reconnects. "
 	description += "\n\n" + catalog
 	str := func(text string) any { return map[string]any{"type": "string", "description": text} }
 	enum := func(values ...string) any { return map[string]any{"type": "string", "enum": values} }
@@ -199,7 +200,7 @@ func (s *Server) tools() any {
 		modelSchema["enum"] = models
 	}
 	return map[string]any{"tools": []any{
-		tool("ExternalSubagent", description, map[string]any{"description": str("Short task description"), "prompt": str("Task for the ExternalSubagent"), "subagent_type": map[string]any{"type": "string", "enum": roleNames, "description": "general-purpose (default) or a role declared in the user's role collection; unknown roles are rejected"}, "model": modelSchema, "run_in_background": map[string]any{"type": "boolean", "default": true}, "name": map[string]any{"type": "string", "pattern": presets.NamePattern.String()}, "isolation": enum("worktree", "remote"), "team_name": str("Deprecated, ignored"), "mode": enum("acceptEdits", "auto", "bypassPermissions", "default", "dontAsk", "plan")}, "description", "prompt"),
+		tool("ExternalSubagent", description, map[string]any{"description": str("Short task description"), "prompt": str("Task for the ExternalSubagent"), "subagent_type": map[string]any{"type": "string", "enum": roleNames, "description": "general-purpose (default) or a role declared in the user's role collection; unknown roles are rejected"}, "model": modelSchema, "run_in_background": map[string]any{"type": "boolean", "default": true}, "name": map[string]any{"type": "string", "pattern": presets.NamePattern.String()}, "isolation": map[string]any{"type": "string", "enum": []string{IsolationWorktree, IsolationRemote}, "description": "worktree: new git worktree at HEAD of the repository containing the MCP working directory; adds branch agentx/<id> and worktree metadata to that repository and runs its post-checkout hook outside any sandbox; original checkout files untouched and not writable; isolation overrides grant writable_roots: under bounded-write the effective writable root is the worktree itself; kept after completion, failure and cancellation. remote: rejected, no verifiable remote execution environment; never runs locally instead."}, "team_name": str("Deprecated, ignored"), "mode": enum("acceptEdits", "auto", "bypassPermissions", "default", "dontAsk", "plan")}, "description", "prompt"),
 		tool("SendExternalSubagentMessage", "Send a text task to an AgentX ExternalSubagent by exact name or ID. Accepted means queued, not completed. Busy ExternalSubagents process messages in order in the same native context. Completed ExternalSubagents resume. Feature must be enabled; original preset and its grant must still be configured unchanged and available. Summary is display-only.", map[string]any{"to": str("AgentX name or ID"), "message": str("Text task"), "summary": str("Optional display summary")}, "to", "message"),
 		tool("StopExternalSubagent", "Cancel running and queued work for one AgentX ExternalSubagent by name or ID. Waits for native process termination before confirming. Works while disabled. Already ended is not cancellation.", map[string]any{"task_id": str("AgentX name or ID")}, "task_id"),
 		tool("listExternalSubagentSessions", "List ExternalSubagent sessions already created in this AgentX MCP connection, with status, report and pending messages. No other users, connections or Claude native subagents.", map[string]any{}),
@@ -277,9 +278,13 @@ func (s *Server) call(name string, raw json.RawMessage) (string, error) {
 			s.mu.Unlock()
 			return "", fmt.Errorf("invalid name")
 		}
-		if in.Isolation != "" {
+		if in.Isolation == IsolationRemote {
 			s.mu.Unlock()
-			return "", fmt.Errorf("isolation %q unsupported; no task started", in.Isolation)
+			return "", errors.New(RemoteUnsupported)
+		}
+		if in.Isolation != "" && in.Isolation != IsolationWorktree {
+			s.mu.Unlock()
+			return "", fmt.Errorf("isolation %q unsupported; supported: worktree; no task started", in.Isolation)
 		}
 		if in.Mode != "" && !presets.Contains([]string{"acceptEdits", "auto", "bypassPermissions", "default", "dontAsk", "plan"}, in.Mode) {
 			s.mu.Unlock()
@@ -290,11 +295,20 @@ func (s *Server) call(name string, raw json.RawMessage) (string, error) {
 			s.mu.Unlock()
 			return "", err
 		}
-		if _, err := g.ResolvedRoots(s.Cwd); err != nil {
+		id, cwd := "ax-"+randomID(), s.Cwd
+		var worktree *Worktree
+		if in.Isolation == IsolationWorktree {
+			s.mu.Unlock()
+			worktree, cwd, err = s.createWorktree(id, s.Cwd, g)
+			s.mu.Lock()
+		} else {
+			_, err = g.ResolvedRoots(s.Cwd)
+		}
+		if err != nil {
 			s.mu.Unlock()
 			return "", err
 		}
-		a := &ExternalSubagentState{ID: "ax-" + randomID(), Name: in.Name, Option: o, Grant: g, Role: role, Cwd: s.Cwd, Status: "queued"}
+		a := &ExternalSubagentState{ID: id, Name: in.Name, Option: o, Grant: g, Role: role, Worktree: worktree, Cwd: cwd, Status: "queued"}
 		s.agents[a.ID] = a
 		if a.Name != "" {
 			s.names[a.Name] = a.ID
@@ -440,6 +454,9 @@ func (s *Server) call(name string, raw json.RawMessage) (string, error) {
 
 func (s *Server) render(a *ExternalSubagentState, j *Job) string {
 	text := fmt.Sprintf("AgentX ExternalSubagent %s (name=%q; preset=%s; agent=%s; actual model=%s; effort=%s; role=%s; connection=%s)\nGrant: %s\nTask %s: %s; ExternalSubagent status: %s.\n", a.ID, a.Name, a.Option.Name, a.Option.Agent, a.Option.Model, describeEffort(a.Option.Effort), a.Role.Name, s.connectionID, a.Grant.Summary(), j.ID, j.Status, a.Status)
+	if a.Worktree != nil {
+		text += a.Worktree.describe(a.Cwd)
+	}
 	if j.Evidence != "" {
 		text += "Native evidence: " + j.Evidence + "\n"
 	}
@@ -496,7 +513,14 @@ func (s *Server) work(a *ExternalSubagentState) {
 		job.Status = "running"
 		s.mu.Unlock()
 		report, usage, err := s.execute(ctx, a, job.Prompt)
+		remaining := ""
+		if a.Worktree != nil {
+			remaining = s.worktreeRemaining(a.Worktree)
+		}
 		s.mu.Lock()
+		if a.Worktree != nil {
+			a.Worktree.Remaining = remaining
+		}
 		job.Report = report
 		job.Usage = usage
 		job.Evidence = a.evidence
@@ -557,7 +581,7 @@ func (s *Server) execute(ctx context.Context, a *ExternalSubagentState, prompt s
 	if err := a.Grant.Ready(); err != nil {
 		return "", nil, err
 	}
-	roots, err := a.Grant.ResolvedRoots(a.Cwd)
+	roots, err := s.executionRoots(a)
 	if err != nil {
 		return "", nil, err
 	}

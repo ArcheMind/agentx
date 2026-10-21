@@ -162,7 +162,7 @@ func Limits(o presets.Preset, g Grant) string {
 	}
 	text.WriteString("Auth identity means the configured source directory plus login method; the account inside that source is not verified. Inherited credential-like environment variables are not passed; no fallback identity. ")
 	text.WriteString(roleLimits(o.Agent))
-	text.WriteString("Isolation: rejected (worktree and remote). ")
+	text.WriteString(IsolationLimits(o.Agent))
 	if o.Agent == "pi" {
 		text.WriteString("Effort is fixed by the preset (--thinking low, medium, high, xhigh or max; off and minimal rejected). Each turn fails unless the Pi session's thinking level and every provider request's reasoning effort equal it, so a silent clamp or remap is a failure, not a downgrade; models whose requests carry no reasoning effort field fail explicit effort. Exact provider/model required. ")
 	} else {
