@@ -15,6 +15,38 @@ import (
 )
 
 func (r ExecRunner) ExecuteJSONRPC(ctx context.Context, plan CommandPlan, requests []json.RawMessage, responseID json.RawMessage) (json.RawMessage, error) {
+	var input strings.Builder
+	for _, request := range requests {
+		input.Write(request)
+		input.WriteByte('\n')
+	}
+	return r.executeJSONL(ctx, plan, input.String(), func(line []byte) bool {
+		var envelope struct {
+			ID json.RawMessage `json:"id"`
+		}
+		if err := json.Unmarshal(line, &envelope); err != nil {
+			return false
+		}
+		return bytes.Equal(bytes.TrimSpace(envelope.ID), bytes.TrimSpace(responseID))
+	}, "JSON-RPC response")
+}
+
+func (r ExecRunner) ExecuteClaudeControl(ctx context.Context, plan CommandPlan, request json.RawMessage, requestID string) (json.RawMessage, error) {
+	return r.executeJSONL(ctx, plan, string(request)+"\n", func(line []byte) bool {
+		var envelope struct {
+			Type     string `json:"type"`
+			Response struct {
+				RequestID string `json:"request_id"`
+			} `json:"response"`
+		}
+		if err := json.Unmarshal(line, &envelope); err != nil {
+			return false
+		}
+		return envelope.Type == "control_response" && envelope.Response.RequestID == requestID
+	}, "Claude control response")
+}
+
+func (r ExecRunner) executeJSONL(ctx context.Context, plan CommandPlan, input string, matches func([]byte) bool, responseDescription string) (json.RawMessage, error) {
 	commandCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	cmd := exec.CommandContext(commandCtx, plan.Executable, plan.Args...)
@@ -30,22 +62,16 @@ func (r ExecRunner) ExecuteJSONRPC(ctx context.Context, plan CommandPlan, reques
 	}
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
-
-	var input strings.Builder
-	for _, request := range requests {
-		input.Write(request)
-		input.WriteByte('\n')
-	}
 	if err := cmd.Start(); err != nil {
 		result := CommandResult{Stderr: stderr.String(), ExitCode: -1}
-		r.log(plan, input.String(), result, err)
+		r.log(plan, input, result, err)
 		return nil, fmt.Errorf("start external command %s: %w", plan.Executable, err)
 	}
-	if _, err := io.WriteString(stdin, input.String()); err != nil {
+	if _, err := io.WriteString(stdin, input); err != nil {
 		cancel()
 		_ = cmd.Wait()
 		result := CommandResult{Stderr: stderr.String(), ExitCode: -1}
-		r.log(plan, input.String(), result, err)
+		r.log(plan, input, result, err)
 		return nil, fmt.Errorf("write external command %s stdin: %w", plan.Executable, err)
 	}
 
@@ -57,17 +83,16 @@ func (r ExecRunner) ExecuteJSONRPC(ctx context.Context, plan CommandPlan, reques
 		line := append([]byte(nil), scanner.Bytes()...)
 		output.Write(line)
 		output.WriteByte('\n')
-		var envelope struct {
-			ID json.RawMessage `json:"id"`
-		}
-		if err := json.Unmarshal(line, &envelope); err != nil {
+		var value json.RawMessage
+		if err := json.Unmarshal(line, &value); err != nil {
+			err = fmt.Errorf("parse external command %s JSONL output: %w", plan.Executable, err)
 			cancel()
 			_ = cmd.Wait()
 			result := CommandResult{Stdout: output.String(), Stderr: stderr.String(), ExitCode: -1}
-			r.log(plan, input.String(), result, err)
-			return nil, fmt.Errorf("parse external command %s JSON-RPC output: %w", plan.Executable, err)
+			r.log(plan, input, result, err)
+			return nil, err
 		}
-		if bytes.Equal(bytes.TrimSpace(envelope.ID), bytes.TrimSpace(responseID)) {
+		if matches(line) {
 			response = line
 			break
 		}
@@ -76,8 +101,8 @@ func (r ExecRunner) ExecuteJSONRPC(ctx context.Context, plan CommandPlan, reques
 		cancel()
 		_ = cmd.Wait()
 		result := CommandResult{Stdout: output.String(), Stderr: stderr.String(), ExitCode: -1}
-		r.log(plan, input.String(), result, scanErr)
-		return nil, fmt.Errorf("read external command %s JSON-RPC output: %w", plan.Executable, scanErr)
+		r.log(plan, input, result, scanErr)
+		return nil, fmt.Errorf("read external command %s JSONL output: %w", plan.Executable, scanErr)
 	}
 
 	_ = stdin.Close()
@@ -100,10 +125,13 @@ func (r ExecRunner) ExecuteJSONRPC(ctx context.Context, plan CommandPlan, reques
 		}
 	}
 	if len(response) == 0 {
-		err := fmt.Errorf("external command %s closed before JSON-RPC response %s", plan.Executable, responseID)
-		r.log(plan, input.String(), result, err)
+		err := ctx.Err()
+		if err == nil {
+			err = fmt.Errorf("external command %s closed before %s", plan.Executable, responseDescription)
+		}
+		r.log(plan, input, result, err)
 		return nil, err
 	}
-	r.log(plan, input.String(), result, nil)
+	r.log(plan, input, result, nil)
 	return response, nil
 }

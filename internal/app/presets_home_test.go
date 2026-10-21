@@ -172,7 +172,7 @@ func TestCreateWithManualModelSavesWithoutInference(t *testing.T) {
 		t.Fatalf("creation ran external commands: %#v", runner.plans)
 	}
 	output := stdout.String()
-	for _, want := range []string{"Claude Code has no reliable local model list", "Enter the exact model ID", "unverified for this model", "Error: Invalid name", "Your other entries are kept", "Review preset", "Effort       low (unverified for this model)", "Availability Execution not verified; Claude Code is not installed", "MCP          Interactive launch only", "Saving does not run inference.", "Save and start", "Saved ", "New sessions use the saved presets now.", "MCP: ExternalSubagents are disabled", "› deep-review  Claude · opus-4 · low  Review complex changes\r\n"} {
+	for _, want := range []string{"Claude Code is not installed, so its models cannot be listed", "Enter the exact model ID", "unverified for this model", "Error: Invalid name", "Your other entries are kept", "Review preset", "Effort       low (unverified for this model)", "Availability Execution not verified; Claude Code is not installed", "MCP          Interactive launch only", "Saving does not run inference.", "Save and start", "Saved ", "New sessions use the saved presets now.", "MCP: ExternalSubagents are disabled", "› deep-review  Claude · opus-4 · low  Review complex changes\r\n"} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("missing %q in %q", want, output)
 		}

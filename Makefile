@@ -95,3 +95,8 @@ verify: fmt check test audit smoke
 
 clean:
 	rm -f bin/ax
+
+.PHONY: smoke-claude-models
+smoke-claude-models: build
+	./bin/ax --json agent models claude
+	./bin/ax list

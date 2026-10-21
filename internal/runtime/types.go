@@ -89,6 +89,10 @@ type JSONRPCRunner interface {
 	ExecuteJSONRPC(context.Context, CommandPlan, []json.RawMessage, json.RawMessage) (json.RawMessage, error)
 }
 
+type ClaudeControlRunner interface {
+	ExecuteClaudeControl(context.Context, CommandPlan, json.RawMessage, string) (json.RawMessage, error)
+}
+
 type LaunchDriver interface {
 	PlanRun(RunRequest) (CommandPlan, error)
 }

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/ArcheMind/agentx/internal/runtime"
 )
@@ -99,6 +100,60 @@ func (CodexAppServerModels) ListModels(ctx context.Context, runner runtime.Runne
 			}
 		}
 		models = append(models, model)
+	}
+	return models, nil
+}
+
+type ClaudeModels struct{}
+
+func (ClaudeModels) ListModels(ctx context.Context, runner runtime.Runner) ([]runtime.Model, error) {
+	control, ok := runner.(runtime.ClaudeControlRunner)
+	if !ok {
+		return nil, fmt.Errorf("Claude model discovery requires control-protocol command support")
+	}
+	const requestID = "agentx-models"
+	request := json.RawMessage(`{"type":"control_request","request_id":"agentx-models","request":{"subtype":"initialize"}}`)
+	commandCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	args := []string{"--print", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose", "--no-session-persistence", "--strict-mcp-config", "--mcp-config", `{"mcpServers":{}}`, "--settings", `{"disableAllHooks":true}`}
+	raw, err := control.ExecuteClaudeControl(commandCtx, runtime.CommandPlan{Executable: "claude", Args: args, UnsetEnv: []string{"CLAUDECODE"}}, request, requestID)
+	if err != nil {
+		return nil, fmt.Errorf("read Claude account models: %w", err)
+	}
+	var envelope struct {
+		Response *struct {
+			Subtype  string `json:"subtype"`
+			Error    string `json:"error"`
+			Response *struct {
+				Models *[]struct {
+					Value                 string   `json:"value"`
+					DisplayName           string   `json:"displayName"`
+					Description           string   `json:"description"`
+					SupportedEffortLevels []string `json:"supportedEffortLevels"`
+				} `json:"models"`
+			} `json:"response"`
+		} `json:"response"`
+	}
+	if err := json.Unmarshal(raw, &envelope); err != nil {
+		return nil, fmt.Errorf("parse Claude initialize response: %w", err)
+	}
+	if envelope.Response == nil {
+		return nil, fmt.Errorf("Claude initialize response has no response object")
+	}
+	if envelope.Response.Subtype != "success" {
+		return nil, fmt.Errorf("Claude initialize failed (%s): %s", envelope.Response.Subtype, envelope.Response.Error)
+	}
+	if envelope.Response.Response == nil || envelope.Response.Response.Models == nil {
+		return nil, fmt.Errorf("Claude initialize response has no models")
+	}
+	models := make([]runtime.Model, 0, len(*envelope.Response.Response.Models))
+	seen := make(map[string]bool)
+	for _, item := range *envelope.Response.Response.Models {
+		if item.Value == "" || seen[item.Value] {
+			continue
+		}
+		seen[item.Value] = true
+		models = append(models, runtime.Model{ID: item.Value, DisplayName: item.DisplayName, Description: item.Description, Source: "claude initialize", Efforts: item.SupportedEffortLevels})
 	}
 	return models, nil
 }
