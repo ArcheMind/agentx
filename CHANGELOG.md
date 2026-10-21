@@ -4,6 +4,12 @@ All notable changes to AgentX are documented here. The format follows [Keep a Ch
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-10-21
+
+### Fixed
+
+- Subagent catalog readiness tests stub both `codex` and `pi`, so they no longer depend on a locally installed `pi`. `v0.4.0` was tagged on a commit where this test failed on Linux, so its release workflow stopped before publishing; `v0.4.1` is the first published release carrying the `0.4.0` changes.
+
 ## [0.4.0] - 2026-10-21
 
 ### Added
@@ -110,7 +116,8 @@ All notable changes to AgentX are documented here. The format follows [Keep a Ch
 - Structured errors and opt-in raw external-call debug logging.
 - Consistency audit covering CLI grammar, documentation, capabilities, and drivers.
 
-[Unreleased]: https://github.com/ArcheMind/agentx/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/ArcheMind/agentx/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/ArcheMind/agentx/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/ArcheMind/agentx/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/ArcheMind/agentx/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/ArcheMind/agentx/compare/v0.2.2...v0.3.0
