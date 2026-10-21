@@ -63,7 +63,7 @@ try{
   noauthServer.call('ExternalSubagent',{description:'missing pi auth',prompt:'Reply ok',model:'pi',run_in_background:false}),
  ])
  for(const {probe,marker,report} of probeReports){
-  const expectedScope=probe.write?'Write scope: writable roots':'Write scope: read-only (no write requested)'
+  const expectedScope=probe.write?'Write scope: working directory':'Write scope: read-only (no write requested)'
   assert(!report.failed&&report.text.includes(expectedScope)&&report.text.includes(`Auth (discovered by preflight for this turn): CODEX_HOME=${JSON.stringify(codexHome)} (`),`${probe.id}: ${report.text}`)
   const thread=threadFor(marker);assert(thread,`${probe.id}: no native thread`)
   const path=rollout(thread)

@@ -63,7 +63,7 @@ try{
  assert(unscoped.includes('write without isolation requires writable_roots')&&(await argvFiles()).length===argvBefore,'write without scope accepted: '+unscoped)
  const scoped=await call('ExternalSubagent',{description:'smoke',prompt:'check',model:'smoke-review',write:true,writable_roots:[workspace],run_in_background:false})
  const scopedArgv=JSON.parse(await readFile(join(home,(await argvFiles()).at(-1)),'utf8')).argv.join(' ')
- assert(scoped.includes('Write scope: writable roots')&&scopedArgv.includes('sandbox_mode="workspace-write"')&&scopedArgv.includes(`writable_roots=${JSON.stringify([await realpath(workspace)])}`),'call-time write scope: '+scoped+scopedArgv)
+ assert(scoped.includes('Write scope: working directory')&&scoped.includes('In write mode the MCP working directory is always writable as well (native Codex behavior)')&&scopedArgv.includes('sandbox_mode="workspace-write"')&&scopedArgv.includes(`writable_roots=${JSON.stringify([await realpath(workspace)])}`),'call-time write scope: '+scoped+scopedArgv)
  evidence.W01='write is per call: no write is read-only, write without roots is rejected before any native run, write with writable_roots reaches the Codex sandbox resolved'
  const roleDir=join(home,'.agentx','roles','strict-reviewer');await mkdir(roleDir,{recursive:true})
  await writeFile(join(roleDir,'ROLE.md'),'---\ndescription: Strict reviewer\n---\n\nEnd every reply with ROLE-SMOKE.\n')

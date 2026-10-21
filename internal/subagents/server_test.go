@@ -450,6 +450,9 @@ func TestExternalSubagentToolNamesAndUnchangedContract(t *testing.T) {
 			t.Fatal("changed parameter", key)
 		}
 	}
+	if !strings.HasPrefix(props["writable_roots"].(map[string]any)["description"].(string), "In write mode the MCP working directory is always writable as well (native Codex behavior); writable_roots grants additional directories.") {
+		t.Fatal("working-directory disclosure is not the first sentence of writable_roots")
+	}
 	if len(props) != 11 || props["effort"] != nil || !presets.Contains(props["model"].(map[string]any)["enum"].([]string), "review") {
 		t.Fatal("changed model selection contract")
 	}

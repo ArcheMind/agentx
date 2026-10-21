@@ -213,13 +213,15 @@ queued work reuse it and cannot widen it.
 | --- | --- | --- |
 | no `write` (default) | `sandbox_mode="read-only"`: no file writes | Read-only tool allowlist |
 | `write: true`, `isolation: "worktree"` | `workspace-write` with `writable_roots=[<worktree>]`, the path AgentX created; `writable_roots` in the call is rejected | Rejected |
-| `write: true`, `writable_roots: [...]` (no isolation) | `workspace-write` with those directories, symlinks resolved, plus the working directory, which Codex always makes writable | Rejected |
+| `write: true`, `writable_roots: [...]` (no isolation) | `workspace-write`: in write mode the MCP working directory is always writable as well (native Codex behavior); `writable_roots` grants additional directories, symlinks resolved | Rejected |
 
 - Without isolation, `writable_roots` must be absolute existing directories,
   not `/`. AgentX resolves symlinks and hands the result to the Codex OS
   sandbox, which is the only enforcer. AgentX does not compare path strings
-  and does not require the working directory to be inside a root; the report
-  states that Codex also keeps the working directory writable.
+  and does not require the working directory to be inside a root. In write
+  mode the MCP working directory is always writable as well (native Codex
+  behavior, the same as a native subagent writing its own working directory);
+  the field description, limits and every report say so.
 - Under isolation no caller path string reaches the sandbox, so spellings of
   the original checkout (case, Unicode NFC/NFD, symlink, firmlink) cannot
   reopen it.

@@ -85,7 +85,7 @@ func TestWritableRootsReachCodexSandboxResolvedAndAuthIsDiscovered(t *testing.T)
 	if strings.Contains(args, link) {
 		t.Fatal("unresolved path string reached the sandbox:", args)
 	}
-	if !strings.Contains(text, "Write scope: writable roots") || !strings.Contains(text, "which Codex always makes writable") || !strings.Contains(text, `Auth (discovered by preflight for this turn): CODEX_HOME="`+os.Getenv("CODEX_HOME")+`" (chatgpt)`) {
+	if !strings.Contains(text, "Write scope: working directory") || !strings.Contains(text, "In write mode the MCP working directory is always writable as well (native Codex behavior); writable_roots grants additional directories.") || !strings.Contains(text, `Auth (discovered by preflight for this turn): CODEX_HOME="`+os.Getenv("CODEX_HOME")+`" (chatgpt)`) {
 		t.Fatal(text)
 	}
 	if plan.Env["CODEX_HOME"] != os.Getenv("CODEX_HOME") || !presets.Contains(plan.UnsetEnv, "AGENTX_TEST_API_KEY") {
