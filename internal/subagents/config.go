@@ -117,11 +117,7 @@ func (c Config) Validate(home string, list []presets.Preset, problems []presets.
 	for _, name := range names {
 		agent, ok := known[name]
 		callable := ok && presets.Agents[agent].Subagent
-		validateAs := agent
-		if !callable {
-			validateAs = ""
-		}
-		if err := c.Grants[name].Validate(validateAs); err != nil {
+		if err := c.Grants[name].Validate(); err != nil {
 			return nil, fmt.Errorf("grant %s: %w", name, err)
 		}
 		switch {
@@ -145,6 +141,9 @@ func (c Config) Ready(o presets.Preset) error {
 	grant, ok := c.Grants[o.Name]
 	if !ok {
 		return fmt.Errorf("no grant: add grants.%s with execution policy and auth source to subagents.json", o.Name)
+	}
+	if grant.Agent() != o.Agent {
+		return fmt.Errorf("grant mismatch: auth.source %q is for %s but preset %s uses %s; update grants.%s for %s", grant.Auth.Source, presets.AgentName(grant.Agent()), o.Name, presets.AgentName(o.Agent), o.Name, presets.AgentName(o.Agent))
 	}
 	if _, err := exec.LookPath(o.Agent); err != nil {
 		return fmt.Errorf("%s executable unavailable: %w", o.Agent, err)

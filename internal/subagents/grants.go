@@ -37,18 +37,22 @@ var authSources = map[string]struct {
 	"pi":    {"pi-agent-dir", []string{"oauth", "api_key"}},
 }
 
-// Validate checks a grant against its preset agent; an empty agent (stray grant) is checked against
-// the agent its auth source implies, so structural errors are never silently ignored.
-func (g Grant) Validate(agent string) error {
+// Agent is the execution agent implied by the auth source, or "" for an unsupported source.
+func (g Grant) Agent() string {
+	for name, expected := range authSources {
+		if expected.source == g.Auth.Source {
+			return name
+		}
+	}
+	return ""
+}
+
+// Validate checks the grant's own values against the agent its auth source implies; whether that
+// agent matches a preset is a per-preset readiness question (Config.Ready), not a structural one.
+func (g Grant) Validate() error {
+	agent := g.Agent()
 	if agent == "" {
-		for name, expected := range authSources {
-			if expected.source == g.Auth.Source {
-				agent = name
-			}
-		}
-		if agent == "" {
-			return fmt.Errorf("unsupported auth.source %q; supported: codex-home, pi-agent-dir", g.Auth.Source)
-		}
+		return fmt.Errorf("unsupported auth.source %q; supported: codex-home, pi-agent-dir", g.Auth.Source)
 	}
 	p := g.Execution
 	switch p.Policy {
@@ -77,9 +81,6 @@ func (g Grant) Validate(agent string) error {
 		return fmt.Errorf("unsupported approval %q; supported: never (non-interactive execution has no human approval path and does not inherit Claude approvals)", p.Approval)
 	}
 	expected := authSources[agent]
-	if g.Auth.Source != expected.source {
-		return fmt.Errorf("auth.source must be %q for %s", expected.source, agent)
-	}
 	if !filepath.IsAbs(g.Auth.Path) || filepath.Clean(g.Auth.Path) != g.Auth.Path {
 		return fmt.Errorf("auth.path %q must be an absolute, clean path", g.Auth.Path)
 	}

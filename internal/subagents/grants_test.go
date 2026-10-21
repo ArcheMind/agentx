@@ -30,7 +30,6 @@ func TestGrantValidationRejectsUnsupportedAndMissing(t *testing.T) {
 		"relative root":        {codex, map[string]Grant{"w": {Execution: ExecutionPolicy{Policy: "bounded-write", WritableRoots: []string{"rel"}, Approval: "never"}, Auth: valid.Auth}}},
 		"filesystem root":      {codex, map[string]Grant{"w": {Execution: ExecutionPolicy{Policy: "bounded-write", WritableRoots: []string{"/"}, Approval: "never"}, Auth: valid.Auth}}},
 		"pi write":             {pi, map[string]Grant{"p": {Execution: ExecutionPolicy{Policy: "bounded-write", WritableRoots: []string{"/x"}, Approval: "never"}, Auth: testGrant(t, "pi").Auth}}},
-		"wrong source":         {pi, map[string]Grant{"p": valid}},
 		"wrong method":         {codex, map[string]Grant{"w": {Execution: valid.Execution, Auth: AuthSource{Source: "codex-home", Path: valid.Auth.Path, Method: "oauth"}}}},
 		"relative auth":        {codex, map[string]Grant{"w": {Execution: valid.Execution, Auth: AuthSource{Source: "codex-home", Path: "home", Method: "chatgpt"}}}},
 		"stray unknown policy": {nil, map[string]Grant{"other": {Execution: ExecutionPolicy{Policy: "full-access", Approval: "never"}, Auth: valid.Auth}}},
@@ -48,6 +47,13 @@ func TestGrantValidationRejectsUnsupportedAndMissing(t *testing.T) {
 	}
 	if stray, err := (Config{}).Validate(home, append(codex, interactive...), nil); err != nil || len(stray) != 0 {
 		t.Fatal("a preset without a grant must not reject the configuration:", stray, err)
+	}
+	mismatched := Config{Grants: map[string]Grant{"p": valid}}
+	if stray, err := mismatched.Validate(home, pi, nil); err != nil || len(stray) != 0 {
+		t.Fatal("agent/auth.source mismatch must not reject the configuration:", stray, err)
+	}
+	if err := mismatched.Ready(pi[0]); err == nil || !strings.Contains(err.Error(), `grant mismatch: auth.source "codex-home" is for Codex but preset p uses Pi`) {
+		t.Fatal("mismatched grant must make only that preset not callable:", err)
 	}
 	if err := (Config{}).Ready(codex[0]); err == nil || !strings.Contains(err.Error(), "no grant") {
 		t.Fatal("callable preset without a grant must not be callable:", err)

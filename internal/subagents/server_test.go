@@ -264,6 +264,36 @@ func TestMissingGrantDisablesOnlyThatPreset(t *testing.T) {
 	}
 }
 
+func TestAgentChangedWithoutGrantUpdateDisablesOnlyThatPreset(t *testing.T) {
+	r := &testRunner{}
+	s := testServer(t, r)
+	callTest(t, s, "ExternalSubagent", map[string]any{"description": "x", "prompt": "x", "model": "review", "name": "pinned", "run_in_background": false})
+	moved := presets.Preset{Name: "review", Agent: "pi", Model: "provider/model", Description: "now Pi"}
+	savePreset(t, s.Home, moved)
+	other := reviewPreset
+	other.Name = "other"
+	savePreset(t, s.Home, other)
+	config, _ := LoadConfig(s.Home)
+	config.Grants["other"] = config.Grants["review"]
+	if err := SaveConfig(s.Home, config); err != nil {
+		t.Fatal(err)
+	}
+	catalog, models := PresetCatalog(s.Home)
+	if strings.Join(models, ",") != "other" || !strings.Contains(catalog, `grant mismatch: auth.source \"codex-home\" is for Codex but preset review uses Pi`) {
+		t.Fatal(models, catalog)
+	}
+	if _, err := s.call("ExternalSubagent", []byte(`{"description":"x","prompt":"x","model":"review","run_in_background":false}`)); err == nil || !strings.Contains(err.Error(), "grant mismatch") {
+		t.Fatal("mismatched preset accepted", err)
+	}
+	if _, err := s.call("SendExternalSubagentMessage", []byte(`{"to":"pinned","message":"again"}`)); err == nil {
+		t.Fatal("continuation ran after its preset agent changed")
+	}
+	callTest(t, s, "ExternalSubagent", map[string]any{"description": "x", "prompt": "x", "model": "other", "run_in_background": false})
+	if len(r.plans) != 2 {
+		t.Fatal("unexpected native executions", len(r.plans))
+	}
+}
+
 func TestStrayGrantOnInteractivePresetAppearsOnlyAsProblem(t *testing.T) {
 	s := testServer(t, &testRunner{})
 	savePreset(t, s.Home, presets.Preset{Name: "daily", Agent: "claude", Model: "opus", Description: "Interactive pairing"})

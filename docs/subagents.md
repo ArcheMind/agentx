@@ -171,6 +171,10 @@ the collection and the grants affect only the entries involved:
   `ExternalSubagent` or `SendExternalSubagentMessage` naming it is rejected with
   that reason. Other presets keep working. Nothing ever runs without a valid
   grant.
+- A grant whose `auth.source` belongs to another agent than its preset (for
+  example a preset switched from `pi` to `codex` while its grant still uses
+  `pi-agent-dir`) makes only that preset not callable, with a `grant mismatch`
+  reason naming both agents.
 - A grant naming no preset, or naming an interactive-launch-only preset
   (`claude`, `gemini`, `opencode`), has no effect and is reported as a grant
   problem in the catalog and in `status.grant_problems`.
@@ -181,9 +185,10 @@ the collection and the grants affect only the entries involved:
 Structural errors in the security configuration still reject the whole file:
 a damaged `subagents.json`, unknown fields, an unsupported `policy`,
 `approval`, `auth.source` or `auth.method`, `bounded-write` for Pi, and
-`writable_roots` or `auth.path` that are not absolute, clean paths. These
-checks also apply to grants that currently have no effect (their agent is
-inferred from `auth.source`). Then MCP offers no presets, `ExternalSubagent` and
+`writable_roots` or `auth.path` that are not absolute, clean paths. Every grant
+is checked against the agent its `auth.source` implies (so `auth.method` must
+fit that source, and `bounded-write` with `pi-agent-dir` is rejected), including
+grants that currently have no effect. Then MCP offers no presets, `ExternalSubagent` and
 `enable` fail with the reason, and `ax` shows it after every preset change;
 `disable` still works.
 
