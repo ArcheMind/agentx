@@ -21,7 +21,7 @@ func TestSubagentLaunchDryRun(t *testing.T) {
 	app.Hooks.Project = t.TempDir()
 	t.Setenv("AX_SUBAGENT_HOME", "")
 	t.Setenv("CLAUDE_CONFIG_DIR", "")
-	if err := app.Run(context.Background(), []string{"--json", "claude", "--cwd", app.Hooks.Project, "--subagents", "--dry-run"}); err == nil || !strings.Contains(err.Error(), "enable with ax sub-agent-management enable") {
+	if err := app.Run(context.Background(), []string{"--json", "claude", "--cwd", app.Hooks.Project, "--subagents", "--dry-run"}); err == nil || !strings.Contains(err.Error(), "claude mcp add --scope user agentx -- ") {
 		t.Fatal("unregistered AgentX treated as enabled", err)
 	}
 	registerAgentx(t, app.Hooks.Home)
@@ -41,26 +41,29 @@ func TestSubagentLaunchDryRun(t *testing.T) {
 	}
 }
 
+// registerAgentx writes the entry exactly as claude mcp add --scope user agentx -- <ax> sub-agent-management serve does.
 func registerAgentx(t *testing.T, home string) {
 	t.Helper()
-	entry, err := agentxEntry()
+	executable, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)
 	}
-	data, _ := json.Marshal(map[string]any{"mcpServers": map[string]json.RawMessage{"agentx": entry}})
+	data, _ := json.Marshal(map[string]any{"mcpServers": map[string]any{"agentx": map[string]any{"type": "stdio", "command": executable, "args": []string{"sub-agent-management", "serve"}, "env": map[string]string{}}}})
 	if err := os.WriteFile(filepath.Join(home, ".claude.json"), data, 0o600); err != nil {
 		t.Fatal(err)
 	}
 }
 
-func TestSubagentStatusEnabledIsMCPRegistrationAndHasNoConfigFile(t *testing.T) {
+func TestSubagentStatusReportsMCPRegistrationAndCallablePresetsOnly(t *testing.T) {
 	var output bytes.Buffer
 	app := New(false, strings.NewReader(""), &output, &bytes.Buffer{})
 	app.Hooks.Home = t.TempDir()
 	t.Setenv("AX_SUBAGENT_HOME", "")
 	t.Setenv("CLAUDE_CONFIG_DIR", "")
-	if err := presets.Create(app.Hooks.Home, presets.Preset{Name: "review", Agent: "codex", Model: "m", Description: "d"}); err != nil {
-		t.Fatal(err)
+	for _, p := range []presets.Preset{{Name: "review", Agent: "codex", Model: "m", Description: "d"}, {Name: "daily", Agent: "claude", Model: "opus", Description: "d"}} {
+		if err := presets.Create(app.Hooks.Home, p); err != nil {
+			t.Fatal(err)
+		}
 	}
 	legacy := filepath.Join(app.Hooks.Home, ".config", "agentx", "subagents.json")
 	os.MkdirAll(filepath.Dir(legacy), 0o700)
@@ -77,14 +80,25 @@ func TestSubagentStatusEnabledIsMCPRegistrationAndHasNoConfigFile(t *testing.T) 
 		return value
 	}
 	before := status()
-	if before["enabled"] != false || before["grant_problems"] != nil || before["configuration"] != nil {
+	if before["mcp_registered"] != false || before["enabled"] != nil || before["grant_problems"] != nil || before["configuration"] != nil {
 		t.Fatalf("status still reads a separate switch or grants: %v", before)
 	}
 	registerAgentx(t, app.Hooks.Home)
 	after := status()
-	preset := after["presets"].([]any)[0].(map[string]any)
-	if after["enabled"] != true || preset["execution"] != nil || preset["auth"] != nil || !strings.Contains(after["write_behavior"].(string), "read-only unless it sets write") {
+	listed := after["presets"].([]any)
+	preset := listed[0].(map[string]any)
+	if after["mcp_registered"] != true || after["mcp_registration_problem"] != "" || len(listed) != 1 || preset["name"] != "review" || preset["execution"] != nil || preset["auth"] != nil || !strings.Contains(after["write_behavior"].(string), "read-only unless it sets write") {
 		t.Fatalf("status = %v", after)
+	}
+	os.WriteFile(filepath.Join(app.Hooks.Home, ".claude.json"), []byte(`{"mcpServers":{"agentx":{"type":"stdio","command":"other","args":[]}}}`), 0o600)
+	conflict := status()
+	if conflict["mcp_registered"] != false || !strings.Contains(conflict["mcp_registration_problem"].(string), "does not run") {
+		t.Fatalf("conflicting agentx entry not reported: %v", conflict)
+	}
+	for _, removed := range []string{"enable", "disable"} {
+		if err := app.Run(context.Background(), []string{"sub-agent-management", removed}); err == nil {
+			t.Fatalf("%s still exists", removed)
+		}
 	}
 }
 

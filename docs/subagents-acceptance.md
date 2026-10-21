@@ -116,6 +116,17 @@ any unknown value, and the tool schema and initialization data no longer
 mention it. The A07 row and the remote statements below record the earlier
 "rejected for an external reason" behavior.
 
+Note (2026-10-21, same day): the user aligned the remaining gaps with Claude
+Code's native subagent behavior. G08 (A09–A11, cross-connection recovery) is
+closed as unsupported: ExternalSubagents are session-scoped, a reconnect starts
+a new connection, and an old reference fails explicitly; that is the intended
+final behavior, not a pending gap. G07 is closed: in headless Claude a task is
+a foreground call (`run_in_background:false`), the same semantics as a native
+headless subagent; the A08 rows for interactive background delivery remain the
+historical record of what was delivered. The `enable`/`disable` subcommands
+were removed; registration is Claude's own `claude mcp add`/`remove`, and the
+MCP catalog lists only MCP-callable presets.
+
 ## Roles and effort (backlog 004 G04, G09)
 
 IDs in this section are backlog 004 acceptance IDs (A05, A12, A13), not the

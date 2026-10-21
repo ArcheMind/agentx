@@ -66,7 +66,7 @@ func CatalogIndex(home string) string {
 	if err != nil {
 		fmt.Fprintf(&text, "Preset collection error: %q\n", err.Error())
 	}
-	for _, p := range list {
+	for _, p := range callableAgents(list) {
 		callable := "callable"
 		if err := Ready(p); err != nil {
 			callable = "not callable: " + err.Error()

@@ -876,7 +876,7 @@ Usage:
   ax [--json|--yaml] session <list|show|resume> [args...]
   ax [--json|--yaml] skill <list|show|install> [args...]
   ax [--json|--yaml] hook list
-  ax sub-agent-management <enable|disable|status>
+  ax sub-agent-management <status|serve>   (register: claude mcp add --scope user agentx -- <ax> sub-agent-management serve)
   ax claude [-- <native args...>]
   ax agent exec <codex|pi|gemini> [--model <model>] [--resume <session-id>] [--cwd <path>] [--dry-run] < prompt.txt
 

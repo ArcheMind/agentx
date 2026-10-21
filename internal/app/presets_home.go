@@ -730,7 +730,7 @@ func (a App) presetChangeNote(home string) {
 	case count > 0:
 		note = fmt.Sprintf("MCP: %d running AgentX MCP connection(s) still show the preset list from when they connected. New ExternalSubagent calls already use the saved presets; reconnect AgentX in Claude (/mcp) or restart Claude to refresh the list.", count)
 	case !registered:
-		note = "MCP: AgentX is not registered with Claude (ax sub-agent-management enable); nothing to refresh."
+		note = "MCP: AgentX is not registered with Claude (claude mcp add --scope user agentx -- <absolute path of ax> sub-agent-management serve); nothing to refresh."
 	default:
 		note = "MCP: no running AgentX MCP connection; Claude sees this change when it next connects."
 	}

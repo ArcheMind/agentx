@@ -67,6 +67,18 @@ func describeEffort(effort string) string {
 	return effort
 }
 
+// callableAgents keeps presets whose agent has an ExternalSubagent adapter; interactive-launch-only
+// presets stay in the shared collection for ax but are not MCP catalog entries.
+func callableAgents(list []presets.Preset) []presets.Preset {
+	kept := []presets.Preset{}
+	for _, p := range list {
+		if presets.Agents[p.Agent].Subagent {
+			kept = append(kept, p)
+		}
+	}
+	return kept
+}
+
 // PresetCatalog renders the shared collection for MCP; models lists names callable now.
 func PresetCatalog(home string) (string, []string) {
 	models := []string{}
@@ -79,8 +91,10 @@ func PresetCatalog(home string) (string, []string) {
 	text.WriteString("Selection: model must name one preset; it fixes agent, model and effort (no per-call effort override). No default preset.\n")
 	text.WriteString("Writes: every call is read-only unless it sets write; write scope is chosen per call (isolation worktree, or writable_roots) and fixed for that ExternalSubagent. Pi never writes.\n")
 	text.WriteString("Availability: static checks only; login and model access are verified per execution.\n")
+	list = callableAgents(list)
+	text.WriteString("Only presets whose agent AgentX can run as an ExternalSubagent (codex, pi) are listed; interactive-launch-only presets are not.\n")
 	if len(list) == 0 && len(problems) == 0 {
-		text.WriteString("No presets. The user creates presets interactively by running ax and choosing + Create preset; none are generated automatically.\n")
+		text.WriteString("No MCP-callable presets. The user creates presets interactively by running ax and choosing + Create preset; none are generated automatically.\n")
 	}
 	for _, option := range list {
 		readiness := "requirements satisfied"

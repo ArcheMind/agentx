@@ -34,8 +34,9 @@ Read-only research and code review. Not for large refactors.
 ```
 
 - `agent`: `claude`, `codex`, `gemini`, `opencode` or `pi`. Only `codex` and
-  `pi` can run as MCP `ExternalSubagent`; other presets are listed as
-  interactive launch only and are never offered as callable.
+  `pi` can run as MCP `ExternalSubagent`. Other presets appear in `ax` only;
+  the MCP catalog, tool index and `status` leave them out, and a call naming
+  one is rejected as `interactive launch only`.
 - `model`: the exact native model ID, passed unchanged to `--model`. Pi needs
   `provider/model`. No fallback model is ever used.
 - `effort` (optional): omitted means the agent's native default and is shown as
@@ -137,36 +138,36 @@ If a native agent is missing at start, AgentX shows the reason and offers to edi
 the preset or go back; it never substitutes another agent, model or effort.
 Native rejection of a model or effort is the native agent's error.
 
-### Enable MCP
-
-```sh
-ax sub-agent-management enable
-ax sub-agent-management status
-ax claude
-ax sub-agent-management disable
-```
+### Register with Claude
 
 The presets collection (`~/.agentx/presets/`) and the roles collection
-(`~/.agentx/roles/`) are the whole configuration. There is no separate AgentX
-switch or permission file; whether AgentX is enabled is whether Claude's user
-configuration (`~/.claude.json`, or `$CLAUDE_CONFIG_DIR/.claude.json`) has the
-`agentx` MCP entry for this `ax` executable.
+(`~/.agentx/roles/`) are the whole configuration. There is no AgentX switch or
+permission file. Registering the MCP server belongs to Claude, through its own
+commands (use the absolute path of `ax`; Claude starts it as given):
 
-- `enable` registers that entry with `claude mcp add-json --scope user`. Other
-  entries are preserved, an identical entry is reused, and a different `agentx`
-  entry is rejected without changes.
-- `disable` removes it with `claude mcp remove --scope user agentx` (a
-  different `agentx` entry is again rejected). New Claude sessions then do not
-  start the AgentX server. Connections already established keep running until
-  their Claude session ends: their ExternalSubagents can finish and report, and
-  `StopExternalSubagent` stays available there. Disabling never cancels work
-  and does not affect Claude native subagents.
-- `status` reports `enabled` (the registration), the collection with static
-  readiness and limits, invalid entries, the declared roles (`roles`,
-  `invalid_roles`, `roles_directory`), `write_behavior` and live MCP
-  connections. Static checks do not verify login or model access; those are
-  established per execution. No native-default model or automatic fallback is
-  used.
+```sh
+claude mcp add --scope user agentx -- "$(command -v ax)" sub-agent-management serve
+claude mcp remove --scope user agentx
+ax sub-agent-management status
+```
+
+- Removing the entry means new Claude sessions do not start the AgentX server.
+  Connections already established keep running until their Claude session ends:
+  their ExternalSubagents can finish and report, and `StopExternalSubagent`
+  stays available there. Removing never cancels work and does not affect
+  Claude native subagents.
+- `ax claude` reads that registration. When Claude's user configuration
+  (`~/.claude.json`, or `$CLAUDE_CONFIG_DIR/.claude.json`) has an `agentx` entry
+  running this `ax` executable with `sub-agent-management serve`, `ax claude`
+  adds the MCP connection and the named channel opt-in (below);
+  `ax claude --subagents` requires it. An `agentx` entry running something else
+  is reported as a conflict and never replaced.
+- `status` reports `mcp_registered` (with `mcp_registration_problem` for a
+  conflicting entry), the MCP-callable presets with static readiness and
+  limits, invalid entries, the declared roles (`roles`, `invalid_roles`,
+  `roles_directory`), `write_behavior` and live MCP connections. Static checks
+  do not verify login or model access; those are established per execution. No
+  native-default model or automatic fallback is used.
 
 New work reads the current collections. Existing ExternalSubagents retain their
 original combination: an edited, renamed or deleted preset or role rejects
@@ -191,8 +192,9 @@ migrate:
   rm ~/.config/agentx/subagents.json
   ```
 
-- A former `enabled: true` becomes `ax sub-agent-management enable` (a no-op if
-  the entry is already registered).
+- A former `enabled: true` becomes the `claude mcp add` registration above (if
+  it is not registered already); the earlier `enable`/`disable` subcommands no
+  longer exist.
 - A former grant's `bounded-write` with `writable_roots` becomes a per-call
   request (`write: true` with `writable_roots`, or `write: true` with
   `isolation: "worktree"`); see [Write scope and isolation](#write-scope-and-isolation).
@@ -294,8 +296,7 @@ registered with Claude. New calls always use the saved preset; a call
 result notes when the collection changed since the connection initialized. A
 fresh `tools/list` reads the current collection.
 
-`enable` installs an `agentx` stdio MCP entry pointing to this `ax` executable.
-Restart or reconnect the host for tool discovery. `ax claude` automatically adds
+After registering, restart or reconnect the host for tool discovery. `ax claude` automatically adds
 the MCP connection and opts in to **only** `server:agentx` using Claude's
 `--dangerously-load-development-channels` flag. Claude asks for acknowledgement
 of its local-development channel warning. Direct Claude invocation needs:
@@ -308,17 +309,19 @@ The channel path requires interactive Claude Code, first-party provider access,
 host feature approval, and organization approval where applicable. AgentX
 negotiates MCP `2024-11-05` (legacy); modern protocol revisions do not support
 this unsolicited path in Claude Code 2.1.296. Tool discovery alone does not prove
-channel delivery. `status` distinguishes persistent enablement, live MCP server
+channel delivery. `status` distinguishes the MCP registration, live MCP server
 connections, static native prerequisites, and unverified host channel delivery.
 Each tool response and background report includes a connection ID. Match it to
 `status.connections` to identify the current host, its client name/version and
 whether it sent `notifications/initialized`. A running server without that
 handshake is not reported as an initialized host.
 Claude's debug log should show `Channel notifications registered`; an actual
-completion report confirms delivery. Headless/print Claude does not register
-this interactive channel handler: use `run_in_background:false` there. Other MCP
-clients may consume the named notification themselves; background push in other
-hosts is not claimed.
+completion report confirms delivery. Headless (print) Claude has no channel
+handler, so there a task is a foreground call: `run_in_background:false` waits
+for the terminal result and returns it, the same semantics as a native
+subagent in headless Claude. Background delivery is an interactive-session
+feature, not a pending headless gap. Other MCP clients may consume the named
+notification themselves; background push in other hosts is not claimed.
 
 ## Tool contract
 
@@ -365,10 +368,13 @@ and distinguishes already-finished and unknown targets. Failed/cancelled agents
 cannot resume an uncertain context; the error is explicit and no replacement
 session or repeat task is created.
 
-Objects and listExternalSubagentSessions are scoped to the current MCP connection. Reconnecting
-loses actionable objects; native transcript files may remain, but AgentX does
-not claim cross-connection recovery. This scope also applies when the parent
-Claude session resumes. Session loss or identity mismatch is failure, not retry.
+ExternalSubagents are session-scoped, like Claude Code's native subagents: they
+belong to the MCP connection that created them, and listExternalSubagentSessions
+shows only those. A reconnect, or a resumed parent Claude session, starts a new
+connection with no ExternalSubagents; an old name or ID then fails explicitly
+as unknown. Native transcript files may remain on disk, but AgentX does not
+restore objects across connections, by design. Session loss or identity
+mismatch is failure, not retry.
 
 ## Isolation
 

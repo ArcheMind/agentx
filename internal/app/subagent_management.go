@@ -17,7 +17,7 @@ import (
 
 func (a App) subagentManagement(ctx context.Context, args []string) error {
 	if len(args) != 1 {
-		return fmt.Errorf("usage: ax sub-agent-management <enable|disable|status|serve> (presets are managed from bare ax)")
+		return fmt.Errorf("usage: ax sub-agent-management <status|serve> (presets are managed from bare ax; register with Claude using claude mcp add --scope user agentx -- <absolute path of ax> sub-agent-management serve)")
 	}
 	home := a.presetHome()
 	if args[0] == "serve" {
@@ -28,49 +28,11 @@ func (a App) subagentManagement(ctx context.Context, args []string) error {
 		return (&subagents.Server{Home: home, Cwd: cwd, Runner: a.Runner}).Serve(ctx, a.Stdin, a.Stdout)
 	}
 	switch args[0] {
-	case "enable":
-		entry, err := agentxEntry()
-		if err != nil {
-			return err
-		}
-		registered, err := mcpRegistration(home)
-		if err != nil {
-			return err
-		}
-		if !registered {
-			plan := runtime.CommandPlan{Executable: "claude", Args: []string{"mcp", "add-json", "--scope", "user", "agentx", string(entry)}}
-			result, err := a.Runner.Execute(ctx, plan, runtime.ExecuteOptions{})
-			if err != nil {
-				return fmt.Errorf("register Claude MCP entry: %w; %s", err, result.Stderr)
-			}
-		}
-		list, problems, err := presets.Load(home)
-		if err != nil {
-			return err
-		}
-		if len(list)+len(problems) == 0 {
-			fmt.Fprintf(a.Stdout, "No presets in %s yet; run ax and choose + Create preset. ExternalSubagent rejects work until a callable preset exists.\n", presets.Dir(home))
-		}
-		fmt.Fprintln(a.Stdout, "AgentX enabled: Claude user MCP entry agentx registered. Restart/reconnect Claude for discovery. Start via ax claude for named AgentX channel opt-in, or use claude --dangerously-load-development-channels server:agentx. Existing Claude sessions are not automatically changed. Channels require first-party Claude access and host feature/org approval.")
-		return nil
-	case "disable":
-		registered, err := mcpRegistration(home)
-		if err != nil {
-			return err
-		}
-		if registered {
-			plan := runtime.CommandPlan{Executable: "claude", Args: []string{"mcp", "remove", "--scope", "user", "agentx"}}
-			result, err := a.Runner.Execute(ctx, plan, runtime.ExecuteOptions{})
-			if err != nil {
-				return fmt.Errorf("remove Claude MCP entry: %w; %s", err, result.Stderr)
-			}
-		}
-		fmt.Fprintln(a.Stdout, "AgentX disabled: Claude user MCP entry agentx removed, so new Claude sessions no longer start the AgentX server. Connections already established keep running until their Claude session ends; their ExternalSubagents can finish and report, and StopExternalSubagent remains available there. Claude native subagents are unaffected.")
-		return nil
 	case "status":
-		registered, err := mcpRegistration(home)
-		if err != nil {
-			return err
+		registered, registrationErr := mcpRegistration(home)
+		problem := ""
+		if registrationErr != nil {
+			problem = registrationErr.Error()
 		}
 		list, problems, err := presets.Load(home)
 		if err != nil {
@@ -78,7 +40,10 @@ func (a App) subagentManagement(ctx context.Context, args []string) error {
 		}
 		options := []map[string]any{}
 		for _, o := range list {
-			reason := "static requirements satisfied; login and remote request verified per execution"
+			if !presets.Agents[o.Agent].Subagent {
+				continue
+			}
+			reason := "static requirements satisfied; login and model access verified per execution"
 			if err := subagents.Ready(o); err != nil {
 				reason = err.Error()
 			}
@@ -93,16 +58,16 @@ func (a App) subagentManagement(ctx context.Context, args []string) error {
 			declared = append(declared, map[string]any{"name": role.Name, "description": role.Description, "path": roles.Path(home, role.Name)})
 		}
 		return writeStructured(a.Stdout, map[string]any{
-			"enabled": registered, "mcp_entry": claudeConfigPath(home), "presets_directory": presets.Dir(home), "presets": options, "invalid_presets": append([]presets.Problem{}, problems...),
+			"mcp_registered": registered, "mcp_registration_problem": problem, "mcp_entry": claudeConfigPath(home), "mcp_register_command": "claude mcp add --scope user agentx -- <absolute path of ax> sub-agent-management serve", "presets_directory": presets.Dir(home), "presets": options, "invalid_presets": append([]presets.Problem{}, problems...),
 			"roles_directory": roles.Dir(home), "roles": declared, "invalid_roles": append([]presets.Problem{}, roleProblems...),
-			"role_behavior":    "subagent_type selects a role; its instructions are task framing only and never change agent, model, effort, write scope or permissions. Codex receives them as developer_instructions (checked in the rollout); Pi receives them via --append-system-prompt (checked in every provider request). A role change rejects continuation of existing ExternalSubagents.",
-			"write_behavior":   "every ExternalSubagent call is read-only unless it sets write; write scope (isolation worktree, or writable_roots) is chosen per call and fixed for that ExternalSubagent; Pi never writes",
-			"connections":      subagents.Connections(home),
-			"host_effective":   "enabled means the Claude user MCP entry agentx is registered. connections lists live AgentX MCP processes and whether each host completed initialization. Empty means no active server observed. Channel delivery requires interactive Claude with named opt-in and feature/org approval; initialization alone cannot verify that host-controlled gate. Confirm channel registration in Claude debug log and an actual completion report. Restart/reconnect after enable or preset changes to refresh the initialization preset list; ax claude supplies --dangerously-load-development-channels server:agentx; direct claude needs that flag.",
-			"disable_behavior": "removes the Claude user MCP entry: new Claude sessions do not start AgentX; established connections run until their session ends and their work can finish; StopExternalSubagent remains available there", "session_scope": "current MCP connection only; reconnect loses actionable ExternalSubagent objects; no automatic replay",
+			"role_behavior":       "subagent_type selects a role; its instructions are task framing only and never change agent, model, effort, write scope or permissions. Codex receives them as developer_instructions (checked in the rollout); Pi receives them via --append-system-prompt (checked in every provider request). A role change rejects continuation of existing ExternalSubagents.",
+			"write_behavior":      "every ExternalSubagent call is read-only unless it sets write; write scope (isolation worktree, or writable_roots) is chosen per call and fixed for that ExternalSubagent; Pi never writes",
+			"connections":         subagents.Connections(home),
+			"host_effective":      "mcp_registered means Claude's user MCP entry agentx runs this ax with sub-agent-management serve. connections lists live AgentX MCP processes and whether each host completed initialization. Empty means no active server observed. Channel delivery requires interactive Claude with named opt-in and feature/org approval; initialization alone cannot verify that host-controlled gate. Confirm channel registration in Claude debug log and an actual completion report. Restart/reconnect after registering or after preset changes to refresh the initialization preset list; ax claude supplies --dangerously-load-development-channels server:agentx; direct claude needs that flag.",
+			"unregister_behavior": "claude mcp remove --scope user agentx: new Claude sessions do not start AgentX; established connections run until their session ends and their work can finish; StopExternalSubagent remains available there", "session_scope": "session-scoped like native subagents: ExternalSubagents belong to the MCP connection that created them; a reconnect starts with none and old references fail explicitly",
 		}, a.structuredDefault())
 	default:
-		return fmt.Errorf("unknown sub-agent-management action %q", args[0])
+		return fmt.Errorf("unknown sub-agent-management action %q; actions: status, serve. Claude owns the MCP registration: claude mcp add --scope user agentx -- %s sub-agent-management serve (remove with claude mcp remove --scope user agentx)", args[0], executableOrAx())
 	}
 }
 
@@ -113,18 +78,11 @@ func claudeConfigPath(home string) string {
 	return filepath.Join(home, ".claude.json")
 }
 
-func agentxEntry() (json.RawMessage, error) {
-	executable, err := os.Executable()
-	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(map[string]any{"type": "stdio", "command": executable, "args": []string{"sub-agent-management", "serve"}})
-}
-
-// mcpRegistration reports whether Claude's user configuration registers this executable as agentx;
-// that registration is the only enabled state. A different agentx entry is an error, never replaced.
+// mcpRegistration reports whether Claude's user configuration has an agentx entry that runs this
+// executable as the AgentX server (claude mcp add also writes an empty env); any other agentx entry
+// is a conflict and is never replaced.
 func mcpRegistration(home string) (bool, error) {
-	entry, err := agentxEntry()
+	executable, err := os.Executable()
 	if err != nil {
 		return false, err
 	}
@@ -145,13 +103,14 @@ func mcpRegistration(home string) (bool, error) {
 	if !ok {
 		return false, nil
 	}
-	var actual, want any
-	if err := json.Unmarshal(existing, &actual); err != nil {
-		return false, err
+	var entry struct {
+		Type    string            `json:"type"`
+		Command string            `json:"command"`
+		Args    []string          `json:"args"`
+		Env     map[string]string `json:"env"`
 	}
-	json.Unmarshal(entry, &want)
-	if !reflect.DeepEqual(actual, want) {
-		return false, fmt.Errorf("Claude user MCP entry agentx in %s has a different configuration; nothing changed. Resolve the conflict explicitly", claudeConfigPath(home))
+	if err := json.Unmarshal(existing, &entry); err != nil || (entry.Type != "" && entry.Type != "stdio") || entry.Command != executable || !reflect.DeepEqual(entry.Args, []string{"sub-agent-management", "serve"}) || len(entry.Env) != 0 {
+		return false, fmt.Errorf("Claude user MCP entry agentx in %s does not run %s sub-agent-management serve; AgentX does not use or change it. Resolve the conflict explicitly", claudeConfigPath(home), executable)
 	}
 	return true, nil
 }
@@ -170,7 +129,7 @@ func (a App) prepareMCPSubagents(request *runtime.RunRequest, explicit bool) err
 	}
 	if !registered {
 		if explicit {
-			return fmt.Errorf("ExternalSubagents disabled; enable with ax sub-agent-management enable")
+			return fmt.Errorf("AgentX is not registered with Claude; run: claude mcp add --scope user agentx -- %s sub-agent-management serve", executableOrAx())
 		}
 		return nil
 	}
@@ -186,4 +145,11 @@ func (a App) prepareMCPSubagents(request *runtime.RunRequest, explicit bool) err
 	}
 	request.PassthroughArgs = append([]string{"--mcp-config", string(entry), "--dangerously-load-development-channels", "server:agentx"}, request.PassthroughArgs...)
 	return nil
+}
+
+func executableOrAx() string {
+	if executable, err := os.Executable(); err == nil {
+		return executable
+	}
+	return "ax"
 }
