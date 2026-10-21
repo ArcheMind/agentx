@@ -72,7 +72,7 @@ func TestHomeListsPresetsBeforeHistoryWithCreateLast(t *testing.T) {
 		t.Fatal("cancel started work")
 	}
 	output := stdout.String()
-	order := []string{"New session · Presets", "daily", "Everyday development", "Claude · opus · native default effort", "deep-review", "Review complex changes", "Codex · gpt-5.6-luna · high", "+ Create preset…", "Recent sessions · Current workspace", "Fix login state", "Recent sessions · Global"}
+	order := []string{"New session · Presets", "› daily        Claude · opus · native default effort  Everyday development\r\n", "  deep-review  Codex · gpt-5.6-luna · high            Review complex changes and edge cases\r\n", "  + Create preset…", "Recent sessions · Current workspace", "Fix login state", "Recent sessions · Global"}
 	position := 0
 	for _, want := range order {
 		next := strings.Index(output[position:], want)
@@ -83,25 +83,29 @@ func TestHomeListsPresetsBeforeHistoryWithCreateLast(t *testing.T) {
 	}
 }
 
-func TestSelectedPresetExpandsLongDescription(t *testing.T) {
+func TestPresetRowsStayOneLineAndTruncateOnlyDescription(t *testing.T) {
 	long := strings.Repeat("word ", 30) + "END"
-	rows, _ := buildHomeRows([]presets.Preset{{Name: "long", Description: long, Agent: "codex", Model: "m"}}, nil, nil, nil, time.Now())
-	text := func(rows []contentRow) string {
-		var parts []string
-		for _, row := range rows {
-			parts = append(parts, row.text)
+	list := []presets.Preset{{Name: "long", Description: long, Agent: "codex", Model: "gpt-5.6-luna", Effort: "low"}, {Name: "multi", Description: "First line\nSecond line", Agent: "pi", Model: "openai-codex/gpt-5.6-luna"}}
+	rows, items := buildHomeRows(list, []presets.Problem{{Name: "broken", Err: "model is required"}}, nil, nil, time.Now())
+	perItem := map[int]int{}
+	for _, row := range rows {
+		if row.itemIndex >= 0 {
+			perItem[row.itemIndex]++
 		}
-		return strings.Join(parts, "\n")
 	}
-	collapsed := expandSelected(rows, 5)
-	expanded := expandSelected(rows, 0)
-	if len(expanded) <= len(collapsed) || strings.Contains(text(collapsed), "END") || !strings.Contains(text(expanded), "END") {
-		t.Fatalf("collapsed = %#v expanded = %#v", collapsed, expanded)
-	}
-	for _, row := range expanded {
-		if row.kind == contentRowPresetCombo && !strings.Contains(row.text, " · m · ") {
-			t.Fatal("combination truncated", row.text)
+	for index := range items {
+		if perItem[index] > 1 {
+			t.Fatalf("item %d spans %d rows", index, perItem[index])
 		}
+	}
+	for _, selected := range []bool{false, true} {
+		line := styledContentRow(rows[1], selected, false)
+		if !strings.HasPrefix(line, "long    Codex · gpt-5.6-luna · low ") || strings.Contains(line, "END") || !strings.HasSuffix(line, "…") || len([]rune(line))+2 > presetLineWidth {
+			t.Fatalf("selected=%t line = %q", selected, line)
+		}
+	}
+	if line := styledContentRow(rows[2], false, false); line != "multi   Pi · openai-codex/gpt-5.6-luna · native default effort  First line Second line" {
+		t.Fatalf("line = %q", line)
 	}
 }
 
@@ -168,7 +172,7 @@ func TestCreateWithManualModelSavesWithoutInference(t *testing.T) {
 		t.Fatalf("creation ran external commands: %#v", runner.plans)
 	}
 	output := stdout.String()
-	for _, want := range []string{"Claude Code has no reliable local model list", "Enter the exact model ID", "unverified for this model", "Error: Invalid name", "Your other entries are kept", "Review preset", "Effort       low (unverified for this model)", "Availability Execution not verified; Claude Code is not installed", "MCP          Interactive launch only", "Saving does not run inference.", "Save and start", "Saved ", "New sessions use the saved presets now.", "MCP: ExternalSubagents are disabled", "deep-review  Review complex changes"} {
+	for _, want := range []string{"Claude Code has no reliable local model list", "Enter the exact model ID", "unverified for this model", "Error: Invalid name", "Your other entries are kept", "Review preset", "Effort       low (unverified for this model)", "Availability Execution not verified; Claude Code is not installed", "MCP          Interactive launch only", "Saving does not run inference.", "Save and start", "Saved ", "New sessions use the saved presets now.", "MCP: ExternalSubagents are disabled", "› deep-review  Claude · opus-4 · low  Review complex changes\r\n"} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("missing %q in %q", want, output)
 		}

@@ -21,7 +21,8 @@ import (
 
 const (
 	presetAccent     = "\x1b[38;5;81m"
-	presetDescWidth  = 60
+	presetLineWidth  = 96
+	presetMinDesc    = 20
 	homeHelp         = "↑/↓ or j/k select · Enter open · m manage presets · q/Esc cancel"
 	emptyPresetsHint = "Save an agent, model and effort for reuse."
 )
@@ -59,14 +60,16 @@ func buildHomeRows(list []presets.Preset, problems []presets.Problem, loadErr er
 	} else if len(list)+len(problems) == 0 {
 		rows = append(rows, contentRow{text: emptyPresetsHint, itemIndex: -1, kind: contentRowEmpty})
 	}
+	comboWidth := 0
+	for _, p := range list {
+		comboWidth = max(comboWidth, len([]rune(presetCombo(p))))
+	}
+	descWidth := max(presetMinDesc, presetLineWidth-2-width-2-comboWidth-2)
 	for _, p := range list {
 		index := len(items)
 		items = append(items, homeItem{kind: homePreset, preset: p})
-		row := contentRow{title: padRight(p.Name, width), text: singleLine(p.Description, presetDescWidth), itemIndex: index, kind: contentRowPreset}
-		if lines := wrapText(p.Description, presetDescWidth); len(lines) > 1 || (len(lines) == 1 && lines[0] != row.text) {
-			row.expanded = lines
-		}
-		rows = append(rows, row, contentRow{text: " · " + p.Model + " · " + homeEffort(p.Effort), provider: p.Agent, itemIndex: index, kind: contentRowPresetCombo})
+		rest := strings.TrimPrefix(presetCombo(p), presets.AgentName(p.Agent))
+		rows = append(rows, contentRow{title: padRight(p.Name, width), provider: p.Agent, updated: padRight(rest, comboWidth-len([]rune(presets.AgentName(p.Agent)))), text: singleLine(p.Description, descWidth), itemIndex: index, kind: contentRowPreset})
 	}
 	for _, problem := range problems {
 		index := len(items)
@@ -91,6 +94,10 @@ func buildHomeRows(list []presets.Preset, problems []presets.Problem, loadErr er
 		}
 	}
 	return rows, items
+}
+
+func presetCombo(p presets.Preset) string {
+	return presets.AgentName(p.Agent) + " · " + p.Model + " · " + homeEffort(p.Effort)
 }
 
 func homeEffort(effort string) string {
@@ -878,27 +885,4 @@ func (a App) manageProblem(ctx context.Context, reader *bufio.Reader, home strin
 
 func padRight(value string, width int) string {
 	return value + strings.Repeat(" ", max(0, width-len([]rune(value))))
-}
-
-func wrapText(value string, width int) []string {
-	var lines []string
-	for _, paragraph := range strings.Split(strings.TrimSpace(value), "\n") {
-		words := strings.Fields(paragraph)
-		if len(words) == 0 {
-			continue
-		}
-		line := ""
-		for _, word := range words {
-			if line != "" && len([]rune(line))+1+len([]rune(word)) > width {
-				lines = append(lines, line)
-				line = ""
-			}
-			if line != "" {
-				line += " "
-			}
-			line += word
-		}
-		lines = append(lines, line)
-	}
-	return lines
 }
