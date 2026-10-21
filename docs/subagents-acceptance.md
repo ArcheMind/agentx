@@ -95,6 +95,69 @@ effect from integrate/wave-1 commit 0b7dbf3 ("Reject only the affected preset
 when grants and presets disagree"). The missing/orphan-grant rejection verified
 above reflects the earlier semantics.
 
+## Roles and effort (backlog 004 G04, G09)
+
+IDs in this section are backlog 004 acceptance IDs (A05, A12, A13), not the
+001 scenario IDs in the matrix below. Recorded 2026-10-21 with Codex CLI 0.163.0
+and Pi CLI 0.84.4 through the built AgentX stdio MCP server (not a Claude host),
+using the real `~/.codex` (chatgpt) and `~/.pi/agent` (oauth) logins. Command:
+`make smoke-mcp-roles-effort-live`. Evidence directory (with `evidence.json`
+and `server-debug.log`):
+`/private/var/folders/34/yf5zv4k133l7nrksmz2flmw00000gn/T/agentx-roles-effort-aYtKo9`.
+Rollout and Pi session paths for every run are listed in `evidence.json`.
+Agent reports alone are not evidence: each behavior check is paired with the
+native record that carried the role or effort.
+
+Investigation that set the design (direct CLI runs, same date and versions):
+- Codex `-c developer_instructions=...` under `--ignore-user-config` is written
+  to the rollout as a `developer` message and followed on the first turn and
+  after `exec resume`.
+- Codex rollout `turn_context.effort` echoes the configured value. With
+  `ultra` on gpt-5.6-luna, `RUST_LOG=trace` showed the request and the server's
+  `response.created` both carrying `"effort":"max"`. The trace-safe
+  `codex.sse_event response.completed` event reports `max` as well. `minimal`
+  fails with HTTP 400 listing `none, low, medium, high, xhigh, max`.
+- Pi `--thinking` records the post-clamp level as `thinking_level_change`.
+  The openai-codex provider then maps `minimal` to `low` and omits the effort
+  for `off`, with no session trace. Pi's `before_provider_request` extension
+  hook sees the final payload, and explicit `--extension` paths load despite
+  `--no-extensions`.
+
+| ID | Status | Observation |
+| --- | --- | --- |
+| A05 | Pass (Codex, Pi) | Roles `alpha` (security reviewer: start `SECURITY:`, end with a random `ALPHA-…` token) and `beta` (docs editor: `DOCS:`, `BETA-…`) on the same preset. `codex-role/alpha` replied `SECURITY: … / ALPHA-08d3e7a8`, `codex-role/beta` `DOCS: … / BETA-0f0061c9`, `general-purpose` with neither. Pi gave the same pattern. The tokens exist only in the role files. Each Codex rollout holds the role text as a `developer` message (none for `general-purpose`). Every Pi provider request was recorded with `role_included:true`. Fixed model, different role: native argv identical apart from `developer_instructions` (Codex) or `--extension`/`--append-system-prompt` (Pi), so agent, model, effort and grant did not change. Fixed role, different model: `alpha` produced its token on both Codex and Pi. A resumed Codex turn kept the role (`SECURITY: … ALPHA-08d3e7a8`). After `ROLE.md` was edited, `SendExternalSubagentMessage` was rejected (`original role alpha changed or was removed`). Unknown `gamma` was rejected before any work started. |
+| A12 | Pass for the combinations below; others rejected | Codex gpt-5.6-luna, one preset per level, executed level read from `response.completed` telemetry: `none`, `low`, `medium`, `high`, `xhigh` and `max` each ran as requested. `ultra` was run by Codex as `max` and the turn failed (`native effort mismatch: preset effort ultra, but … max executed`). `minimal` failed with the native 400, now returned as the reason. Pi `openai-codex/gpt-5.6-luna` `low`..`max`: each session's `thinking_level_change` and every observer-recorded provider request equal the level. Real clamp: Pi `deepseek/deepseek-flash` with `max` was clamped by Pi to `high` (session and request both `high`); the turn failed (`Pi session records thinking level "high" (Pi clamped it)`). Direct Pi runs with the observer: `minimal` is recorded as `minimal` but sent as `low`, and `off` sends no effort. These two stay rejected at preset validation. The check reads native session and request evidence, not CLI arguments or reply text. |
+| A13 | Pass | Initialization instructions and `ExternalSubagent` metadata carry a role DATA block, and the `subagent_type` enum is `general-purpose` plus valid declared roles (live: `["general-purpose","alpha","beta"]`). Each preset's access/limits describe role carriage, the effort check and Pi's observer extension. `status` lists `roles`, `invalid_roles` and `role_behavior`. Reports show `role=` and a `Native evidence:` line. The `ax` creation flow offers Pi `low`..`max`, labelled as checked at every ExternalSubagent turn. A role or preset change after initialization adds a stale-snapshot note to call results. A role change never rebinds an existing session (A05). |
+
+Regression on the same commit: `make smoke-mcp-live`
+(`…/agentx-mcp-live-I5qQcQ`) and `make smoke-mcp-policy-live`
+(`…/agentx-mcp-policy-VeMEcW`) passed with the telemetry-based effort check
+active. The debug log of the roles/effort run contains no `sk-` key values;
+`DEEPSEEK_API_KEY` appears only by name in `unset_env`.
+
+Deterministic coverage: `go test ./internal/roles ./internal/subagents
+./internal/presets ./internal/app` covers role parsing and rejection (execution
+keys, reserved name, case-variant name, size, missing parts), role locking,
+unchanged execution argv across roles, a missing developer message, Codex
+clamp and missing telemetry, Pi session clamp, provider remap, a missing effort
+field, a dropped role and an absent observer. `make smoke-presets` checks role
+metadata, role argv and unknown-role rejection against the built binary with a
+fake Codex.
+
+Still open or not claimed:
+- Effort for models other than those in the table is not claimed in advance;
+  it is checked at run time and fails on mismatch. A Pi model whose requests
+  carry no `reasoning.effort`/`reasoning_effort` field fails explicit effort.
+- Codex `none`, `minimal` and `ultra` remain valid preset values because the
+  Codex CLI accepts them (for example the sol models list `ultra`). The creation
+  flow offers only the levels Codex lists for the chosen model (gpt-5.6-luna:
+  `low`..`max`), and the run-time check catches the rest.
+- The Codex effort check depends on Codex 0.163's trace-safe telemetry line.
+  If a future Codex stops emitting it, explicit-effort turns fail as
+  unverified rather than pass.
+- Interactive `ax` launch passes the effort (`-c model_reasoning_effort`,
+  `--thinking`) but cannot verify it.
+
 ## Environment and retained observations
 
 ### Current preset DATA visibility
@@ -259,6 +322,10 @@ checks are not a sandbox penetration test.
 | A14 Usage/source | Live raw usage or unknown; labelled untrusted external reports; native plans call selected Codex/Pi, no Claude relay. |
 | A15 Documentation | Management, fields, native constraints, host gates, connection scope and test commands documented. Only listed models have actual native inference evidence. |
 
+Note (2026-10-21): rows A04 and A12 above record the earlier general-purpose-only
+role and Pi effort rejection. Declared roles and verified Pi effort now exist;
+see [Roles and effort](#roles-and-effort-backlog-004-g04-g09).
+
 ## Requirement mapping
 
 | Requirements | Implementation / checks |
@@ -285,9 +352,11 @@ checks are not a sandbox penetration test.
 - MCP has no channel presentation acknowledgement. Status identifies live
   initialized connections, but cannot certify their host UI gate. Actual
   completion evidence independently establishes that path.
-- General-purpose, local readonly native execution and configured Codex effort
-  are supported. Pi explicit effort, worktree/remote isolation, other MCP engine
-  adapters and cross-connection recovery are unsupported and rejected/reported.
+- General-purpose and declared roles (Codex and Pi), local native execution,
+  and explicit effort verified per turn (Codex levels; Pi `low`..`max`) are
+  supported. Pi `off`/`minimal`, any effort that native evidence shows was not
+  run as requested, worktree/remote isolation, other MCP engine adapters and
+  cross-connection recovery are rejected or reported.
 - Pi's allowlist is not an OS sandbox. Pi `bounded-write` is rejected; a real
   Pi write boundary (004 G02 for Pi) remains open. Approve and deny approval
   scenarios (004 A03) remain pending: only `approval:"never"` exists, and host
