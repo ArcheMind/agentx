@@ -110,7 +110,6 @@ func TestSessionIDMustBeUnambiguous(t *testing.T) {
 	}
 }
 
-
 func TestCodexSummarySkipsInjectedContextAndPreservesUTF8(t *testing.T) {
 	home := t.TempDir()
 	workspace := t.TempDir()
@@ -349,7 +348,6 @@ func TestStructuredContentPreservesToolCalls(t *testing.T) {
 		}
 	})
 }
-
 
 func writeFixture(t *testing.T, path, content string) {
 	t.Helper()

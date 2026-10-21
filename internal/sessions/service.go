@@ -17,7 +17,6 @@ import (
 	"github.com/ArcheMind/agentx-protocol/transcript"
 )
 
-
 type Provider struct {
 	ID        string `json:"id" yaml:"id"`
 	Name      string `json:"name" yaml:"name"`
@@ -188,7 +187,6 @@ func (s Service) Info(id, source string) (Detail, error) {
 	}
 	return matches[0], nil
 }
-
 
 func (s Service) lookPath(binary string) (string, error) {
 	if s.LookPath == nil {
