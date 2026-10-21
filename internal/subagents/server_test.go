@@ -60,7 +60,10 @@ func (r *testRunner) Execute(ctx context.Context, p runtime.CommandPlan, o runti
 	if result, ok := authCheck(p); ok {
 		return result, nil
 	}
-	data, _ := io.ReadAll(o.Stdin)
+	var data []byte
+	if o.Stdin != nil {
+		data, _ = io.ReadAll(o.Stdin)
+	}
 	r.mu.Lock()
 	n := len(r.plans)
 	r.plans = append(r.plans, p)
@@ -587,7 +590,7 @@ func TestPresetCatalogSharedDataAndRefresh(t *testing.T) {
 		t.Fatal(err)
 	}
 	catalog, models := PresetCatalog(s.Home)
-	for _, want := range []string{presets.Dir(s.Home), "also used for interactive ax launch", "No default preset", "no per-call effort override", `execution agent="codex"`, `exact configured model ID (including provider prefix)="test-model"`, `effort="low"`, `user description="code review"`, `ExternalSubagent callable=yes`, `grant="policy=read-only; approval=never; auth=codex-home`, `Execution policy: read-only, enforced by Codex native OS sandbox`, `enforced only by Pi's tool allowlist`, `not an OS sandbox`, `Isolation: rejected (worktree and remote)`, `remote execution not verified`, `- interactive-only: execution agent="claude"`, `ExternalSubagent callable=no; static prerequisites="interactive launch only`, `grant="none required (interactive launch only)"`} {
+	for _, want := range []string{presets.Dir(s.Home), "also used for interactive ax launch", "No default preset", "no per-call effort override", `execution agent="codex"`, `exact configured model ID (including provider prefix)="test-model"`, `effort="low"`, `user description="code review"`, `ExternalSubagent callable=yes`, `grant="policy=read-only; approval=never; auth=codex-home`, `Execution policy: read-only, enforced by Codex native OS sandbox`, `enforced only by Pi's tool allowlist`, `not an OS sandbox`, `Isolation: worktree supported`, `Remote: rejected`, `remote execution not verified`, `- interactive-only: execution agent="claude"`, `ExternalSubagent callable=no; static prerequisites="interactive launch only`, `grant="none required (interactive launch only)"`} {
 		if !strings.Contains(catalog, want) {
 			t.Fatal("missing preset data", want, catalog)
 		}

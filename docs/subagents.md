@@ -313,9 +313,9 @@ listExternalSubagentSessions({})
 supports only `general-purpose`; it never selects the execution agent. `model`
 is required and names one callable preset; there is no default preset. The preset
 fixes agent, model and effort; there is no `effort` parameter and no per-call
-override. Reports name the preset, agent, actual model and effort. `isolation` accepts native spellings
-`worktree` and `remote` in the schema but both are explicitly rejected by current
-adapters, never substituted with local execution. Names start with an ASCII
+override. Reports name the preset, agent, actual model and effort. `isolation`
+accepts the native spellings `worktree` (supported, see below) and `remote`
+(rejected, see below); other values are rejected. Names start with an ASCII
 letter or digit and contain 1–64 ASCII letters, digits, `_`, or `-`.
 Deprecated `team_name` and native `mode` values (`acceptEdits`, `auto`,
 `bypassPermissions`, `default`, `dontAsk`, `plan`) are accepted and ignored;
@@ -341,6 +341,67 @@ Objects and listExternalSubagentSessions are scoped to the current MCP connectio
 loses actionable objects; native transcript files may remain, but AgentX does
 not claim cross-connection recovery. This scope also applies when the parent
 Claude session resumes. Session loss or identity mismatch is failure, not retry.
+
+## Isolation
+
+`isolation:"worktree"` runs the ExternalSubagent in a new git worktree:
+
+- **What is created.** The repository is the one containing the MCP server's
+  working directory, and the worktree starts at its `HEAD` commit. It lives at
+  `~/.local/state/agentx/worktrees/<id>` on branch `agentx/<id>`, where `<id>`
+  is the ExternalSubagent ID. The native agent's working directory is the
+  matching path inside the worktree.
+- **The original checkout.** It is never modified. Its uncommitted and
+  untracked changes are not copied into the worktree; only git's own worktree
+  metadata in `.git` changes.
+- **Rejections.** The call is rejected before any work starts in three cases:
+  the working directory is not inside a git work tree, there is no commit at
+  `HEAD`, or the working directory (or a rebased writable root) is untracked at
+  `HEAD` and therefore missing from the worktree. A rejected call leaves no
+  worktree or branch behind.
+- **Repository hooks.** `git worktree add` runs the repository's own
+  `post-checkout` hook, as git always does. That hook is the user's code: it
+  runs outside any agent sandbox, and no agent-supplied code runs at that point.
+- **Why the worktree is outside the repository.** A nested worktree would show
+  up as an untracked entry in the original checkout, and `git add -A` there
+  would record it as an embedded repository.
+- **Writable roots under `bounded-write`.** A root inside the repository moves
+  to the same path inside the worktree. A root containing the repository
+  shrinks to the worktree root. An unrelated root keeps its grant. Codex
+  therefore cannot write the original checkout: an absolute write there fails
+  with `operation not permitted`. Reads are not path-restricted, so the
+  original stays readable.
+- **No commits.** The repository's `.git` lies outside the roots, so the agent
+  cannot commit. Its work stays as uncommitted changes in the worktree.
+- **Read-only.** `read-only` stays read-only.
+- **Pi.** Pi is read-only only, so for Pi a worktree changes only the working
+  directory. No OS boundary is added.
+
+The worktree is fixed for the ExternalSubagent's lifetime. Continuation reuses
+it and cannot rebind it. If the worktree has been removed, continuation fails
+and never falls back to the original directory.
+
+Retention: AgentX never removes a worktree, whether the task completed, failed
+or was cancelled, and including after the MCP connection ends. Continuation
+needs the worktree, and any uncommitted work in it belongs to the user. Every
+report names the path, branch, base commit and effective writable roots. After
+each task, the report also records the state: whether `HEAD` moved, plus
+`git status --porcelain`. It ends with the cleanup command:
+`git -C <repo> worktree remove <path>` (which refuses while changes remain; add
+`--force` to discard them), then `git -C <repo> branch -D agentx/<id>`. To take
+the agent's changes, inspect or copy them from the worktree, or commit them
+there yourself.
+
+`isolation:"remote"` is rejected, and nothing runs locally instead. None of the
+installed runtimes offers a remote environment whose identity, result retrieval
+and cancellation AgentX can verify:
+- Codex 0.163 `codex cloud` can submit, poll, diff and apply tasks, but it has
+  no cancel command. Its tasks run in a Codex Cloud environment bound to a
+  pushed GitHub branch, not in this working directory.
+- `codex exec-server --remote` needs a remote host that the user provisions.
+- Pi has no remote execution.
+
+This gap (004 G06/A07) stays open.
 
 ## Native execution and permission limits
 
@@ -379,6 +440,7 @@ make smoke-mcp-live
 make smoke-mcp-channel
 make smoke-mcp-host-live
 make smoke-mcp-policy-live
+make smoke-mcp-isolation-live
 ```
 
 The live backend suite uses existing native logins, isolated AgentX configuration,
@@ -401,6 +463,14 @@ filesystem state. Override
 `AX_MCP_CODEX_HOME`, `AX_MCP_PI_AGENT_DIR`, `AX_MCP_CODEX_AUTH_METHOD` and
 `AX_MCP_PI_AUTH_METHOD` to select the auth sources the live smokes use (defaults:
 `~/.codex` chatgpt, `~/.pi/agent` oauth).
+
+`smoke-mcp-isolation-live` starts from a dirty original checkout and runs real
+Codex and Pi with `isolation:"worktree"`. It checks five Codex cases: a write
+inside the worktree, an absolute write to the original (OS-denied per rollout),
+read-only in a worktree, native failure, and cancellation after partial output.
+It also checks Pi's working directory and the rejection of `remote`. Finally it
+asserts that the original checkout's status and file contents are byte-identical
+and that every worktree is kept.
 
 See [acceptance evidence](subagents-acceptance.md) for scenarios and limitations.
 

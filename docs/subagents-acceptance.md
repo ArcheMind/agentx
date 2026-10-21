@@ -95,6 +95,50 @@ effect from integrate/wave-1 commit 0b7dbf3 ("Reject only the affected preset
 when grants and presets disagree"). The missing/orphan-grant rejection verified
 above reflects the earlier semantics.
 
+## Isolation (backlog 004 G05–G06)
+
+Recorded 2026-10-21 with Codex CLI 0.163.0 (`gpt-5.6-luna`, `low`), Pi CLI
+0.84.4 (`openai-codex/gpt-5.6-luna`) and git 2.39.5, through the built AgentX
+stdio MCP server (`make smoke-mcp-isolation-live`), not through a Claude host.
+The original checkout started dirty: a modified tracked file (`sub/tracked.txt`)
+and an untracked file (`draft.txt`). The smoke snapshots `git status
+--porcelain --untracked-files=all` plus every file's content outside `.git`
+before and after all runs. Codex sandbox evidence comes from rollouts, as in the
+G01–G03 section. Evidence directory (with `server-debug.log` and
+`smoke-output.json`):
+`/private/var/folders/34/yf5zv4k133l7nrksmz2flmw00000gn/T/agentx-mcp-isolation-sNefQJ`.
+
+| ID | Status | Observation |
+| --- | --- | --- |
+| A06 | Pass (Codex, Pi read-only) | Success: bounded-write grant with root = the repository. The native plan ran in `<worktree>/sub` with `writable_roots=["<worktree>"]` and without the repository path. Rollout `…/rollout-2026-10-21T05-10-57-01a15e5f-2a8d-7350-8b22-eda5b9b39f0b.jsonl` shows `printf isolated > agent.txt` with exit 0. The file exists only in the worktree, and the report names path, branch `agentx/<id>`, base commit and `?? sub/agent.txt`. Escape: an absolute write to the original `repo/sub/escape.txt` failed with `operation not permitted` (rollout `…-01a15e5f-2a8e-7902-a74b-7305306ed11a.jsonl`), and the file is absent. Read-only Codex in a worktree: `printf readonly > ro.txt` failed with `operation not permitted`. Failure: a nonexistent model failed natively; the report named the kept worktree. Cancellation: the agent wrote `partial.txt`, then `StopExternalSubagent` confirmed `cancelled`; the report listed `?? sub/partial.txt` and the file was still present. Pi read-only ran with its working directory inside the worktree. The original snapshot was identical afterwards (`M sub/tracked.txt`, `?? draft.txt`, edit intact). All six worktrees remained in `git worktree list` after the server exited. |
+| A07 | Open (external) | `isolation:"remote"` is rejected before any work with the external reason; no native process starts. Investigated 2026-10-21: `codex cloud` (exec/status/list/diff/apply) has no cancel command. It also runs in a Codex Cloud environment bound to a pushed GitHub branch, not this working directory; this account lists no tasks, and the CLI cannot list environments. `codex exec-server --remote` registers a WebSocket exec server that the user must provision on a remote host; none exists here, and starting one locally would only alias a local directory. Pi 0.84.4 has no remote execution. |
+| A13 (isolation) | Pass | The initialization catalog, each preset's limits (`Isolation: worktree supported …; Remote: rejected …`), the tool description and the `isolation` field description all state the same support. Reports carry the worktree path, branch, base, effective writable roots, retention and the state after the last task. Isolation is fixed per ExternalSubagent: continuation reuses the same worktree. A removed worktree fails explicitly, and the task never moves to the original directory. Unknown isolation values reject. |
+
+Enforcement under `isolation:"worktree"`:
+
+| Aspect | Codex | Pi |
+| --- | --- | --- |
+| Working directory | Worktree path of the original working directory | Same |
+| Writes | OS sandbox. Roots inside or containing the repository are rebased into the worktree; unrelated roots keep their grant | No write tools (read-only only) |
+| Reads | Not path-restricted: the original checkout stays readable | Not path-restricted |
+| Commits | The repository's `.git` is outside the roots, so the agent cannot commit; work stays uncommitted in the worktree | Not applicable |
+
+Deterministic coverage (`go test ./internal/subagents`, real git with a fake
+native runner) covers the following:
+- Root rebasing.
+- Dirty-original preservation and plan cwd/roots.
+- Report contents.
+- Same-worktree continuation, and explicit failure when the worktree is removed.
+- Retention on failure and cancellation.
+- Rejection outside a git work tree, or when the working directory is untracked at HEAD. A rejected call leaves no worktree or branch behind.
+- Remote and unknown values rejected without native execution.
+- Pi plan cwd.
+
+Note (2026-10-21): rows A04 and A12 of the scenario matrix below, and the
+retained preset-visibility observations, predate G05. Their statement that all
+isolation is rejected was true for that run. Worktree isolation is supported
+since branch `feat/isolation`; remote stays rejected.
+
 ## Environment and retained observations
 
 ### Current preset DATA visibility
@@ -285,9 +329,11 @@ checks are not a sandbox penetration test.
 - MCP has no channel presentation acknowledgement. Status identifies live
   initialized connections, but cannot certify their host UI gate. Actual
   completion evidence independently establishes that path.
-- General-purpose, local readonly native execution and configured Codex effort
-  are supported. Pi explicit effort, worktree/remote isolation, other MCP engine
-  adapters and cross-connection recovery are unsupported and rejected/reported.
+- General-purpose, local native execution under each grant, worktree isolation
+  and configured Codex effort are supported. Pi explicit effort, remote
+  isolation (004 A07, no verifiable remote environment with cancellation), other
+  MCP engine adapters and cross-connection recovery are unsupported and
+  rejected/reported.
 - Pi's allowlist is not an OS sandbox. Pi `bounded-write` is rejected; a real
   Pi write boundary (004 G02 for Pi) remains open. Approve and deny approval
   scenarios (004 A03) remain pending: only `approval:"never"` exists, and host
@@ -297,5 +343,5 @@ checks are not a sandbox penetration test.
 
 Reproduce deterministic/management checks with
 `make verify test-mcp-race smoke-mcp-management`. Paid native/host checks use
-`make smoke-mcp-live smoke-mcp-channel smoke-mcp-host-live smoke-mcp-policy-live`
+`make smoke-mcp-live smoke-mcp-channel smoke-mcp-host-live smoke-mcp-policy-live smoke-mcp-isolation-live`
 and the logins selected by each grant's auth source.

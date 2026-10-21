@@ -161,7 +161,8 @@ func Limits(o presets.Preset, g Grant) string {
 		fmt.Fprintf(&text, "Auth: CODEX_HOME=%q expecting %s login, verified by codex login status before each execution. ", g.Auth.Path, g.Auth.Method)
 	}
 	text.WriteString("Auth identity means the configured source directory plus login method; the account inside that source is not verified. Inherited credential-like environment variables are not passed; no fallback identity. ")
-	text.WriteString("Role: general-purpose only. Isolation: rejected (worktree and remote). ")
+	text.WriteString("Role: general-purpose only. ")
+	text.WriteString(IsolationLimits(o.Agent))
 	if o.Agent == "pi" {
 		text.WriteString("Effort: native default only (Pi may silently clamp thinking levels). Exact provider/model required. ")
 	} else {
