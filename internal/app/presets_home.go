@@ -546,6 +546,11 @@ func effortChoices(draft presetDraft) (string, []effortChoice) {
 		return note, choices
 	case draft.preset.Agent == "codex" && draft.listed != nil:
 		return "Explicit effort not applicable: Codex lists no reasoning levels for this model.", choices
+	case draft.preset.Agent == "pi":
+		for _, effort := range rule.Efforts {
+			choices = append(choices, effortChoice{value: effort, label: effort + " (checked at every ExternalSubagent turn; not checked in interactive launch)", status: "checked against Pi's provider request at every ExternalSubagent turn"})
+		}
+		return "Pi thinking levels: " + rule.EffortNote + ".", choices
 	case len(rule.Efforts) > 0:
 		source := draft.unlisted
 		if source == "" {

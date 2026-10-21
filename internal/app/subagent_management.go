@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/ArcheMind/agentx/internal/presets"
+	"github.com/ArcheMind/agentx/internal/roles"
 	"github.com/ArcheMind/agentx/internal/runtime"
 	"github.com/ArcheMind/agentx/internal/subagents"
 )
@@ -114,8 +115,18 @@ func (a App) subagentManagement(ctx context.Context, args []string) error {
 			options = append(options, entry)
 		}
 		invalid := append([]presets.Problem{}, problems...)
+		roleList, roleProblems, err := roles.Load(home)
+		if err != nil {
+			return err
+		}
+		declared := []map[string]any{{"name": roles.GeneralPurpose, "description": "implicit; no role instructions added"}}
+		for _, role := range roleList {
+			declared = append(declared, map[string]any{"name": role.Name, "description": role.Description, "path": roles.Path(home, role.Name)})
+		}
 		return writeStructured(a.Stdout, map[string]any{
 			"enabled": config.Enabled, "configuration": subagents.ConfigPath(home), "presets_directory": presets.Dir(home), "presets": options, "invalid_presets": invalid, "grant_problems": append([]presets.Problem{}, state.GrantProblems...),
+			"roles_directory": roles.Dir(home), "roles": declared, "invalid_roles": append([]presets.Problem{}, roleProblems...),
+			"role_behavior":    "subagent_type selects a role; its instructions are task framing only and never change agent, model, effort, grant or permissions. Codex receives them as developer_instructions (checked in the rollout); Pi receives them via --append-system-prompt (checked in every provider request). A role change rejects continuation of existing ExternalSubagents.",
 			"connections":      subagents.Connections(home),
 			"host_effective":   "connections lists live AgentX MCP processes and whether each host completed initialization. Empty means no active server observed. Channel delivery requires interactive Claude with named opt-in and feature/org approval; initialization alone cannot verify that host-controlled gate. Confirm channel registration in Claude debug log and an actual completion report. Restart/reconnect after enable or preset changes to refresh the initialization preset list; ax claude supplies --dangerously-load-development-channels server:agentx; direct claude needs that flag.",
 			"disable_behavior": "blocks new work, does not cancel accepted work; StopExternalSubagent remains available", "session_scope": "current MCP connection only; reconnect loses actionable ExternalSubagent objects; no automatic replay",

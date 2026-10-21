@@ -4,10 +4,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/ArcheMind/agentx/internal/presets"
+	"github.com/ArcheMind/agentx/internal/roles"
 	"github.com/ArcheMind/agentx/internal/runtime"
 	"github.com/ArcheMind/agentx/internal/subagents"
 )
@@ -80,5 +83,31 @@ func TestExecRejectsStructuredNativeOutputAndInvalidSession(t *testing.T) {
 		if err := app.Run(context.Background(), args); err == nil {
 			t.Fatalf("accepted %v", args)
 		}
+	}
+}
+
+func TestSubagentStatusListsRolesAndInvalidRoles(t *testing.T) {
+	var output bytes.Buffer
+	app := New(false, strings.NewReader(""), &output, &bytes.Buffer{})
+	app.Hooks.Home = t.TempDir()
+	t.Setenv("AX_SUBAGENT_HOME", "")
+	for name, content := range map[string]string{"security": "---\ndescription: Security review\n---\nCheck auth.\n", "broken": "---\ndescription: x\neffort: high\n---\nx\n"} {
+		dir := filepath.Join(roles.Dir(app.Hooks.Home), name)
+		os.MkdirAll(dir, 0o700)
+		os.WriteFile(filepath.Join(dir, roles.FileName), []byte(content), 0o600)
+	}
+	if err := app.Run(context.Background(), []string{"--json", "sub-agent-management", "status"}); err != nil {
+		t.Fatal(err)
+	}
+	var status struct {
+		Roles        []map[string]any  `json:"roles"`
+		InvalidRoles []presets.Problem `json:"invalid_roles"`
+		RoleBehavior string            `json:"role_behavior"`
+	}
+	if err := json.Unmarshal(output.Bytes(), &status); err != nil {
+		t.Fatal(err, output.String())
+	}
+	if len(status.Roles) != 2 || status.Roles[0]["name"] != "general-purpose" || status.Roles[1]["name"] != "security" || len(status.InvalidRoles) != 1 || !strings.Contains(status.InvalidRoles[0].Err, "unknown field") || !strings.Contains(status.RoleBehavior, "never change agent, model, effort, grant or permissions") {
+		t.Fatalf("%+v", status)
 	}
 }

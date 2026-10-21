@@ -196,10 +196,20 @@ func TestCreateOffersOnlyListedCodexEfforts(t *testing.T) {
 }
 
 func TestEffortNotApplicableOffersOnlyNativeDefault(t *testing.T) {
-	_, choices := effortChoices(presetDraft{preset: presets.Preset{Agent: "gemini", Model: "m"}})
-	note, piChoices := effortChoices(presetDraft{preset: presets.Preset{Agent: "pi", Model: "p/m"}})
-	if len(choices) != 1 || len(piChoices) != 1 || choices[0].value != "" || !strings.Contains(note, "not applicable") {
-		t.Fatal(choices, piChoices, note)
+	note, choices := effortChoices(presetDraft{preset: presets.Preset{Agent: "gemini", Model: "m"}})
+	if len(choices) != 1 || choices[0].value != "" || !strings.Contains(note, "not applicable") {
+		t.Fatal(choices, note)
+	}
+}
+
+func TestPiEffortChoicesAreOnlyCheckableLevels(t *testing.T) {
+	note, choices := effortChoices(presetDraft{preset: presets.Preset{Agent: "pi", Model: "p/m"}})
+	var values []string
+	for _, choice := range choices {
+		values = append(values, choice.value)
+	}
+	if strings.Join(values, ",") != ",low,medium,high,xhigh,max" || !strings.Contains(note, "off and minimal are not offered") || !strings.Contains(choices[1].label, "checked at every ExternalSubagent turn") {
+		t.Fatal(values, note, choices)
 	}
 }
 

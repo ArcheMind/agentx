@@ -1,6 +1,7 @@
 package drivers
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 
@@ -15,7 +16,9 @@ const (
 // CodexPolicyExecPlan maps an execution policy onto Codex's native OS sandbox. User config.toml,
 // exec rules and hooks are not loaded because their MCP servers, hooks and notify programs run
 // outside that sandbox and would silently widen the granted scope.
-func CodexPolicyExecPlan(cwd, model, resume, policy string, writableRoots []string, effort string) (runtime.CommandPlan, error) {
+// Role instructions travel as developer_instructions, which Codex records in the rollout as a
+// developer message; they never change sandbox, approval, model or effort.
+func CodexPolicyExecPlan(cwd, model, resume, policy string, writableRoots []string, effort, roleInstructions string) (runtime.CommandPlan, error) {
 	args := []string{"exec"}
 	if resume != "" {
 		if !sessionID.MatchString(resume) {
@@ -46,6 +49,13 @@ func CodexPolicyExecPlan(cwd, model, resume, policy string, writableRoots []stri
 	if effort != "" {
 		args = append(args, "-c", fmt.Sprintf("model_reasoning_effort=%q", effort))
 	}
+	if roleInstructions != "" {
+		value, err := tomlString(roleInstructions)
+		if err != nil {
+			return runtime.CommandPlan{}, err
+		}
+		args = append(args, "-c", "developer_instructions="+value)
+	}
 	if model != "" {
 		args = append(args, "--model", model)
 	}
@@ -54,4 +64,15 @@ func CodexPolicyExecPlan(cwd, model, resume, policy string, writableRoots []stri
 	}
 	args = append(args, "-")
 	return runtime.CommandPlan{Executable: "codex", Args: args, Cwd: cwd}, nil
+}
+
+// tomlString encodes text as a TOML basic string; JSON string escapes without \/ are valid TOML.
+func tomlString(text string) (string, error) {
+	var out bytes.Buffer
+	encoder := json.NewEncoder(&out)
+	encoder.SetEscapeHTML(false)
+	if err := encoder.Encode(text); err != nil {
+		return "", err
+	}
+	return string(bytes.TrimSuffix(out.Bytes(), []byte("\n"))), nil
 }

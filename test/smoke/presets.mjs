@@ -18,7 +18,7 @@ const fs=require('fs'),path=require('path')
 fs.writeFileSync(path.join(${JSON.stringify(home)},'codex-argv-'+Date.now()+'-'+process.pid+'.json'),JSON.stringify({argv:process.argv.slice(2),cwd:process.cwd()}))
 if(process.argv[2]==='login'){console.log('Logged in using ChatGPT');process.exit(0)}
 if(process.argv[2]==='app-server'){console.error('fake codex: no model list');process.exit(1)}
-if(process.argv[2]==='exec'){let input='';process.stdin.on('data',d=>input+=d).on('end',()=>{console.log(JSON.stringify({type:'thread.started',thread_id:'12345678-1234-1234-1234-123456789abc'}));console.log(JSON.stringify({type:'item.completed',item:{type:'agent_message',text:'FAKE_REPORT '+input}}));console.log(JSON.stringify({type:'turn.completed'}))})}
+if(process.argv[2]==='exec'){const effort=(process.argv.find(a=>a.startsWith('model_reasoning_effort='))??'model_reasoning_effort="medium"').split('=')[1];const developer=process.argv.find(a=>a.startsWith('developer_instructions='));const thread='12345678-1234-1234-1234-'+String(process.pid).padStart(12,'0');const dir=path.join(process.env.CODEX_HOME,'sessions','2026','10','21');fs.mkdirSync(dir,{recursive:true});fs.writeFileSync(path.join(dir,'rollout-x-'+thread+'.jsonl'),JSON.stringify({type:'response_item',payload:{type:'message',role:'developer',content:[{type:'input_text',text:developer?JSON.parse(developer.slice('developer_instructions='.length)):''}]}})+'\\n');if(process.env.RUST_LOG==='codex_otel.trace_safe=info')console.error('x INFO codex_otel.trace_safe: event.name="codex.sse_event" event.kind=response.completed model_reasoning_effort='+effort);let input='';process.stdin.on('data',d=>input+=d).on('end',()=>{console.log(JSON.stringify({type:'thread.started',thread_id:thread}));console.log(JSON.stringify({type:'item.completed',item:{type:'agent_message',text:'FAKE_REPORT '+input}}));console.log(JSON.stringify({type:'turn.completed'}))})}
 `,{mode:0o700})
 const env={...process.env,HOME:home,AX_SUBAGENT_HOME:home,PATH:bin+':/usr/bin:/bin'}
 delete env.CLAUDE_CONFIG_DIR
@@ -65,7 +65,20 @@ try{
  assert(override.includes('unknown field "effort"'),'per-call effort override accepted: '+override)
  const ungranted=await call('ExternalSubagent',{description:'smoke',prompt:'check',model:'smoke-review-pi',run_in_background:false})
  assert(ungranted.includes('no grant: add grants.smoke-review-pi'),'preset without grant accepted: '+ungranted)
+ const roleDir=join(home,'.agentx','roles','strict-reviewer');await mkdir(roleDir,{recursive:true})
+ await writeFile(join(roleDir,'ROLE.md'),'---\ndescription: Strict reviewer\n---\n\nEnd every reply with ROLE-SMOKE.\n')
+ const roleTools=(await rpc('tools/list')).result.tools[0]
+ assert(JSON.stringify(roleTools.inputSchema.properties.subagent_type.enum)===JSON.stringify(['general-purpose','strict-reviewer'])&&roleTools.description.includes('- strict-reviewer: user description="Strict reviewer"; instructions="End every reply with ROLE-SMOKE."'),'R01 role metadata: '+JSON.stringify(roleTools.inputSchema.properties.subagent_type))
+ const roled=await call('ExternalSubagent',{description:'smoke',prompt:'check',model:'smoke-review',subagent_type:'strict-reviewer',run_in_background:false})
+ assert(roled.includes('effort=low; role=strict-reviewer')&&roled.includes('Native evidence: executed effort low')&&roled.includes('role instructions recorded as a Codex developer message'),'R02 role call: '+roled)
+ const execs=[];for(const file of await argvFiles()){const record=JSON.parse(await readFile(join(home,file),'utf8'));if(record.argv[0]==='exec')execs.push(record.argv.join(' '))}
+ const roleArgv=execs.find(argv=>argv.includes('developer_instructions='))??''
+ assert(execs.filter(argv=>argv.includes('developer_instructions=')).length===1,'R02 role reached other executions: '+execs.join('\n'))
+ assert(roleArgv.includes('developer_instructions="End every reply with ROLE-SMOKE."')&&roleArgv.includes('model_reasoning_effort="low"')&&roleArgv.includes('--model smoke-model'),'R02 role argv: '+roleArgv)
+ const unknownRole=await call('ExternalSubagent',{description:'smoke',prompt:'check',model:'smoke-review',subagent_type:'absent-role',run_in_background:false})
+ assert(unknownRole.includes('subagent_type "absent-role" rejected')&&unknownRole.includes('no other role was substituted'),'R03 unknown role: '+unknownRole)
  evidence.P10='initialize, tools/list enum and ExternalSubagent use ~/.agentx/presets; report names preset, agent, model, effort'
+ evidence.R01='declared role appears in subagent_type enum and role data';evidence.R02='role call keeps preset model/effort, sends developer_instructions, reports native evidence';evidence.R03='unknown role rejected without substitution'
  evidence.P15='TUI reports live MCP connection must reconnect; call result notes stale snapshot'
 }finally{mcp.stdin.end();await new Promise(done=>mcp.once('close',done))}
 
