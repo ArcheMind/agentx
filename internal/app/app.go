@@ -803,48 +803,6 @@ func (a App) resumeSession(ctx context.Context, agent runtime.Agent, detail sess
 	return nil
 }
 
-func (a App) interactiveResume(ctx context.Context, includeSubagents bool) error {
-	reader := bufio.NewReader(a.Stdin)
-	fmt.Fprint(a.Stdout, "Loading recent sessions...\r")
-	groups, err := a.recentSessionGroups(includeSubagents)
-	if err != nil {
-		return err
-	}
-	fmt.Fprint(a.Stdout, "\x1b[2K\r")
-	selected, err := a.chooseSession(reader, groups)
-	if err != nil {
-		return err
-	}
-	detail, err := a.Sessions.Info(selected.ID, selected.Provider)
-	if err != nil {
-		return err
-	}
-
-	agents := make([]runtime.Agent, 0)
-	for _, agent := range a.Registry.All() {
-		if _, err := exec.LookPath(agent.Binary); err == nil {
-			agents = append(agents, agent)
-		}
-	}
-	if len(agents) == 0 {
-		return fmt.Errorf("no supported agents are installed")
-	}
-	labels := make([]string, len(agents))
-	for index, agent := range agents {
-		labels[index] = agent.ID
-	}
-	agentIndex, err := a.chooseOptions(reader, "Choose an agent:", labels)
-	if err != nil {
-		return err
-	}
-	agent := agents[agentIndex]
-	model, err := a.chooseModel(ctx, reader, agent)
-	if err != nil {
-		return err
-	}
-	return a.resumeSession(ctx, agent, detail, "", model, false)
-}
-
 func (a App) chooseModel(ctx context.Context, reader *bufio.Reader, agent runtime.Agent) (string, error) {
 	if _, unsupported := agent.Models.(drivers.UnsupportedModels); unsupported || !hasCapability(agent.Capabilities, runtime.CapabilityModelSelect) {
 		_, err := a.chooseOptions(reader, "Choose a model:", []string{"Native default"})
@@ -917,7 +875,7 @@ Usage:
   ax [--json|--yaml] session <list|show|resume> [args...]
   ax [--json|--yaml] skill <list|show|install> [args...]
   ax [--json|--yaml] hook list
-  ax sub-agent-management <configure|enable|disable|status>
+  ax sub-agent-management <enable|disable|status>
   ax claude [-- <native args...>]
   ax agent exec <codex|pi|gemini> [--model <model>] [--resume <session-id>] [--cwd <path>] [--dry-run] < prompt.txt
 
@@ -926,8 +884,10 @@ Usage:
 
   ax version
 
-Running ax without arguments starts an interactive session resume. The ax <agent>
-shortcut launches an installed agent directly.
+Running ax without arguments opens the interactive home: start a new session
+with a preset, create or manage presets (m), or continue a recent session.
+Presets live in ~/.agentx/presets/<name>/PRESET.md and are shared with MCP
+ExternalSubagents. The ax <agent> shortcut launches an installed agent directly.
 
 MCP inventory: ax mcp list | ax mcp show <name> [--scope project|user] [--source <path>]
 Agents: claude, codex, dsh, gemini, opencode, pi

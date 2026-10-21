@@ -309,16 +309,33 @@ func TestInteractiveSelectorStylesHierarchy(t *testing.T) {
 	}
 }
 
-func TestBareAXStartsInteractiveSessionResume(t *testing.T) {
+func chooseRecent(application App, groups []sessionGroup) (sessions.Summary, error) {
+	item, _, _, err := application.chooseHome(bufio.NewReader(application.Stdin), application.Hooks.Home, groups, 1)
+	if err == nil && item.kind != homeSession {
+		err = fmt.Errorf("selected %v instead of a session", item.kind)
+	}
+	return item.session, err
+}
+
+func newHomeApp(t *testing.T, input string, stdout *bytes.Buffer) App {
+	application := New(false, strings.NewReader(input), stdout, &bytes.Buffer{})
+	application.Hooks.Home = t.TempDir()
+	t.Setenv("AX_SUBAGENT_HOME", "")
+	return application
+}
+
+func TestBareAXStartsInteractiveHome(t *testing.T) {
 	var stdout bytes.Buffer
-	application := New(false, strings.NewReader(""), &stdout, &bytes.Buffer{})
+	application := newHomeApp(t, "q", &stdout)
 	application.Sessions = sessions.Service{HomeDir: t.TempDir()}
 	err := application.Run(context.Background(), nil)
-	if err == nil || !strings.Contains(err.Error(), "no recent sessions found") {
+	if err == nil || !strings.Contains(err.Error(), "no session started") {
 		t.Fatalf("error = %v", err)
 	}
-	if !strings.Contains(stdout.String(), "Current workspace") || !strings.Contains(stdout.String(), "Global") {
-		t.Fatalf("interactive output = %q", stdout.String())
+	for _, want := range []string{"New session · Presets", emptyPresetsHint, "+ Create preset…", "Recent sessions · Current workspace", "Recent sessions · Global", "No recent sessions", "m manage presets"} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("interactive output lacks %q: %q", want, stdout.String())
+		}
 	}
 }
 
@@ -335,14 +352,15 @@ func TestInteractiveResumeCanIncludeSubagents(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	application := New(false, strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{})
+	var defaultOutput bytes.Buffer
+	application := newHomeApp(t, "q", &defaultOutput)
 	application.Sessions = sessions.Service{HomeDir: home}
-	if err := application.Run(context.Background(), nil); err == nil || !strings.Contains(err.Error(), "no recent sessions") {
-		t.Fatalf("default error = %v", err)
+	if err := application.Run(context.Background(), nil); err == nil || strings.Contains(defaultOutput.String(), "child task") {
+		t.Fatalf("default error = %v output = %q", err, defaultOutput.String())
 	}
 
 	var stdout bytes.Buffer
-	application = New(false, strings.NewReader("q"), &stdout, &bytes.Buffer{})
+	application = newHomeApp(t, "q", &stdout)
 	application.Sessions = sessions.Service{HomeDir: home}
 	if err := application.Run(context.Background(), []string{"--include-subagents"}); err == nil || !strings.Contains(err.Error(), "cancelled") {
 		t.Fatalf("included error = %v", err)
@@ -360,8 +378,8 @@ func TestSessionSelectorMovesAcrossGroupBoundary(t *testing.T) {
 		{Heading: "Global", Items: []sessions.Summary{global}},
 	}
 	var stdout bytes.Buffer
-	application := New(false, strings.NewReader("j\r"), &stdout, &bytes.Buffer{})
-	selected, err := application.chooseSession(bufio.NewReader(application.Stdin), groups)
+	application := newHomeApp(t, "j\r", &stdout)
+	selected, err := chooseRecent(application, groups)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -384,8 +402,8 @@ func TestSessionSelectorHandlesEmptySections(t *testing.T) {
 			{Heading: "Global", Items: []sessions.Summary{global}},
 		}
 		var stdout bytes.Buffer
-		application := New(false, strings.NewReader("\r"), &stdout, &bytes.Buffer{})
-		selected, err := application.chooseSession(bufio.NewReader(application.Stdin), groups)
+		application := newHomeApp(t, "\r", &stdout)
+		selected, err := chooseRecent(application, groups)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -400,8 +418,8 @@ func TestSessionSelectorHandlesEmptySections(t *testing.T) {
 			{Heading: "Current workspace", Items: []sessions.Summary{current}},
 			{Heading: "Global"},
 		}
-		application := New(false, strings.NewReader("\r"), &bytes.Buffer{}, &bytes.Buffer{})
-		selected, err := application.chooseSession(bufio.NewReader(application.Stdin), groups)
+		application := newHomeApp(t, "\r", &bytes.Buffer{})
+		selected, err := chooseRecent(application, groups)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -412,18 +430,19 @@ func TestSessionSelectorHandlesEmptySections(t *testing.T) {
 
 	t.Run("both empty", func(t *testing.T) {
 		groups := []sessionGroup{{Heading: "Current workspace"}, {Heading: "Global"}}
-		application := New(false, strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{})
-		_, err := application.chooseSession(bufio.NewReader(application.Stdin), groups)
-		if err == nil || !strings.Contains(err.Error(), "current workspace or globally") {
-			t.Fatalf("error = %v", err)
+		var stdout bytes.Buffer
+		application := newHomeApp(t, "\r", &stdout)
+		item, _, _, err := application.chooseHome(bufio.NewReader(application.Stdin), application.Hooks.Home, groups, 0)
+		if err != nil || item.kind != homeCreate || strings.Count(stdout.String(), "No recent sessions") != 2 {
+			t.Fatalf("item = %#v err = %v output = %q", item, err, stdout.String())
 		}
 	})
 }
 
 func TestSessionSelectorCanBeCancelled(t *testing.T) {
 	groups := []sessionGroup{{Heading: "Current workspace", Items: []sessions.Summary{{ID: "current", Provider: "codex"}}}}
-	application := New(false, strings.NewReader("q"), &bytes.Buffer{}, &bytes.Buffer{})
-	_, err := application.chooseSession(bufio.NewReader(application.Stdin), groups)
+	application := newHomeApp(t, "q", &bytes.Buffer{})
+	_, err := chooseRecent(application, groups)
 	if err == nil || !strings.Contains(err.Error(), "cancelled") {
 		t.Fatalf("error = %v", err)
 	}
@@ -451,9 +470,9 @@ func TestSessionSelectorViewport(t *testing.T) {
 
 	t.Run("shows bottom indicator when content overflows", func(t *testing.T) {
 		var stdout bytes.Buffer
-		app := New(false, strings.NewReader("\r"), &stdout, &bytes.Buffer{})
-		app.termHeight = 10
-		selected, err := app.chooseSession(bufio.NewReader(app.Stdin), groups)
+		app := newHomeApp(t, "\r", &stdout)
+		app.termHeight = 14
+		selected, err := chooseRecent(app, groups)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -469,9 +488,9 @@ func TestSessionSelectorViewport(t *testing.T) {
 	t.Run("scrolls to keep selection visible", func(t *testing.T) {
 		keys := strings.Repeat("\x1b[B", 5) + "\r"
 		var stdout bytes.Buffer
-		app := New(false, strings.NewReader(keys), &stdout, &bytes.Buffer{})
-		app.termHeight = 10
-		selected, err := app.chooseSession(bufio.NewReader(app.Stdin), groups)
+		app := newHomeApp(t, keys, &stdout)
+		app.termHeight = 14
+		selected, err := chooseRecent(app, groups)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -490,9 +509,9 @@ func TestSessionSelectorViewport(t *testing.T) {
 			{Heading: "Global"},
 		}
 		var stdout bytes.Buffer
-		app := New(false, strings.NewReader("\r"), &stdout, &bytes.Buffer{})
-		app.termHeight = 20
-		_, err := app.chooseSession(bufio.NewReader(app.Stdin), small)
+		app := newHomeApp(t, "\r", &stdout)
+		app.termHeight = 24
+		_, err := chooseRecent(app, small)
 		if err != nil {
 			t.Fatal(err)
 		}

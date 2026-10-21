@@ -5,77 +5,139 @@ These are explicitly AgentX tools, not official Claude subagents. The selected
 native agent executes directly, without a Claude relay inference call. Claude chooses
 the combination and any orchestration; AgentX imposes no review/voting workflow.
 
-## Configure and manage
+## Presets: one collection for `ax` and MCP
 
-Create a JSON configuration with explicit native model IDs:
+A preset is a named, user-confirmed choice of agent, model and effort plus a
+description of when to use it. The same collection serves the bare `ax` home
+screen and the `ExternalSubagent` choices; there is no separate MCP list.
 
-```json
-{
-  "enabled": false,
-  "default": "codex-review",
-  "options": [
-    {
-      "name": "codex-review",
-      "agent": "codex",
-      "model": "gpt-5.6-luna",
-      "description": "Research and code review with the native Codex runtime",
-      "enabled": true,
-      "efforts": ["low", "medium", "high"]
-    },
-    {
-      "name": "pi-review",
-      "agent": "pi",
-      "model": "openai-codex/gpt-5.6-luna",
-      "description": "Independent review using Pi and its read-only tools",
-      "enabled": true
-    }
-  ]
-}
+```text
+~/.agentx/presets/
+  deep-review/
+    PRESET.md
+  daily/
+    PRESET.md
 ```
 
+The directory name is the preset name (an ASCII letter or digit, then letters,
+digits, `_` or `-`, at most 64 characters). `PRESET.md` holds a front matter
+block and the description:
+
+```markdown
+---
+agent: codex
+model: gpt-5.6-luna
+effort: low
+---
+
+Read-only research and code review. Not for large refactors.
+```
+
+- `agent`: `claude`, `codex`, `gemini`, `opencode` or `pi`. Only `codex` and
+  `pi` can run as MCP `ExternalSubagent`; other presets are listed as
+  interactive launch only and are never offered as callable.
+- `model`: the exact native model ID, passed unchanged to `--model`. Pi needs
+  `provider/model`. No fallback model is ever used.
+- `effort` (optional): omitted means the agent's native default and is shown as
+  "native default". Explicit levels: Codex `none`, `minimal`, `low`, `medium`,
+  `high`, `xhigh`, `max`, `ultra` (the creation flow offers only the levels Codex
+  lists for the chosen model; a manually entered model shows them as
+  unverified); Claude `low`, `medium`, `high`, `xhigh`, `max` (`--effort`;
+  per-model support unverified). Gemini, OpenCode and Pi accept no explicit
+  effort (Pi may silently clamp thinking levels).
+- The description is the Markdown body. `name` and `description` keys in the
+  front matter and unknown keys are rejected, so there is one authority.
+
+`AX_SUBAGENT_HOME` replaces `~` for both the collection and the AgentX MCP
+configuration/state in isolated environments; it does not change native
+credentials.
+
+### Create and manage from `ax`
+
+Running `ax` with no arguments shows **New session · Presets** first, with
+`+ Create preset…` as its last entry, then recent sessions for the current
+workspace and globally. Enter on a preset starts a new native session in the
+current directory with exactly that agent, model and effort; Enter on a recent
+session continues it as before. `ax <agent>` direct launch is unchanged.
+
+`+ Create preset…` asks for the agent, the model (listed when the agent exposes
+a reliable list; otherwise the limitation is shown and the exact ID is typed),
+the effort, a name and a description, then shows a summary with
+`Save and start`, `Save`, `Back` (change any entry) and `Cancel`. Saving writes
+the directory atomically and runs no inference; listing models only reads model
+metadata. Duplicate or invalid names are rejected with the other entries kept.
+Cancelling leaves nothing behind.
+
+Press `m` on the home screen to manage the highlighted preset (or choose one):
+View (configuration and availability status separately), Edit, Rename,
+Duplicate (an independent copy, no inheritance), Delete (asks for the named
+preset; never touches sessions, native agents, credentials or running work) and
+Start new session. Invalid entries are listed with their error and file
+location, can be repaired or deleted, and never hide other presets or recent
+sessions. Hand edits to `PRESET.md` appear on the next screen or MCP request.
+
+If a native agent is missing at start, AgentX shows the reason and offers to edit
+the preset or go back; it never substitutes another agent, model or effort.
+Native rejection of a model or effort is the native agent's error.
+
+### Enable MCP
+
 ```sh
-ax sub-agent-management configure < combinations.json
 ax sub-agent-management enable
 ax sub-agent-management status
 ax claude
 ax sub-agent-management disable
 ```
 
-Configuration lives at `~/.config/agentx/subagents.json`. `AX_SUBAGENT_HOME`
-overrides AgentX's configuration/state root for isolated environments; it does
-not change native agent credentials. Exact enabled options and their capability
-descriptions, static availability, limits, and efforts appear in the MCP tool
-description before selection. Missing executables and invalid configuration are
-errors, not confirmed remote availability. Remote authentication and model access
-are established only by execution. Codex efforts must match actual model support;
-native rejection is returned as failure. Pi efforts are rejected because its
-runtime may silently clamp unsupported levels. Omit `default` to require explicit
-selection. No native-default model or automatic fallback is used.
+`~/.config/agentx/subagents.json` holds only `{"enabled": true|false}`.
+`status` lists the collection with static readiness, invalid entries and live
+MCP connections. Static checks do not verify remote login or model access;
+those are established only by execution.
 
-`enable` uses Claude's user-scoped MCP configuration command and preserves other
+### Migrating from the earlier `options` configuration
+
+The earlier `default`/`options` keys in `subagents.json` and the `configure`
+command no longer exist; a file containing them is reported as invalid. Move each
+former option once into the collection and reduce the file to the switch:
+
+```sh
+mkdir -p ~/.agentx/presets/codex-review ~/.agentx/presets/pi-review
+printf -- '---\nagent: codex\nmodel: gpt-5.6-luna\neffort: low\n---\n\nRead-only research and code review using native Codex.\n' > ~/.agentx/presets/codex-review/PRESET.md
+printf -- '---\nagent: pi\nmodel: openai-codex/gpt-5.6-luna\n---\n\nRead-only independent research and code review using Pi.\n' > ~/.agentx/presets/pi-review/PRESET.md
+printf '{"enabled": true}\n' > ~/.config/agentx/subagents.json
+```
+
+A former option with several `efforts` becomes one preset per effort you use.
+
+Enable uses Claude's user-scoped MCP configuration command and preserves other
 entries. An identical AgentX entry is reused; a conflicting entry is rejected.
-Enable/disable state persists across tasks and sessions. `configure` stores the
-whole supplied configuration, including `enabled`. Reconnect/refresh MCP after
-editing options to refresh the schema; new work reads current configuration.
-Existing ExternalSubagents retain their original combination. Changed/removed/disabled
-options reject continuation instead of rebinding it. A queued task also checks
-that its original option still exists unchanged before native submission.
+Enable/disable state persists across tasks and sessions. New work reads the
+current collection. Existing ExternalSubagents retain their original
+combination: an edited, renamed or deleted preset rejects continuation and
+queued work instead of rebinding it, and running work is never stopped or
+switched by a preset change.
 
 Disabling takes effect for new `ExternalSubagent` and `SendExternalSubagentMessage` submissions immediately.
 Previously accepted work, including queued messages, can finish and deliver
 results. `StopExternalSubagent` remains available. Disabling does not affect Claude native
-subagents or cancel work. Re-enabling retains combination configuration.
+subagents or cancel work. Re-enabling keeps the presets.
 
 ## Claude discovery and background delivery
 
-MCP initialization includes a config-derived preset DATA catalog: configured
-names/default, execution agents/models, declared capability descriptions/efforts,
-readonly limits, feature enablement and static prerequisites. The same catalog
-supplies `ExternalSubagent` metadata and its selectable `model` values. Static
-checks do not verify remote availability. `model` selects a preset independently
-of the `subagent_type` role; session listing reports created objects, not presets.
-Initialization instructions are a connection snapshot: reconnect after editing
-configuration to refresh that catalog. A fresh `tools/list` reads current config.
+MCP initialization includes a preset DATA catalog read from the collection:
+names, execution agents, exact models, effort, the user's descriptions, whether
+each preset is callable as ExternalSubagent, readonly limits, feature enablement,
+static prerequisites, and invalid entries with their location. The same catalog
+supplies `ExternalSubagent` metadata and its selectable `model` values (callable
+presets only). With no presets the catalog says so and that the user creates them
+in `ax`; none are generated. Static checks do not verify remote availability.
+`model` selects a preset independently of the `subagent_type` role; session
+listing reports created objects, not presets.
+Initialization instructions are a connection snapshot. After saving, renaming or
+deleting a preset, `ax` says whether running AgentX MCP connections still show
+the old list and to reconnect (`/mcp`) or restart Claude. New calls always use
+the saved preset; a call result notes when the collection changed since the
+connection initialized. A fresh `tools/list` reads the current collection.
 
 `enable` installs an `agentx` stdio MCP entry pointing to this `ax` executable.
 Restart or reconnect the host for tool discovery. `ax claude` automatically adds
@@ -115,11 +177,9 @@ listExternalSubagentSessions({})
 
 `description` and `prompt` are required strings. `subagent_type` is optional and
 supports only `general-purpose`; it never selects the execution agent. `model`
-selects one configured combination, or uses the explicitly configured default.
-`effort` accepts `low`, `medium`, `high`, `xhigh`, `max` at the schema level; set
-it only when the user or relevant instructions explicitly request it. Each option
-must declare supported levels; unsupported values are rejected. Codex `max` and
-all Pi efforts are currently unsupported. `isolation` accepts native spellings
+is required and names one callable preset; there is no default preset. The preset
+fixes agent, model and effort; there is no `effort` parameter and no per-call
+override. Reports name the preset, agent, actual model and effort. `isolation` accepts native spellings
 `worktree` and `remote` in the schema but both are explicitly rejected by current
 adapters, never substituted with local execution. Names start with an ASCII
 letter or digit and contain 1–64 ASCII letters, digits, `_`, or `-`.
@@ -152,8 +212,8 @@ Claude session resumes. Session loss or identity mismatch is failure, not retry.
 
 | Adapter | Boundary | Native continuation | Effort |
 | --- | --- | --- | --- |
-| Codex | `sandbox_mode="read-only"`, `approval_policy="never"` | Exact thread UUID | Explicit configured low/medium/high/xhigh; native errors remain errors |
-| Pi | `--tools read,grep,find,ls --no-extensions --no-skills --no-prompt-templates --no-approve` | Dedicated exact session path and pinned native ID | Unsupported; requests rejected |
+| Codex | `sandbox_mode="read-only"`, `approval_policy="never"` | Exact thread UUID | Preset effort via `model_reasoning_effort`, or native default; native errors remain errors |
+| Pi | `--tools read,grep,find,ls --no-extensions --no-skills --no-prompt-templates --no-approve` | Dedicated exact session path and pinned native ID | Native default only; presets with effort are invalid |
 
 Pi's allowlist is not an OS sandbox. Native authentication/configuration and
 project context still apply; these credentials and policies are not inherited

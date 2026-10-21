@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ArcheMind/agentx/internal/presets"
 	"github.com/ArcheMind/agentx/internal/sessions"
 	"golang.org/x/term"
 )
@@ -40,6 +41,8 @@ type contentRow struct {
 	updated   string
 	workspace string
 	title     string
+	// expanded replaces text with several lines while the item is selected.
+	expanded []string
 }
 
 type contentRowKind int
@@ -49,6 +52,11 @@ const (
 	contentRowHeading
 	contentRowEmpty
 	contentRowSession
+	contentRowPreset
+	contentRowPresetCombo
+	contentRowPresetMore
+	contentRowCreate
+	contentRowProblem
 )
 
 func buildContentRows(groups []sessionGroup, now time.Time) []contentRow {
@@ -90,12 +98,47 @@ func buildContentRows(groups []sessionGroup, now time.Time) []contentRow {
 }
 
 func selectedRowRange(rows []contentRow, selected int) (int, int) {
+	first, last := -1, 0
 	for i, r := range rows {
 		if r.itemIndex == selected {
-			return i, i
+			if first < 0 {
+				first = i
+			}
+			last = i
 		}
 	}
-	return 0, 0
+	if first < 0 {
+		return 0, 0
+	}
+	return first, last
+}
+
+func expandSelected(rows []contentRow, selected int) []contentRow {
+	result := make([]contentRow, 0, len(rows))
+	for _, row := range rows {
+		if row.itemIndex != selected || len(row.expanded) == 0 {
+			result = append(result, row)
+			continue
+		}
+		first := row
+		first.text = row.expanded[0]
+		first.expanded = nil
+		result = append(result, first)
+		for _, line := range row.expanded[1:] {
+			result = append(result, contentRow{text: strings.Repeat(" ", len([]rune(row.title))+2) + line, itemIndex: row.itemIndex, kind: contentRowPresetMore})
+		}
+	}
+	return result
+}
+
+func countItems(rows []contentRow) int {
+	seen := map[int]bool{}
+	for _, r := range rows {
+		if r.itemIndex >= 0 {
+			seen[r.itemIndex] = true
+		}
+	}
+	return len(seen)
 }
 
 func terminalHeight(input io.Reader) int {
@@ -110,21 +153,6 @@ func terminalHeight(input io.Reader) int {
 	return height
 }
 
-func (a App) chooseSession(reader *bufio.Reader, groups []sessionGroup) (sessions.Summary, error) {
-	items := make([]sessions.Summary, 0)
-	for _, group := range groups {
-		items = append(items, group.Items...)
-	}
-
-	now := time.Now()
-	rows := buildContentRows(groups, now)
-	selected, err := a.chooseInteractive(reader, "Choose a recent session:", rows, len(items), errors.New("no recent sessions found in the current workspace or globally"))
-	if err != nil {
-		return sessions.Summary{}, err
-	}
-	return items[selected], nil
-}
-
 func (a App) chooseOptions(reader *bufio.Reader, title string, options []string) (int, error) {
 	rows := make([]contentRow, len(options))
 	for index, option := range options {
@@ -133,8 +161,39 @@ func (a App) chooseOptions(reader *bufio.Reader, title string, options []string)
 	return a.chooseInteractive(reader, title, rows, len(options), errors.New("no options available"))
 }
 
+func (a App) pick(reader *bufio.Reader, title string, options []string) (int, error) {
+	rows := make([]contentRow, len(options))
+	for index, option := range options {
+		rows[index] = contentRow{text: option, itemIndex: index, provider: option}
+	}
+	index, _, err := a.runSelector(reader, selector{title: title, help: selectorHelp, marker: "> "}, rows, len(options), errors.New("no options available"))
+	return index, err
+}
+
+var errSelectionCancelled = errors.New("interactive selection cancelled")
+
+const selectorHelp = "Use ↑/↓ or j/k to move, Enter to select, q to cancel."
+
+type selector struct {
+	title    string
+	help     string
+	footer   bool
+	marker   string
+	manage   bool
+	selected int
+}
+
 func (a App) chooseInteractive(reader *bufio.Reader, title string, rows []contentRow, itemCount int, emptyErr error) (int, error) {
-	selected := 0
+	index, _, err := a.runSelector(reader, selector{title: title, help: selectorHelp, marker: "> "}, rows, itemCount, emptyErr)
+	if errors.Is(err, errSelectionCancelled) {
+		return 0, errors.New("interactive session resume cancelled")
+	}
+	return index, err
+}
+
+// runSelector reports manage=true when the user pressed m on the given item.
+func (a App) runSelector(reader *bufio.Reader, options selector, allRows []contentRow, itemCount int, emptyErr error) (int, bool, error) {
+	selected := options.selected
 	viewStart := 0
 	lineCount := 0
 	termH := a.termHeight
@@ -142,21 +201,36 @@ func (a App) chooseInteractive(reader *bufio.Reader, title string, rows []conten
 		termH = terminalHeight(a.Stdin)
 	}
 
-	const headerLines = 2
+	headerLines := 0
+	if options.title != "" {
+		headerLines++
+	}
+	if !options.footer {
+		headerLines++
+	}
 
 	render := func(clear bool) {
 		if clear {
 			fmt.Fprintf(a.Stdout, "\x1b[%dA\r\x1b[J", lineCount)
 		}
+		rows := expandSelected(allRows, selected)
 		lineCount = headerLines
-		fmt.Fprintf(a.Stdout, "%s\r\n", colorize(a.Color, ansiBold, title))
-		fmt.Fprintf(a.Stdout, "%s\r\n", colorize(a.Color, ansiDim, "Use ↑/↓ or j/k to move, Enter to select, q to cancel."))
+		if options.title != "" {
+			fmt.Fprintf(a.Stdout, "%s\r\n", colorize(a.Color, ansiBold, options.title))
+		}
+		if !options.footer {
+			fmt.Fprintf(a.Stdout, "%s\r\n", colorize(a.Color, ansiDim, options.help))
+		}
 
 		visStart := 0
 		visEnd := len(rows)
 
-		if termH > 0 && len(rows) > termH-headerLines {
-			height := termH - headerLines - 2
+		reserved := headerLines
+		if options.footer {
+			reserved += 2
+		}
+		if termH > 0 && len(rows) > termH-reserved {
+			height := termH - reserved - 2
 			if height < 1 {
 				height = 1
 			}
@@ -183,29 +257,20 @@ func (a App) chooseInteractive(reader *bufio.Reader, title string, rows []conten
 			}
 		}
 
-		hiddenAbove := 0
-		for _, r := range rows[:visStart] {
-			if r.itemIndex >= 0 {
-				hiddenAbove++
-			}
-		}
-		hiddenBelow := 0
-		for _, r := range rows[visEnd:] {
-			if r.itemIndex >= 0 {
-				hiddenBelow++
-			}
-		}
+		hiddenAbove := countItems(rows[:visStart])
+		hiddenBelow := countItems(rows[visEnd:])
 
 		if hiddenAbove > 0 {
 			fmt.Fprintf(a.Stdout, "%s\r\n", colorize(a.Color, ansiDim, fmt.Sprintf("  ↑ %d more", hiddenAbove)))
 			lineCount++
 		}
 
-		for _, row := range rows[visStart:visEnd] {
+		for index, row := range rows[visStart:visEnd] {
 			if row.itemIndex >= 0 {
 				marker := "  "
-				if row.itemIndex == selected {
-					marker = "> "
+				continuation := visStart+index > 0 && rows[visStart+index-1].itemIndex == row.itemIndex
+				if row.itemIndex == selected && !continuation {
+					marker = options.marker
 				}
 				fmt.Fprintf(a.Stdout, "%s%s\r\n", styledMarker(marker, row, a.Color), styledContentRow(row, row.itemIndex == selected, a.Color))
 			} else {
@@ -218,23 +283,27 @@ func (a App) chooseInteractive(reader *bufio.Reader, title string, rows []conten
 			fmt.Fprintf(a.Stdout, "%s\r\n", colorize(a.Color, ansiDim, fmt.Sprintf("  ↓ %d more", hiddenBelow)))
 			lineCount++
 		}
+		if options.footer {
+			fmt.Fprintf(a.Stdout, "\r\n%s\r\n", colorize(a.Color, ansiDim, options.help))
+			lineCount++
+		}
 	}
 
 	render(false)
 	if itemCount == 0 {
-		return 0, emptyErr
+		return 0, false, emptyErr
 	}
 
 	restore, err := makeRaw(a.Stdin)
 	if err != nil {
-		return 0, err
+		return 0, false, err
 	}
 	defer restore()
 
 	for {
 		key, err := readSelectionKey(reader)
 		if err != nil {
-			return 0, err
+			return 0, false, err
 		}
 		switch key {
 		case selectionUp:
@@ -249,10 +318,15 @@ func (a App) chooseInteractive(reader *bufio.Reader, title string, rows []conten
 			}
 		case selectionConfirm:
 			fmt.Fprint(a.Stdout, "\r\n")
-			return selected, nil
+			return selected, false, nil
+		case selectionManage:
+			if options.manage {
+				fmt.Fprint(a.Stdout, "\r\n")
+				return selected, true, nil
+			}
 		case selectionCancel:
 			fmt.Fprint(a.Stdout, "\r\n")
-			return 0, errors.New("interactive session resume cancelled")
+			return 0, false, errSelectionCancelled
 		}
 	}
 }
@@ -260,6 +334,9 @@ func (a App) chooseInteractive(reader *bufio.Reader, title string, rows []conten
 func styledMarker(marker string, row contentRow, color bool) string {
 	if marker == "  " {
 		return marker
+	}
+	if row.kind == contentRowPreset || row.kind == contentRowCreate || row.kind == contentRowProblem {
+		return colorize(color, presetAccent+ansiBold, marker)
 	}
 	style := agentColor(row.provider)
 	if style == "" {
@@ -274,6 +351,31 @@ func styledContentRow(row contentRow, selected, color bool) string {
 		return colorize(color, ansiBold, row.text)
 	case contentRowEmpty:
 		return colorize(color, ansiDim, row.text)
+	case contentRowPreset:
+		name := row.title
+		if selected {
+			name = colorize(color, presetAccent+ansiBold, name)
+		}
+		return name + "  " + row.text
+	case contentRowPresetMore:
+		return row.text
+	case contentRowPresetCombo:
+		return "  " + colorize(color, agentColor(row.provider), presets.AgentName(row.provider)) + colorize(color, ansiDim, row.text)
+	case contentRowCreate:
+		style := presetAccent
+		if selected {
+			style += ansiBold
+		}
+		return colorize(color, style, row.text)
+	case contentRowProblem:
+		name := row.title
+		if selected {
+			name = colorize(color, ansiBold, name)
+		}
+		if name == "" {
+			return colorize(color, ansiRed, row.text)
+		}
+		return name + "  " + colorize(color, ansiRed, row.text)
 	case contentRowSession:
 		provider := colorize(color, agentColor(row.provider), fmt.Sprintf("%-8s", row.provider))
 		updated := colorize(color, ansiDim, fmt.Sprintf("%-25s", row.updated))
@@ -304,6 +406,7 @@ const (
 	selectionDown
 	selectionConfirm
 	selectionCancel
+	selectionManage
 )
 
 func readSelectionKey(reader *bufio.Reader) (selectionKey, error) {
@@ -323,6 +426,8 @@ func readSelectionKey(reader *bufio.Reader) (selectionKey, error) {
 		return selectionDown, nil
 	case 'q', 'Q', 3:
 		return selectionCancel, nil
+	case 'm', 'M':
+		return selectionManage, nil
 	case 27:
 		if reader.Buffered() < 2 {
 			return selectionCancel, nil
