@@ -21,7 +21,7 @@ try{
  const {tools}=await rpc('tools/list')
  const expected=['ExternalSubagent','SendExternalSubagentMessage','StopExternalSubagent','listExternalSubagentSessions']
  assert(JSON.stringify(tools.map(tool=>tool.name))===JSON.stringify(expected),'tools/list did not expose exactly four renamed tools')
- assert(JSON.stringify(Object.keys(tools[0].inputSchema.properties).sort())===JSON.stringify(['description','prompt','model','subagent_type','effort','run_in_background','name','isolation','team_name','mode'].sort()),'ExternalSubagent input keys changed')
+ assert(JSON.stringify(Object.keys(tools[0].inputSchema.properties).sort())===JSON.stringify(['description','prompt','model','subagent_type','run_in_background','name','isolation','team_name','mode'].sort()),'ExternalSubagent input keys changed')
  for(const old of ['Agent','SendMessage','TaskStop','ListAgents']){
   const result=await rpc('tools/call',{name:old,arguments:{}})
   assert(result.isError===true&&result.content.some(part=>part.text?.includes('unknown tool')),`${old} remained accepted`)

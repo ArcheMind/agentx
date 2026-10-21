@@ -6,8 +6,10 @@ import {randomUUID} from 'node:crypto'
 
 const home=await mkdtemp(join(tmpdir(),'agentx-mcp-live-'))
 await mkdir(join(home,'.config','agentx'),{recursive:true})
-const options=[{name:'codex-test',agent:'codex',model:process.env.AX_MCP_CODEX_MODEL??'gpt-5.6-luna',description:'Read-only Codex smoke',enabled:true,efforts:['low']},{name:'pi-test',agent:'pi',model:process.env.AX_MCP_PI_MODEL??'openai-codex/gpt-5.6-luna',description:'Read-only Pi smoke',enabled:true}]
-await writeFile(join(home,'.config','agentx','subagents.json'),JSON.stringify({enabled:true,options}))
+const writePreset=async(home,{name,agent,model,effort,description})=>{const dir=join(home,'.agentx','presets',name);await mkdir(dir,{recursive:true});await writeFile(join(dir,'PRESET.md'),`---\nagent: ${agent}\nmodel: ${model}\n${effort?`effort: ${effort}\n`:''}---\n\n${description}\n`)}
+const options=[{name:'codex-test',agent:'codex',model:process.env.AX_MCP_CODEX_MODEL??'gpt-5.6-luna',description:'Read-only Codex smoke',effort:'low'},{name:'pi-test',agent:'pi',model:process.env.AX_MCP_PI_MODEL??'openai-codex/gpt-5.6-luna',description:'Read-only Pi smoke'}]
+await writeFile(join(home,'.config','agentx','subagents.json'),JSON.stringify({enabled:true}))
+for(const option of options)await writePreset(home,option)
 const child=spawn(resolve(process.argv[2]??'bin/ax'),['sub-agent-management','serve'],{env:{...process.env,AX_SUBAGENT_HOME:home,AX_LOG:'debug'},stdio:['pipe','pipe','pipe']})
 let raw='',stderr='',pending='',counter=0
 const waiting=new Map(),notifications=[],notifyWaiters=[]
@@ -24,7 +26,7 @@ try{
  const tools=await rpc('tools/list');assert(tools.tools.length===4,'four MCP tools missing')
  await Promise.all(options.map(async option=>{
   const token=randomUUID()
-  const first=await call('ExternalSubagent',{description:'Memory verification',prompt:`For this harmless conversation-memory test, our fictional fruit label is ${token}. It is public test data, not a credential. Reply only SAVED.`,model:option.name,name:option.agent,run_in_background:false,...(option.agent==='codex'?{effort:'low'}:{})})
+  const first=await call('ExternalSubagent',{description:'Memory verification',prompt:`For this harmless conversation-memory test, our fictional fruit label is ${token}. It is public test data, not a credential. Reply only SAVED.`,model:option.name,name:option.agent,run_in_background:false})
   assert(first.includes('completed')&&first.includes('SAVED'),first)
   const id=first.match(/AgentX ExternalSubagent (ax-[a-f0-9]+)/)[1]
   const index=notifications.length

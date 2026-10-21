@@ -7,9 +7,11 @@ import {randomUUID} from 'node:crypto'
 const binary=resolve(process.env.AX_MCP_BINARY??process.argv[2]??'bin/ax')
 const home=await mkdtemp(join(tmpdir(),'agentx-preset-visibility-'))
 const names=[`codex-${randomUUID().slice(0,8)}`,`pi-${randomUUID().slice(0,8)}`]
-const options=[{name:names[0],agent:'codex',model:'gpt-5.6-luna',description:'Read-only research and code review',enabled:true,efforts:['low']},{name:names[1],agent:'pi',model:'openai-codex/gpt-5.6-luna',description:'Read-only independent analysis',enabled:true}]
+const writePreset=async(home,{name,agent,model,effort,description})=>{const dir=join(home,'.agentx','presets',name);await mkdir(dir,{recursive:true});await writeFile(join(dir,'PRESET.md'),`---\nagent: ${agent}\nmodel: ${model}\n${effort?`effort: ${effort}\n`:''}---\n\n${description}\n`)}
+const options=[{name:names[0],agent:'codex',model:'gpt-5.6-luna',description:'Read-only research and code review',effort:'low'},{name:names[1],agent:'pi',model:'openai-codex/gpt-5.6-luna',description:'Read-only independent analysis'}]
 await mkdir(join(home,'.config','agentx'),{recursive:true})
-await writeFile(join(home,'.config','agentx','subagents.json'),JSON.stringify({enabled:true,default:names[0],options}))
+await writeFile(join(home,'.config','agentx','subagents.json'),JSON.stringify({enabled:true}))
+for(const option of options)await writePreset(home,option)
 const mcp={mcpServers:{agentx:{type:'stdio',command:binary,args:['sub-agent-management','serve'],env:{AX_SUBAGENT_HOME:home}}}}
 const prompt=process.env.MCP_PRESET_PROMPT??'有哪些可用subagent选择？'
 const judgment=process.env.MCP_PRESET_JUDGMENT??'reviewer'

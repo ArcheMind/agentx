@@ -13,13 +13,13 @@ Start a coding agent:
 $ ax codex
 ```
 
-Resume recent work:
+Start from a preset or resume recent work:
 
 ```console
 $ ax
 ```
 
-`ax` shows recent top-level sessions in one keyboard-navigable selector, with separate `Current workspace` and `Global` sections. Times use your local timezone, and Global entries include their working directory. Move through every session, agent, and model with the arrow keys or `j`/`k`, press Enter to select, or press `q` to cancel. AgentX continues through the selected agent's native CLI. Pass `--include-subagents` to include provider sessions identified as child Agent work.
+`ax` first lists your presets (saved agent, model and effort) under `New session · Presets`, ending with `+ Create preset…`; press `m` to view, edit, rename, duplicate or delete a preset. Below it, recent top-level sessions appear in separate `Recent sessions · Current workspace` and `Recent sessions · Global` sections. Times use your local timezone, and Global entries include their working directory. Move through every session, agent, and model with the arrow keys or `j`/`k`, press Enter to select, or press `q` to cancel. AgentX continues through the selected agent's native CLI. Pass `--include-subagents` to include provider sessions identified as child Agent work.
 
 ![Interactive session resume demo](docs/assets/interactive-resume.gif)
 
@@ -49,7 +49,7 @@ Prebuilt archives for macOS, Linux, and Windows are available on the [releases p
 # Start a new Codex session in the current directory
 ax codex
 
-# Or resume recent work interactively
+# Or pick a preset or resume recent work interactively
 ax
 ```
 
@@ -70,20 +70,21 @@ ax dsh -- --profile acp
 ## MCP ExternalSubagent tools
 
 ```bash
-ax sub-agent-management configure < combinations.json
+ax                                  # create presets: + Create preset…, manage with m
 ax sub-agent-management enable
 ax sub-agent-management status
 ax claude
 ```
 
-Users persistently configure allowed Agent × Model combinations. Claude discovers
-four MCP tools: `ExternalSubagent`, `SendExternalSubagentMessage`, `StopExternalSubagent`, and `listExternalSubagentSessions`. A single
+Presets in `~/.agentx/presets/<name>/PRESET.md` save an agent, model, effort and
+a description once. Bare `ax` lists them first to start new sessions, and Claude
+discovers the same presets through four MCP tools: `ExternalSubagent`, `SendExternalSubagentMessage`, `StopExternalSubagent`, and `listExternalSubagentSessions`. A single
 `mcp__agentx__ExternalSubagent` call starts an independent Codex or Pi ExternalSubagent; `model`
-selects a configured combination. No per-task registration is required.
+names a preset. No per-task registration is required. See [docs/subagents.md](docs/subagents.md).
 
 For example, ask Claude:
 
-> Use the configured Codex and Pi combinations to review this change independently,
+> Use my codex-review and pi-review presets to review this change independently,
 > then compare their findings.
 
 These are AgentX MCP tools, with familiar task parameters and independent native
