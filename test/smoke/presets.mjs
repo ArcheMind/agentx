@@ -74,6 +74,6 @@ const home2=ax('\r')
 const launches=await argvFiles()
 assert(launches.length===before+1,'P03 no launch: '+home2.output)
 const launch=JSON.parse(await readFile(join(home,launches.at(-1)),'utf8'))
-assert(launch.cwd.endsWith('/workspace')&&launch.argv.join(' ').includes('--model smoke-model')&&launch.argv.join(' ').includes('model_reasoning_effort="low"')&&home2.output.includes('broken')&&home2.output.includes('Error: model is required')&&home2.output.includes('Hand-edited description'),'P03/P14 launch: '+JSON.stringify(launch)+home2.output)
+assert(launch.cwd.endsWith('/workspace')&&launch.argv.join(' ').includes('--model smoke-model')&&launch.argv.join(' ').includes('model_reasoning_effort="low"')&&home2.output.includes('broken')&&home2.output.includes('Error: model is required')&&/› smoke-review +Codex · smoke-model · low +Hand-edited description\r\n/.test(home2.output)&&!/\n +Codex · /.test(home2.output),'P03/P14 launch and one-line preset rows: '+JSON.stringify(launch)+home2.output)
 evidence.P03='bare ax → preset launched codex in cwd with --model and effort';evidence.P14='broken item located on home without blocking valid preset'
 console.log(JSON.stringify({passed:true,binary,evidence,home},null,2))

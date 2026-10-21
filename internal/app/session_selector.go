@@ -41,8 +41,6 @@ type contentRow struct {
 	updated   string
 	workspace string
 	title     string
-	// expanded replaces text with several lines while the item is selected.
-	expanded []string
 }
 
 type contentRowKind int
@@ -53,8 +51,6 @@ const (
 	contentRowEmpty
 	contentRowSession
 	contentRowPreset
-	contentRowPresetCombo
-	contentRowPresetMore
 	contentRowCreate
 	contentRowProblem
 )
@@ -111,24 +107,6 @@ func selectedRowRange(rows []contentRow, selected int) (int, int) {
 		return 0, 0
 	}
 	return first, last
-}
-
-func expandSelected(rows []contentRow, selected int) []contentRow {
-	result := make([]contentRow, 0, len(rows))
-	for _, row := range rows {
-		if row.itemIndex != selected || len(row.expanded) == 0 {
-			result = append(result, row)
-			continue
-		}
-		first := row
-		first.text = row.expanded[0]
-		first.expanded = nil
-		result = append(result, first)
-		for _, line := range row.expanded[1:] {
-			result = append(result, contentRow{text: strings.Repeat(" ", len([]rune(row.title))+2) + line, itemIndex: row.itemIndex, kind: contentRowPresetMore})
-		}
-	}
-	return result
 }
 
 func countItems(rows []contentRow) int {
@@ -213,7 +191,7 @@ func (a App) runSelector(reader *bufio.Reader, options selector, allRows []conte
 		if clear {
 			fmt.Fprintf(a.Stdout, "\x1b[%dA\r\x1b[J", lineCount)
 		}
-		rows := expandSelected(allRows, selected)
+		rows := allRows
 		lineCount = headerLines
 		if options.title != "" {
 			fmt.Fprintf(a.Stdout, "%s\r\n", colorize(a.Color, ansiBold, options.title))
@@ -356,11 +334,8 @@ func styledContentRow(row contentRow, selected, color bool) string {
 		if selected {
 			name = colorize(color, presetAccent+ansiBold, name)
 		}
-		return name + "  " + row.text
-	case contentRowPresetMore:
-		return row.text
-	case contentRowPresetCombo:
-		return "  " + colorize(color, agentColor(row.provider), presets.AgentName(row.provider)) + colorize(color, ansiDim, row.text)
+		combo := colorize(color, agentColor(row.provider), presets.AgentName(row.provider)) + colorize(color, ansiDim, row.updated)
+		return name + "  " + combo + "  " + row.text
 	case contentRowCreate:
 		style := presetAccent
 		if selected {
