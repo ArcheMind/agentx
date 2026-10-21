@@ -49,14 +49,6 @@ func authCheck(p runtime.CommandPlan) (runtime.CommandResult, bool) {
 	return runtime.CommandResult{}, false
 }
 
-func testGrant(t *testing.T, agent string) Grant {
-	t.Helper()
-	if agent == "pi" {
-		return Grant{Execution: ExecutionPolicy{Policy: "read-only", Approval: "never"}, Auth: AuthSource{Source: "pi-agent-dir", Path: t.TempDir(), Method: "oauth"}}
-	}
-	return Grant{Execution: ExecutionPolicy{Policy: "read-only", Approval: "never"}, Auth: AuthSource{Source: "codex-home", Path: t.TempDir(), Method: "chatgpt"}}
-}
-
 func (r *testRunner) Execute(ctx context.Context, p runtime.CommandPlan, o runtime.ExecuteOptions) (runtime.CommandResult, error) {
 	if result, ok := authCheck(p); ok {
 		return result, nil
@@ -92,9 +84,8 @@ func testServer(t *testing.T, r runtime.Runner) *Server {
 	}
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	home := t.TempDir()
-	if err := SaveConfig(home, Config{Enabled: true, Grants: map[string]Grant{"review": testGrant(t, "codex")}}); err != nil {
-		t.Fatal(err)
-	}
+	t.Setenv("CODEX_HOME", t.TempDir())
+	t.Setenv("PI_CODING_AGENT_DIR", t.TempDir())
 	savePreset(t, home, reviewPreset)
 	s := &Server{Home: home, Cwd: t.TempDir(), Runner: r, ctx: context.Background(), out: io.Discard, agents: map[string]*ExternalSubagentState{}, names: map[string]string{}}
 	t.Cleanup(func() {
@@ -140,14 +131,6 @@ func TestLifecycleQueueNamesResumeAndDisable(t *testing.T) {
 	}
 	<-r.started
 	callTest(t, s, "SendExternalSubagentMessage", map[string]any{"to": "reviewer", "message": "recall"})
-	config, _ := LoadConfig(s.Home)
-	config.Enabled = false
-	if err := SaveConfig(s.Home, config); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.call("SendExternalSubagentMessage", []byte(`{"to":"reviewer","message":"rejected"}`)); err == nil {
-		t.Fatal("disabled accepted work")
-	}
 	close(r.release)
 	waitAgent(t, s, "reviewer")
 	r.mu.Lock()
@@ -155,8 +138,6 @@ func TestLifecycleQueueNamesResumeAndDisable(t *testing.T) {
 		t.Fatalf("no native continuation: %#v", r.plans)
 	}
 	r.mu.Unlock()
-	config.Enabled = true
-	SaveConfig(s.Home, config)
 	s.mu.Lock()
 	old := s.names["reviewer"]
 	s.mu.Unlock()
@@ -236,82 +217,6 @@ func TestAgentContractRejectsUnsupportedAndUnknownInputs(t *testing.T) {
 	}
 }
 
-func TestMissingGrantDisablesOnlyThatPreset(t *testing.T) {
-	r := &testRunner{}
-	s := testServer(t, r)
-	ungranted := reviewPreset
-	ungranted.Name = "ungranted"
-	savePreset(t, s.Home, ungranted)
-	catalog, models := PresetCatalog(s.Home)
-	if strings.Join(models, ",") != "review" || !strings.Contains(catalog, `- ungranted: execution agent="codex"`) || !strings.Contains(catalog, `ExternalSubagent callable=no; static prerequisites="no grant: add grants.ungranted`) || !strings.Contains(catalog, `grant="none (not callable until a grant is added)"`) {
-		t.Fatal(models, catalog)
-	}
-	if _, err := s.call("ExternalSubagent", []byte(`{"description":"x","prompt":"x","model":"ungranted","run_in_background":false}`)); err == nil || !strings.Contains(err.Error(), "no grant") {
-		t.Fatal("preset without grant accepted", err)
-	}
-	callTest(t, s, "ExternalSubagent", map[string]any{"description": "x", "prompt": "x", "model": "review", "name": "kept", "run_in_background": false})
-	config, _ := LoadConfig(s.Home)
-	config.Grants["gone"] = config.Grants["review"]
-	delete(config.Grants, "review")
-	if err := SaveConfig(s.Home, config); err != nil {
-		t.Fatal(err)
-	}
-	catalog, models = PresetCatalog(s.Home)
-	if len(models) != 0 || !strings.Contains(catalog, `- grant gone in`) || !strings.Contains(catalog, "no matching preset") {
-		t.Fatal("orphan grant not reported", models, catalog)
-	}
-	if _, err := s.call("SendExternalSubagentMessage", []byte(`{"to":"kept","message":"again"}`)); err == nil || !strings.Contains(err.Error(), "no grant") {
-		t.Fatal("continuation ran after its grant was removed", err)
-	}
-	if len(r.plans) != 1 {
-		t.Fatal("native execution without a grant", len(r.plans))
-	}
-}
-
-func TestAgentChangedWithoutGrantUpdateDisablesOnlyThatPreset(t *testing.T) {
-	r := &testRunner{}
-	s := testServer(t, r)
-	callTest(t, s, "ExternalSubagent", map[string]any{"description": "x", "prompt": "x", "model": "review", "name": "pinned", "run_in_background": false})
-	moved := presets.Preset{Name: "review", Agent: "pi", Model: "provider/model", Description: "now Pi"}
-	savePreset(t, s.Home, moved)
-	other := reviewPreset
-	other.Name = "other"
-	savePreset(t, s.Home, other)
-	config, _ := LoadConfig(s.Home)
-	config.Grants["other"] = config.Grants["review"]
-	if err := SaveConfig(s.Home, config); err != nil {
-		t.Fatal(err)
-	}
-	catalog, models := PresetCatalog(s.Home)
-	if strings.Join(models, ",") != "other" || !strings.Contains(catalog, `grant mismatch: auth.source \"codex-home\" is for Codex but preset review uses Pi`) {
-		t.Fatal(models, catalog)
-	}
-	if _, err := s.call("ExternalSubagent", []byte(`{"description":"x","prompt":"x","model":"review","run_in_background":false}`)); err == nil || !strings.Contains(err.Error(), "grant mismatch") {
-		t.Fatal("mismatched preset accepted", err)
-	}
-	if _, err := s.call("SendExternalSubagentMessage", []byte(`{"to":"pinned","message":"again"}`)); err == nil {
-		t.Fatal("continuation ran after its preset agent changed")
-	}
-	callTest(t, s, "ExternalSubagent", map[string]any{"description": "x", "prompt": "x", "model": "other", "run_in_background": false})
-	if len(r.plans) != 2 {
-		t.Fatal("unexpected native executions", len(r.plans))
-	}
-}
-
-func TestStrayGrantOnInteractivePresetAppearsOnlyAsProblem(t *testing.T) {
-	s := testServer(t, &testRunner{})
-	savePreset(t, s.Home, presets.Preset{Name: "daily", Agent: "claude", Model: "opus", Description: "Interactive pairing"})
-	config, _ := LoadConfig(s.Home)
-	config.Grants["daily"] = config.Grants["review"]
-	if err := SaveConfig(s.Home, config); err != nil {
-		t.Fatal(err)
-	}
-	catalog, _ := PresetCatalog(s.Home)
-	if !strings.Contains(catalog, `grant="none required (interactive launch only)"`) || !strings.Contains(catalog, "- grant daily in") || strings.Count(catalog, `grant="policy=`) != 1 {
-		t.Fatal(catalog)
-	}
-}
-
 func TestPresetFixesEffortAndStaleSnapshotIsReported(t *testing.T) {
 	r := &testRunner{}
 	s := testServer(t, r)
@@ -328,11 +233,6 @@ func TestPresetFixesEffortAndStaleSnapshotIsReported(t *testing.T) {
 	native := reviewPreset
 	native.Name, native.Effort = "native", ""
 	savePreset(t, s.Home, native)
-	config, _ := LoadConfig(s.Home)
-	config.Grants["native"] = testGrant(t, "codex")
-	if err := SaveConfig(s.Home, config); err != nil {
-		t.Fatal(err)
-	}
 	text = callTest(t, s, "ExternalSubagent", map[string]any{"description": "x", "prompt": "x", "model": "native", "run_in_background": false})
 	if !strings.Contains(text, "effort=native default") || !strings.Contains(text, "reconnect AgentX MCP to refresh") {
 		t.Fatal(text)
@@ -385,11 +285,8 @@ func TestExternalFailureIsToolErrorAndCannotResume(t *testing.T) {
 
 func TestMissingPiSessionAndNativeIdentityChangeFail(t *testing.T) {
 	s := testServer(t, &testRunner{})
-	a := &ExternalSubagentState{ID: "pi", Role: roles.Role{Name: roles.GeneralPurpose}, Session: filepath.Join(t.TempDir(), "missing.jsonl"), Option: presets.Preset{Name: "review", Agent: "pi", Model: "provider/model", Description: "test"}, Grant: testGrant(t, "pi")}
+	a := &ExternalSubagentState{ID: "pi", Role: roles.Role{Name: roles.GeneralPurpose}, Session: filepath.Join(t.TempDir(), "missing.jsonl"), Option: presets.Preset{Name: "review", Agent: "pi", Model: "provider/model", Description: "test"}}
 	savePreset(t, s.Home, a.Option)
-	if err := SaveConfig(s.Home, Config{Enabled: true, Grants: map[string]Grant{"review": a.Grant}}); err != nil {
-		t.Fatal(err)
-	}
 	if _, _, err := s.execute(context.Background(), a, "continue"); err == nil || !strings.Contains(err.Error(), "original Pi session unavailable") {
 		t.Fatal(err)
 	}
@@ -436,8 +333,8 @@ func TestConnectionStatusMatchesCurrentClientAndCleansUp(t *testing.T) {
 	if len(Connections(s.Home)) != 0 {
 		t.Fatal("closed MCP connection remained active")
 	}
-	if _, err := os.Stat(ConfigPath(s.Home)); !os.IsNotExist(err) {
-		t.Fatal("serve unexpectedly created persistent enablement")
+	if _, err := os.Stat(filepath.Join(s.Home, ".config", "agentx")); !os.IsNotExist(err) {
+		t.Fatal("serve created AgentX configuration state")
 	}
 }
 
@@ -548,12 +445,12 @@ func TestExternalSubagentToolNamesAndUnchangedContract(t *testing.T) {
 	}
 	create := tools[0].(map[string]any)["inputSchema"].(map[string]any)
 	props := create["properties"].(map[string]any)
-	for _, key := range []string{"description", "prompt", "model", "subagent_type", "run_in_background", "name", "isolation", "team_name", "mode"} {
+	for _, key := range []string{"description", "prompt", "model", "subagent_type", "run_in_background", "name", "isolation", "write", "writable_roots", "team_name", "mode"} {
 		if props[key] == nil {
 			t.Fatal("changed parameter", key)
 		}
 	}
-	if len(props) != 9 || props["effort"] != nil || !presets.Contains(props["model"].(map[string]any)["enum"].([]string), "review") {
+	if len(props) != 11 || props["effort"] != nil || !presets.Contains(props["model"].(map[string]any)["enum"].([]string), "review") {
 		t.Fatal("changed model selection contract")
 	}
 	for _, old := range []string{"Agent", "SendMessage", "TaskStop", "ListAgents"} {
@@ -585,13 +482,8 @@ func TestPresetCatalogSharedDataAndRefresh(t *testing.T) {
 	s := testServer(t, &testRunner{})
 	savePreset(t, s.Home, presets.Preset{Name: "interactive-only", Agent: "claude", Model: "opus", Description: "Interactive pairing"})
 	savePreset(t, s.Home, presets.Preset{Name: "pi-choice", Agent: "pi", Model: "provider/model", Description: "Independent analysis"})
-	config, _ := LoadConfig(s.Home)
-	config.Grants["pi-choice"] = testGrant(t, "pi")
-	if err := SaveConfig(s.Home, config); err != nil {
-		t.Fatal(err)
-	}
 	catalog, models := PresetCatalog(s.Home)
-	for _, want := range []string{presets.Dir(s.Home), "also used for interactive ax launch", "No default preset", "no per-call effort override", `execution agent="codex"`, `exact configured model ID (including provider prefix)="test-model"`, `effort="low"`, `user description="code review"`, `ExternalSubagent callable=yes`, `grant="policy=read-only; approval=never; auth=codex-home`, `Execution policy: read-only, enforced by Codex native OS sandbox`, `enforced only by Pi's tool allowlist`, `not an OS sandbox`, `Isolation: worktree supported`, `Remote: rejected`, `remote execution not verified`, `- interactive-only: execution agent="claude"`, `ExternalSubagent callable=no; static prerequisites="interactive launch only`, `grant="none required (interactive launch only)"`} {
+	for _, want := range []string{presets.Dir(s.Home), "also used for interactive ax launch", "No default preset", "no per-call effort override", `execution agent="codex"`, `exact configured model ID (including provider prefix)="test-model"`, `effort="low"`, `user description="code review"`, `ExternalSubagent callable=yes`, `Writes: every call is read-only unless it sets write`, `Writes: read-only unless the call requests write, enforced by Codex native OS sandbox`, `Writes: never. Pi runs read-only through its tool allowlist`, `not an OS sandbox`, `Auth: CODEX_HOME (or ~/.codex), checked by codex login status`, `Isolation: worktree supported`, `Remote: rejected`, `login and remote execution are verified per execution`, `- interactive-only: execution agent="claude"`, `ExternalSubagent callable=no; static prerequisites="interactive launch only`} {
 		if !strings.Contains(catalog, want) {
 			t.Fatal("missing preset data", want, catalog)
 		}
@@ -634,37 +526,25 @@ func TestPresetCatalogSharedDataAndRefresh(t *testing.T) {
 	}
 }
 
-func TestPresetCatalogDisabledInvalidAndEmpty(t *testing.T) {
+func TestPresetCatalogIgnoresLegacyConfigAndReportsInvalidAndEmpty(t *testing.T) {
 	s := testServer(t, &testRunner{})
-	config, _ := LoadConfig(s.Home)
-	config.Enabled = false
-	if err := SaveConfig(s.Home, config); err != nil {
-		t.Fatal(err)
-	}
-	text, _ := PresetCatalog(s.Home)
-	if !strings.Contains(text, "Feature enabled: false (false blocks new work)") {
-		t.Fatal(text)
+	legacy := filepath.Join(s.Home, ".config", "agentx", "subagents.json")
+	os.MkdirAll(filepath.Dir(legacy), 0700)
+	os.WriteFile(legacy, []byte(`{"enabled":false,"options":[]}`), 0600)
+	text, models := PresetCatalog(s.Home)
+	if strings.Join(models, ",") != "review" || strings.Contains(text, "Feature enabled") || strings.Contains(text, "Configuration error") {
+		t.Fatal("a legacy subagents.json still affects the catalog", text, models)
 	}
 	broken := filepath.Join(presets.Dir(s.Home), "broken")
 	os.MkdirAll(broken, 0700)
 	os.WriteFile(filepath.Join(broken, presets.FileName), []byte("---\nagent: unknown\nmodel: m\n---\nx\n"), 0600)
-	text, models := PresetCatalog(s.Home)
+	text, models = PresetCatalog(s.Home)
 	if len(models) != 1 || !strings.Contains(text, `- broken: invalid preset at`) || !strings.Contains(text, `unsupported agent`) || !strings.Contains(text, "- review:") {
 		t.Fatal("broken preset hid others or was not located", text, models)
 	}
 	os.RemoveAll(presets.Dir(s.Home))
-	if err := SaveConfig(s.Home, Config{}); err != nil {
-		t.Fatal(err)
-	}
 	text, models = PresetCatalog(s.Home)
 	if len(models) != 0 || !strings.Contains(text, "No presets.") || !strings.Contains(text, "+ Create preset") {
-		t.Fatal(text, models)
-	}
-	if err := os.WriteFile(ConfigPath(s.Home), []byte(`{"enabled":true,"options":[]}`), 0600); err != nil {
-		t.Fatal(err)
-	}
-	text, models = PresetCatalog(s.Home)
-	if len(models) != 0 || !strings.Contains(text, "Configuration error:") || !strings.Contains(text, "presets live in") {
 		t.Fatal(text, models)
 	}
 }

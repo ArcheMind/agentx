@@ -721,30 +721,18 @@ func (a App) printAvailability(p presets.Preset) {
 
 func (a App) presetChangeNote(home string) {
 	fmt.Fprintln(a.Stdout, "New sessions use the saved presets now.")
-	state, err := subagents.LoadState(home)
-	config := state.Config
-	if err == nil {
-		for _, p := range state.Presets {
-			if _, ok := config.Grants[p.Name]; !ok && presets.Agents[p.Agent].Subagent {
-				fmt.Fprintf(a.Stdout, "MCP: %s is not callable as ExternalSubagent until grants.%s is added to %s; other presets are unaffected.\n", p.Name, p.Name, subagents.ConfigPath(home))
-			}
-		}
-		for _, problem := range state.GrantProblems {
-			fmt.Fprintf(a.Stdout, "MCP: grant %s in %s: %s.\n", problem.Name, problem.Path, problem.Err)
-		}
-	}
+	registered, err := mcpRegistration(home)
+	count := len(subagents.Connections(home))
 	var note string
 	switch {
 	case err != nil:
-		note = "MCP: ExternalSubagent configuration rejected: " + err.Error()
-	case !config.Enabled:
-		note = "MCP: ExternalSubagents are disabled (ax sub-agent-management enable); nothing to refresh."
+		note = "MCP: cannot read the Claude MCP registration: " + err.Error()
+	case count > 0:
+		note = fmt.Sprintf("MCP: %d running AgentX MCP connection(s) still show the preset list from when they connected. New ExternalSubagent calls already use the saved presets; reconnect AgentX in Claude (/mcp) or restart Claude to refresh the list.", count)
+	case !registered:
+		note = "MCP: AgentX is not registered with Claude (ax sub-agent-management enable); nothing to refresh."
 	default:
-		if count := len(subagents.Connections(home)); count == 0 {
-			note = "MCP: no running AgentX MCP connection; Claude sees this change when it next connects."
-		} else {
-			note = fmt.Sprintf("MCP: %d running AgentX MCP connection(s) still show the preset list from when they connected. New ExternalSubagent calls already use the saved presets; reconnect AgentX in Claude (/mcp) or restart Claude to refresh the list.", count)
-		}
+		note = "MCP: no running AgentX MCP connection; Claude sees this change when it next connects."
 	}
 	fmt.Fprintln(a.Stdout, note)
 }

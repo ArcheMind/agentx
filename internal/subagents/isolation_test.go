@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	goruntime "runtime"
 	"strings"
 	"testing"
 
@@ -71,61 +70,30 @@ func dirtyRepoNamed(t *testing.T, s *Server, name string) string {
 	return repo
 }
 
-func setPolicy(t *testing.T, s *Server, policy ExecutionPolicy) {
-	t.Helper()
-	config, _ := LoadConfig(s.Home)
-	grant := config.Grants["review"]
-	grant.Execution = policy
-	config.Grants["review"] = grant
-	if err := SaveConfig(s.Home, config); err != nil {
-		t.Fatal(err)
+func TestWorktreeWriteScopeIsOnlyTheWorktree(t *testing.T) {
+	r := &gitRunner{testRunner: &testRunner{}}
+	s := testServer(t, r)
+	repo := dirtyRepo(t, s)
+	_, err := s.call("ExternalSubagent", []byte(`{"description":"x","prompt":"x","model":"review","isolation":"worktree","write":true,"writable_roots":["`+repo+`"]}`))
+	if err == nil || !strings.Contains(err.Error(), "the worktree is the only writable root") {
+		t.Fatal("writable_roots accepted with isolation", err)
 	}
-}
-
-// variant returns another spelling of dir's last component that names the same directory, or
-// skips when this filesystem distinguishes the spellings.
-func variant(t *testing.T, dir string, spell func(string) string) string {
-	t.Helper()
-	other := filepath.Join(filepath.Dir(dir), spell(filepath.Base(dir)))
-	a, errA := os.Stat(dir)
-	b, errB := os.Stat(other)
-	if other == dir || errA != nil || errB != nil || !os.SameFile(a, b) {
-		if goruntime.GOOS == "darwin" {
-			t.Fatalf("expected %q and %q to name one directory on default macOS APFS", dir, other)
-		}
-		t.Skipf("filesystem distinguishes %q from %q", dir, other)
+	if strings.Contains(gitCmd(t, repo, "worktree", "list"), "agentx/") || len(s.agents) != 0 {
+		t.Fatal("rejected call created a worktree or agent")
 	}
-	return other
-}
-
-func TestWorktreeSandboxIgnoresGrantRootsWhateverTheirSpelling(t *testing.T) {
-	for name, c := range map[string]struct {
-		dir   string
-		spell func(string) string
-	}{
-		"case":    {"Repo", strings.ToUpper},
-		"unicode": {"caf\u00e9", func(s string) string { return strings.ReplaceAll(s, "\u00e9", "e\u0301") }},
-	} {
-		t.Run(name, func(t *testing.T) {
-			r := &gitRunner{testRunner: &testRunner{}}
-			s := testServer(t, r)
-			repo := dirtyRepoNamed(t, s, c.dir)
-			alias, other := variant(t, repo, c.spell), t.TempDir()
-			setPolicy(t, s, ExecutionPolicy{Policy: "bounded-write", WritableRoots: []string{alias, filepath.Join(alias, "sub"), other}, Approval: "never"})
-			text := callTest(t, s, "ExternalSubagent", map[string]any{"description": "x", "prompt": "x", "name": "v", "model": "review", "isolation": "worktree", "run_in_background": false})
-			s.mu.Lock()
-			a, _ := s.target("v")
-			s.mu.Unlock()
-			r.mu.Lock()
-			args := strings.Join(r.plans[0].Args, " ")
-			r.mu.Unlock()
-			if !strings.Contains(args, `writable_roots=["`+a.Worktree.Path+`"] `) || strings.Contains(args, `"`+alias) || strings.Contains(args, `"`+repo) || strings.Contains(args, other) {
-				t.Fatal("grant writable_roots reached the isolated sandbox:", args)
-			}
-			if !strings.Contains(text, "isolation overrides grant writable_roots; the effective writable root is the worktree itself") {
-				t.Fatal(text)
-			}
-		})
+	text := callTest(t, s, "ExternalSubagent", map[string]any{"description": "x", "prompt": "x", "name": "v", "model": "review", "isolation": "worktree", "write": true, "run_in_background": false})
+	callTest(t, s, "ExternalSubagent", map[string]any{"description": "x", "prompt": "x", "name": "ro", "model": "review", "isolation": "worktree", "run_in_background": false})
+	s.mu.Lock()
+	a, _ := s.target("v")
+	s.mu.Unlock()
+	r.mu.Lock()
+	writeArgs, readArgs := strings.Join(r.plans[0].Args, " "), strings.Join(r.plans[1].Args, " ")
+	r.mu.Unlock()
+	if !strings.Contains(writeArgs, `writable_roots=["`+a.Worktree.Path+`"] `) || strings.Contains(writeArgs, repo) || !strings.Contains(text, "Write scope: worktree only [\""+a.Worktree.Path+"\"]") {
+		t.Fatal("isolated sandbox carries more than the worktree:", writeArgs, text)
+	}
+	if !strings.Contains(readArgs, `sandbox_mode="read-only"`) || strings.Contains(readArgs, "writable_roots") {
+		t.Fatal("isolation without write was writable:", readArgs)
 	}
 }
 
@@ -133,10 +101,8 @@ func TestWorktreeIsolationRunsInWorktreeAndKeepsOriginalChanges(t *testing.T) {
 	r := &gitRunner{testRunner: &testRunner{}, write: "agent.txt"}
 	s := testServer(t, r)
 	repo := dirtyRepo(t, s)
-	other := t.TempDir()
-	setPolicy(t, s, ExecutionPolicy{Policy: "bounded-write", WritableRoots: []string{repo, other}, Approval: "never"})
 	before := gitCmd(t, repo, "status", "--porcelain")
-	text := callTest(t, s, "ExternalSubagent", map[string]any{"description": "write", "prompt": "edit", "name": "iso", "model": "review", "isolation": "worktree", "run_in_background": false})
+	text := callTest(t, s, "ExternalSubagent", map[string]any{"description": "write", "prompt": "edit", "name": "iso", "model": "review", "isolation": "worktree", "write": true, "run_in_background": false})
 	s.mu.Lock()
 	a, _ := s.target("iso")
 	w := a.Worktree
@@ -163,7 +129,7 @@ func TestWorktreeIsolationRunsInWorktreeAndKeepsOriginalChanges(t *testing.T) {
 	if data, _ := os.ReadFile(filepath.Join(w.Path, "sub", "tracked.txt")); string(data) != "committed\n" {
 		t.Fatal("worktree not at HEAD")
 	}
-	for _, want := range []string{"Isolation: worktree path=", w.Path, "branch=agentx/" + a.ID, "is not modified", "kept after completion, failure and cancellation", "?? sub/agent.txt", "worktree remove", "Effective writable roots"} {
+	for _, want := range []string{"Isolation: worktree path=", w.Path, "branch=agentx/" + a.ID, "is not modified", "kept after completion, failure and cancellation", "?? sub/agent.txt", "worktree remove", "Write scope: worktree only"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("report missing %q:\n%s", want, text)
 		}
@@ -251,11 +217,6 @@ func TestPiWorktreeIsolationChangesOnlyWorkingDirectory(t *testing.T) {
 	os.WriteFile(filepath.Join(bin, "pi"), []byte("#!/bin/sh\nexit 0\n"), 0700)
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	savePreset(t, s.Home, presets.Preset{Name: "pi-iso", Agent: "pi", Model: "provider/model", Description: "pi"})
-	config, _ := LoadConfig(s.Home)
-	config.Grants["pi-iso"] = testGrant(t, "pi")
-	if err := SaveConfig(s.Home, config); err != nil {
-		t.Fatal(err)
-	}
 	s.call("ExternalSubagent", []byte(`{"description":"x","prompt":"x","model":"pi-iso","isolation":"worktree","name":"p","run_in_background":false}`))
 	s.mu.Lock()
 	a, _ := s.target("p")

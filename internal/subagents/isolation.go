@@ -8,7 +8,6 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/ArcheMind/agentx/internal/drivers"
 	"github.com/ArcheMind/agentx/internal/runtime"
 )
 
@@ -58,9 +57,9 @@ func within(base, path string) (string, bool) {
 // the agent working directory inside it. A rejected call leaves no worktree behind. It ignores the
 // connection context so a connection ending mid-call cannot interrupt git half way.
 //
-// Under bounded-write the only writable root is the worktree itself: grant writable_roots never
-// reach an isolated run, so no spelling of a granted path can reopen the original checkout.
-func (s *Server) createWorktree(id, cwd string, g Grant) (*Worktree, string, error) {
+// With write the only writable root is the worktree path AgentX created: no caller-supplied path
+// string reaches an isolated run, so no spelling of a path can reopen the original checkout.
+func (s *Server) createWorktree(id, cwd string, write bool) (*Worktree, string, error) {
 	ctx := context.Background()
 	worktreeMu.Lock()
 	defer worktreeMu.Unlock()
@@ -111,7 +110,7 @@ func (s *Server) createWorktree(id, cwd string, g Grant) (*Worktree, string, err
 	if info, err := os.Stat(agentCwd); err != nil || !info.IsDir() {
 		return reject(fmt.Errorf("working directory %s is not tracked at HEAD %s, so it does not exist in the worktree; no task started", cwd, base))
 	}
-	if g.Execution.Policy == drivers.PolicyBoundedWrite {
+	if write {
 		w.Roots = []string{w.Path}
 	}
 	return w, agentCwd, nil
@@ -119,7 +118,7 @@ func (s *Server) createWorktree(id, cwd string, g Grant) (*Worktree, string, err
 
 func (s *Server) executionRoots(a *ExternalSubagentState) ([]string, error) {
 	if a.Worktree == nil {
-		return a.Grant.ResolvedRoots(a.Cwd)
+		return a.Roots, nil
 	}
 	if info, err := os.Stat(a.Cwd); err != nil || !info.IsDir() {
 		return nil, fmt.Errorf("isolation worktree directory %s unavailable; no replacement created and nothing runs in the original directory", a.Cwd)
@@ -155,9 +154,6 @@ func (s *Server) worktreeRemaining(w *Worktree) string {
 
 func (w *Worktree) describe(agentCwd string) string {
 	text := fmt.Sprintf("Isolation: worktree path=%q branch=%s base=%s repository=%q; agent cwd=%q. The original working directory %q is not modified; its uncommitted changes are not copied into the worktree.\n", w.Path, w.Branch, w.Base, w.Repo, agentCwd, w.Original)
-	if len(w.Roots) > 0 {
-		text += fmt.Sprintf("Effective writable roots: %q (isolation overrides grant writable_roots; the effective writable root is the worktree itself)\n", w.Roots)
-	}
 	remaining := w.Remaining
 	if remaining == "" {
 		remaining = "not recorded yet"
@@ -170,7 +166,7 @@ func IsolationLimits(agent string) string {
 	if agent == "pi" {
 		text += "For Pi this only changes the working directory; reads are not path-restricted, so the original checkout stays readable. "
 	} else {
-		text += "Under bounded-write, isolation overrides grant writable_roots: the effective writable root is the worktree itself, so the original checkout and every granted path are not writable; read-only stays read-only; reads are not path-restricted. "
+		text += "With write, the worktree is the only writable root (writable_roots is rejected with isolation), so the original checkout is not writable; without write the run stays read-only; reads are not path-restricted. "
 	}
 	return text + "Remote: rejected (no verifiable remote execution environment with cancellation). "
 }

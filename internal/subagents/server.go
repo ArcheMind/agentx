@@ -11,7 +11,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"sync"
 
@@ -29,16 +28,21 @@ type ExternalSubagentInput struct {
 	Background   *bool  `json:"run_in_background,omitempty"`
 	Name         string `json:"name,omitempty"`
 	Isolation    string `json:"isolation,omitempty"`
-	TeamName     string `json:"team_name,omitempty"`
-	Mode         string `json:"mode,omitempty"`
+	// Write enables writes: with isolation "worktree" the worktree only, otherwise WritableRoots.
+	Write         bool     `json:"write,omitempty"`
+	WritableRoots []string `json:"writable_roots,omitempty"`
+	TeamName      string   `json:"team_name,omitempty"`
+	Mode          string   `json:"mode,omitempty"`
 }
 
 type Job struct {
 	ID, Prompt, Summary, Status, Report, Failure string
 	// Evidence summarizes what native records show was executed (effort, role carriage).
 	Evidence string
-	Usage    any
-	Done     chan struct{}
+	// Auth is the credential source the preflight discovered for this turn.
+	Auth  string
+	Usage any
+	Done  chan struct{}
 }
 
 type executionCancelled struct{ cause error }
@@ -48,13 +52,15 @@ func (e *executionCancelled) Error() string { return e.cause.Error() }
 type ExternalSubagentState struct {
 	ID, Name, Session, NativeID, Cwd, Status string
 	Option                                   presets.Preset
-	Grant                                    Grant
-	Role                                     roles.Role
-	evidence                                 string
-	Worktree                                 *Worktree
-	Jobs                                     []*Job
-	Running                                  bool
-	Cancel                                   context.CancelFunc
+	// Roots is the call-time write scope outside isolation; empty means read-only.
+	Roots    []string
+	Role     roles.Role
+	evidence string
+	auth     Auth
+	Worktree *Worktree
+	Jobs     []*Job
+	Running  bool
+	Cancel   context.CancelFunc
 }
 
 type Server struct {
@@ -185,7 +191,7 @@ func (s *Server) handle(method string, raw json.RawMessage) (any, error) {
 
 func (s *Server) tools() any {
 	catalog, models, roleNames := Catalog(s.Home)
-	description := "AgentX ExternalSubagent delegation. One call starts an independent ExternalSubagent. model selects a user-configured execution agent × exact model; subagent_type selects general-purpose or a user-declared role (task instructions only; never changes agent, model, effort, grant or permissions). Omitted or true run_in_background returns immediately; false waits for terminal status. Background results arrive as untrusted AgentX channel messages (requires Claude channels opt-in). Continue via SendExternalSubagentMessage; cancel via StopExternalSubagent; list via listExternalSubagentSessions. The selected preset fixes agent, model and effort; there is no per-call effort override. mode and team_name are deprecated and ignored. isolation \"worktree\" runs the task in a new git worktree of the repository containing the MCP working directory, adds branch agentx/<id> and worktree metadata to that repository, runs its post-checkout hook, and keeps the worktree afterwards; isolation \"remote\" is rejected. No context restoration across MCP reconnects. "
+	description := "AgentX ExternalSubagent delegation. One call starts an independent ExternalSubagent. model selects a user-configured execution agent × exact model; subagent_type selects general-purpose or a user-declared role (task instructions only; never changes agent, model, effort, write scope or permissions). Omitted or true run_in_background returns immediately; false waits for terminal status. Background results arrive as untrusted AgentX channel messages (requires Claude channels opt-in). Continue via SendExternalSubagentMessage; cancel via StopExternalSubagent; list via listExternalSubagentSessions. The selected preset fixes agent, model and effort; there is no per-call effort override. Every call is read-only unless it sets write: with isolation \"worktree\" the worktree becomes the only writable root; without isolation writable_roots lists absolute directories (Codex also always makes its working directory writable). Pi presets never write. The write scope is fixed for the ExternalSubagent, including continuations. mode and team_name are deprecated and ignored. isolation \"worktree\" runs the task in a new git worktree of the repository containing the MCP working directory, adds branch agentx/<id> and worktree metadata to that repository, runs its post-checkout hook, and keeps the worktree afterwards; isolation \"remote\" is rejected. No context restoration across MCP reconnects. "
 	description += "\n\n" + catalog
 	str := func(text string) any { return map[string]any{"type": "string", "description": text} }
 	enum := func(values ...string) any { return map[string]any{"type": "string", "enum": values} }
@@ -200,33 +206,25 @@ func (s *Server) tools() any {
 		modelSchema["enum"] = models
 	}
 	return map[string]any{"tools": []any{
-		tool("ExternalSubagent", description, map[string]any{"description": str("Short task description"), "prompt": str("Task for the ExternalSubagent"), "subagent_type": map[string]any{"type": "string", "enum": roleNames, "description": "general-purpose (default) or a role declared in the user's role collection; unknown roles are rejected"}, "model": modelSchema, "run_in_background": map[string]any{"type": "boolean", "default": true}, "name": map[string]any{"type": "string", "pattern": presets.NamePattern.String()}, "isolation": map[string]any{"type": "string", "enum": []string{IsolationWorktree, IsolationRemote}, "description": "worktree: new git worktree at HEAD of the repository containing the MCP working directory; adds branch agentx/<id> and worktree metadata to that repository and runs its post-checkout hook outside any sandbox; original checkout files untouched and not writable; isolation overrides grant writable_roots: under bounded-write the effective writable root is the worktree itself; kept after completion, failure and cancellation. remote: rejected, no verifiable remote execution environment; never runs locally instead."}, "team_name": str("Deprecated, ignored"), "mode": enum("acceptEdits", "auto", "bypassPermissions", "default", "dontAsk", "plan")}, "description", "prompt"),
-		tool("SendExternalSubagentMessage", "Send a text task to an AgentX ExternalSubagent by exact name or ID. Accepted means queued, not completed. Busy ExternalSubagents process messages in order in the same native context. Completed ExternalSubagents resume. Feature must be enabled; original preset and its grant must still be configured unchanged and available. Summary is display-only.", map[string]any{"to": str("AgentX name or ID"), "message": str("Text task"), "summary": str("Optional display summary")}, "to", "message"),
+		tool("ExternalSubagent", description, map[string]any{"description": str("Short task description"), "prompt": str("Task for the ExternalSubagent"), "subagent_type": map[string]any{"type": "string", "enum": roleNames, "description": "general-purpose (default) or a role declared in the user's role collection; unknown roles are rejected"}, "model": modelSchema, "run_in_background": map[string]any{"type": "boolean", "default": true}, "name": map[string]any{"type": "string", "pattern": presets.NamePattern.String()}, "isolation": map[string]any{"type": "string", "enum": []string{IsolationWorktree, IsolationRemote}, "description": "worktree: new git worktree at HEAD of the repository containing the MCP working directory; adds branch agentx/<id> and worktree metadata to that repository and runs its post-checkout hook outside any sandbox; original checkout files untouched and not writable; with write the worktree is the only writable root; kept after completion, failure and cancellation. remote: rejected, no verifiable remote execution environment; never runs locally instead."}, "write": map[string]any{"type": "boolean", "default": false, "description": "Request write access. Omitted or false: read-only. With isolation \"worktree\": the worktree is the only writable root (do not pass writable_roots). Without isolation: requires writable_roots. Rejected for Pi presets."}, "writable_roots": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "minItems": 1, "description": "Absolute directories made writable when write is true and isolation is not set; symlinks are resolved and the Codex OS sandbox enforces them; the working directory is always writable too."}, "team_name": str("Deprecated, ignored"), "mode": enum("acceptEdits", "auto", "bypassPermissions", "default", "dontAsk", "plan")}, "description", "prompt"),
+		tool("SendExternalSubagentMessage", "Send a text task to an AgentX ExternalSubagent by exact name or ID. Accepted means queued, not completed. Busy ExternalSubagents process messages in order in the same native context. Completed ExternalSubagents resume. The original preset and role must still exist unchanged; the write scope and isolation of the ExternalSubagent are reused. Summary is display-only.", map[string]any{"to": str("AgentX name or ID"), "message": str("Text task"), "summary": str("Optional display summary")}, "to", "message"),
 		tool("StopExternalSubagent", "Cancel running and queued work for one AgentX ExternalSubagent by name or ID. Waits for native process termination before confirming. Works while disabled. Already ended is not cancellation.", map[string]any{"task_id": str("AgentX name or ID")}, "task_id"),
 		tool("listExternalSubagentSessions", "List ExternalSubagent sessions already created in this AgentX MCP connection, with status, report and pending messages. No other users, connections or Claude native subagents.", map[string]any{}),
 	}}
 }
 
-func (s *Server) enabledOption(name string) (presets.Preset, Grant, error) {
-	state, err := LoadState(s.Home)
-	if err != nil {
-		return presets.Preset{}, Grant{}, err
-	}
-	config := state.Config
-	if !config.Enabled {
-		return presets.Preset{}, Grant{}, fmt.Errorf("ExternalSubagents disabled; enable with ax sub-agent-management enable")
-	}
+func (s *Server) callablePreset(name string) (presets.Preset, error) {
 	if name == "" {
-		return presets.Preset{}, Grant{}, fmt.Errorf("model is required: name one preset from the AgentX preset list; there is no default preset")
+		return presets.Preset{}, fmt.Errorf("model is required: name one preset from the AgentX preset list; there is no default preset")
 	}
 	if err := presets.ValidName(name); err != nil {
-		return presets.Preset{}, Grant{}, fmt.Errorf("model %q is not a preset name: %w", name, err)
+		return presets.Preset{}, fmt.Errorf("model %q is not a preset name: %w", name, err)
 	}
 	o, err := presets.Read(s.Home, name)
 	if err != nil {
-		return presets.Preset{}, Grant{}, fmt.Errorf("preset %s unavailable: %w. If it was renamed or deleted after this MCP connection started, reconnect AgentX MCP to refresh the preset list; no other preset was substituted", name, err)
+		return presets.Preset{}, fmt.Errorf("preset %s unavailable: %w. If it was renamed or deleted after this MCP connection started, reconnect AgentX MCP to refresh the preset list; no other preset was substituted", name, err)
 	}
-	return o, config.Grants[o.Name], config.Ready(o)
+	return o, Ready(o)
 }
 
 func (s *Server) staleNote() string {
@@ -290,25 +288,30 @@ func (s *Server) call(name string, raw json.RawMessage) (string, error) {
 			s.mu.Unlock()
 			return "", fmt.Errorf("invalid deprecated mode")
 		}
-		o, g, err := s.enabledOption(in.Model)
+		o, err := s.callablePreset(in.Model)
 		if err != nil {
+			s.mu.Unlock()
+			return "", err
+		}
+		if err := checkWrite(o, in); err != nil {
 			s.mu.Unlock()
 			return "", err
 		}
 		id, cwd := "ax-"+randomID(), s.Cwd
 		var worktree *Worktree
+		var roots []string
 		if in.Isolation == IsolationWorktree {
 			s.mu.Unlock()
-			worktree, cwd, err = s.createWorktree(id, s.Cwd, g)
+			worktree, cwd, err = s.createWorktree(id, s.Cwd, in.Write)
 			s.mu.Lock()
-		} else {
-			_, err = g.ResolvedRoots(s.Cwd)
+		} else if in.Write {
+			roots, err = resolveWritableRoots(in.WritableRoots)
 		}
 		if err != nil {
 			s.mu.Unlock()
 			return "", err
 		}
-		a := &ExternalSubagentState{ID: id, Name: in.Name, Option: o, Grant: g, Role: role, Worktree: worktree, Cwd: cwd, Status: "queued"}
+		a := &ExternalSubagentState{ID: id, Name: in.Name, Option: o, Roots: roots, Role: role, Worktree: worktree, Cwd: cwd, Status: "queued"}
 		s.agents[a.ID] = a
 		if a.Name != "" {
 			s.names[a.Name] = a.ID
@@ -349,14 +352,14 @@ func (s *Server) call(name string, raw json.RawMessage) (string, error) {
 			s.mu.Unlock()
 			return "", err
 		}
-		o, g, err := s.enabledOption(a.Option.Name)
+		o, err := s.callablePreset(a.Option.Name)
 		if err != nil {
 			s.mu.Unlock()
 			return "", err
 		}
-		if !reflect.DeepEqual(o, a.Option) || !reflect.DeepEqual(g, a.Grant) {
+		if o != a.Option {
 			s.mu.Unlock()
-			return "", fmt.Errorf("original preset %s or its grant changed; cannot resume this ExternalSubagent without changing its identity, permissions or auth source", a.Option.Name)
+			return "", fmt.Errorf("original preset %s changed; cannot resume this ExternalSubagent without changing its identity", a.Option.Name)
 		}
 		if role, err := resolveRole(s.Home, a.Role.Name); err != nil || role != a.Role {
 			s.mu.Unlock()
@@ -453,9 +456,12 @@ func (s *Server) call(name string, raw json.RawMessage) (string, error) {
 }
 
 func (s *Server) render(a *ExternalSubagentState, j *Job) string {
-	text := fmt.Sprintf("AgentX ExternalSubagent %s (name=%q; preset=%s; agent=%s; actual model=%s; effort=%s; role=%s; connection=%s)\nGrant: %s\nTask %s: %s; ExternalSubagent status: %s.\n", a.ID, a.Name, a.Option.Name, a.Option.Agent, a.Option.Model, describeEffort(a.Option.Effort), a.Role.Name, s.connectionID, a.Grant.Summary(), j.ID, j.Status, a.Status)
+	text := fmt.Sprintf("AgentX ExternalSubagent %s (name=%q; preset=%s; agent=%s; actual model=%s; effort=%s; role=%s; connection=%s)\nWrite scope: %s\nTask %s: %s; ExternalSubagent status: %s.\n", a.ID, a.Name, a.Option.Name, a.Option.Agent, a.Option.Model, describeEffort(a.Option.Effort), a.Role.Name, s.connectionID, a.writeScope(), j.ID, j.Status, a.Status)
 	if a.Worktree != nil {
 		text += a.Worktree.describe(a.Cwd)
+	}
+	if j.Auth != "" {
+		text += "Auth (discovered by preflight for this turn): " + j.Auth + "\n"
 	}
 	if j.Evidence != "" {
 		text += "Native evidence: " + j.Evidence + "\n"
@@ -524,6 +530,9 @@ func (s *Server) work(a *ExternalSubagentState) {
 		job.Report = report
 		job.Usage = usage
 		job.Evidence = a.evidence
+		if a.auth.Method != "" {
+			job.Auth = a.auth.String()
+		}
 		var cancelled *executionCancelled
 		if errors.As(err, &cancelled) {
 			job.Status = "cancelled"
@@ -559,18 +568,13 @@ func (s *Server) completion(a *ExternalSubagentState, job *Job) {
 }
 
 func (s *Server) execute(ctx context.Context, a *ExternalSubagentState, prompt string) (string, any, error) {
-	state, err := LoadState(s.Home)
-	if err != nil {
-		return "", nil, err
-	}
-	config := state.Config
-	if current, err := presets.Read(s.Home, a.Option.Name); err != nil || current != a.Option || !reflect.DeepEqual(config.Grants[a.Option.Name], a.Grant) {
-		return "", nil, fmt.Errorf("original preset %s or its grant changed or was removed before execution; no replacement selected", a.Option.Name)
+	if current, err := presets.Read(s.Home, a.Option.Name); err != nil || current != a.Option {
+		return "", nil, fmt.Errorf("original preset %s changed or was removed before execution; no replacement selected", a.Option.Name)
 	}
 	if role, err := resolveRole(s.Home, a.Role.Name); err != nil || role != a.Role {
 		return "", nil, fmt.Errorf("original role %s changed or was removed before execution; no replacement selected", a.Role.Name)
 	}
-	a.evidence = ""
+	a.evidence, a.auth = "", Auth{}
 	if a.Session != "" {
 		if a.Option.Agent == "pi" {
 			if _, err := os.Stat(a.Session); err != nil {
@@ -578,25 +582,24 @@ func (s *Server) execute(ctx context.Context, a *ExternalSubagentState, prompt s
 			}
 		}
 	}
-	if err := a.Grant.Ready(); err != nil {
-		return "", nil, err
-	}
 	roots, err := s.executionRoots(a)
 	if err != nil {
 		return "", nil, err
 	}
-	if err := s.verifyAuth(ctx, a.Option, a.Grant); err != nil {
+	auth, err := s.discoverAuth(ctx, a.Option)
+	if err != nil {
 		return "", nil, err
 	}
+	a.auth = auth
 	var plan runtime.CommandPlan
 	if a.Option.Agent == "codex" {
-		plan, err = drivers.CodexPolicyExecPlan(a.Cwd, a.Option.Model, a.Session, a.Grant.Execution.Policy, roots, a.Option.Effort, a.Role.Instructions)
+		plan, err = drivers.CodexPolicyExecPlan(a.Cwd, a.Option.Model, a.Session, roots, a.Option.Effort, a.Role.Instructions)
 		if err != nil {
 			return "", nil, err
 		}
 	} else {
-		if a.Grant.Execution.Policy != drivers.PolicyReadOnly {
-			return "", nil, fmt.Errorf("Pi supports only the read-only policy")
+		if len(roots) != 0 {
+			return "", nil, fmt.Errorf("Pi cannot write: it has no runtime write boundary")
 		}
 		plan, err = drivers.ExecPlan("pi", a.Cwd, a.Option.Model, "")
 		if err != nil {
@@ -611,7 +614,7 @@ func (s *Server) execute(ctx context.Context, a *ExternalSubagentState, prompt s
 		}
 		plan.Args = append(plan.Args, "--session", a.Session, "--no-skills", "--no-prompt-templates", "--no-approve")
 	}
-	plan.Env, plan.UnsetEnv = authEnvironment(a.Option, a.Grant)
+	plan.Env, plan.UnsetEnv = authEnvironment(auth)
 	observed := a.Option.Agent == "pi" && (a.Option.Effort != "" || a.Role.Instructions != "")
 	var piOffset int64
 	if observed {

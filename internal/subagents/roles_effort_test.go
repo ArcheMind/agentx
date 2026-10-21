@@ -246,11 +246,6 @@ func piServer(t *testing.T, r runtime.Runner, effort string) *Server {
 	os.WriteFile(filepath.Join(bin, "pi"), []byte("#!/bin/sh\nexit 0\n"), 0o700)
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	savePreset(t, s.Home, presets.Preset{Name: "pi-review", Agent: "pi", Model: "provider/model", Description: "Pi", Effort: effort})
-	config, _ := LoadConfig(s.Home)
-	config.Grants["pi-review"] = testGrant(t, "pi")
-	if err := SaveConfig(s.Home, config); err != nil {
-		t.Fatal(err)
-	}
 	return s
 }
 
@@ -331,7 +326,7 @@ func TestRoleCatalogAndSchemaShowDeclaredRoles(t *testing.T) {
 		t.Fatal(enum)
 	}
 	description := create["description"].(string)
-	for _, want := range []string{"--- begin role data ---", "- general-purpose: implicit", `- alpha: user description="Alpha reviewer"; instructions="End every reply with ROLE-ALPHA."`, "- broken: invalid role at", "never changes the preset's agent, model, effort, grant", "role instructions are sent as Codex developer_instructions"} {
+	for _, want := range []string{"--- begin role data ---", "- general-purpose: implicit", `- alpha: user description="Alpha reviewer"; instructions="End every reply with ROLE-ALPHA."`, "- broken: invalid role at", "never changes the preset's agent, model, effort, write scope", "role instructions are sent as Codex developer_instructions"} {
 		if !strings.Contains(description, want) {
 			t.Fatal(want, description)
 		}

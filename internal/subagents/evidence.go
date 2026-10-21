@@ -229,7 +229,7 @@ func verifyCodex(a *ExternalSubagentState, stderr string) (string, error) {
 		return "", err
 	}
 	if a.Role.Instructions != "" {
-		if err := verifyCodexRole(a.Grant.Auth.Path, a.Session, a.Role.Instructions); err != nil {
+		if err := verifyCodexRole(a.auth.Dir, a.Session, a.Role.Instructions); err != nil {
 			return "", err
 		}
 		if summary != "" {

@@ -12,7 +12,6 @@ import (
 	"github.com/ArcheMind/agentx/internal/presets"
 	"github.com/ArcheMind/agentx/internal/roles"
 	"github.com/ArcheMind/agentx/internal/runtime"
-	"github.com/ArcheMind/agentx/internal/subagents"
 )
 
 func TestSubagentLaunchDryRun(t *testing.T) {
@@ -20,9 +19,13 @@ func TestSubagentLaunchDryRun(t *testing.T) {
 	app := New(false, strings.NewReader(""), &output, &bytes.Buffer{})
 	app.Hooks.Home = t.TempDir()
 	app.Hooks.Project = t.TempDir()
-	if err := subagents.SaveConfig(app.Hooks.Home, subagents.Config{Enabled: true}); err != nil {
-		t.Fatal(err)
+	t.Setenv("AX_SUBAGENT_HOME", "")
+	t.Setenv("CLAUDE_CONFIG_DIR", "")
+	if err := app.Run(context.Background(), []string{"--json", "claude", "--cwd", app.Hooks.Project, "--subagents", "--dry-run"}); err == nil || !strings.Contains(err.Error(), "enable with ax sub-agent-management enable") {
+		t.Fatal("unregistered AgentX treated as enabled", err)
 	}
+	registerAgentx(t, app.Hooks.Home)
+	output.Reset()
 	if err := app.Run(context.Background(), []string{"--json", "claude", "--cwd", app.Hooks.Project, "--subagents", "--dry-run"}); err != nil {
 		t.Fatal(err)
 	}
@@ -38,38 +41,50 @@ func TestSubagentLaunchDryRun(t *testing.T) {
 	}
 }
 
-func TestSubagentStatusShowsGrantOnlyForCallablePresets(t *testing.T) {
+func registerAgentx(t *testing.T, home string) {
+	t.Helper()
+	entry, err := agentxEntry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, _ := json.Marshal(map[string]any{"mcpServers": map[string]json.RawMessage{"agentx": entry}})
+	if err := os.WriteFile(filepath.Join(home, ".claude.json"), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestSubagentStatusEnabledIsMCPRegistrationAndHasNoConfigFile(t *testing.T) {
 	var output bytes.Buffer
 	app := New(false, strings.NewReader(""), &output, &bytes.Buffer{})
 	app.Hooks.Home = t.TempDir()
 	t.Setenv("AX_SUBAGENT_HOME", "")
-	for _, p := range []presets.Preset{{Name: "review", Agent: "codex", Model: "m", Description: "d"}, {Name: "daily", Agent: "claude", Model: "opus", Description: "d"}} {
-		if err := presets.Create(app.Hooks.Home, p); err != nil {
+	t.Setenv("CLAUDE_CONFIG_DIR", "")
+	if err := presets.Create(app.Hooks.Home, presets.Preset{Name: "review", Agent: "codex", Model: "m", Description: "d"}); err != nil {
+		t.Fatal(err)
+	}
+	legacy := filepath.Join(app.Hooks.Home, ".config", "agentx", "subagents.json")
+	os.MkdirAll(filepath.Dir(legacy), 0o700)
+	os.WriteFile(legacy, []byte(`{"enabled":true,"grants":{"review":{}}}`), 0o600)
+	status := func() map[string]any {
+		output.Reset()
+		if err := app.Run(context.Background(), []string{"--json", "sub-agent-management", "status"}); err != nil {
 			t.Fatal(err)
 		}
-	}
-	grant := subagents.Grant{Execution: subagents.ExecutionPolicy{Policy: "read-only", Approval: "never"}, Auth: subagents.AuthSource{Source: "codex-home", Path: app.Hooks.Home, Method: "chatgpt"}}
-	if err := subagents.SaveConfig(app.Hooks.Home, subagents.Config{Grants: map[string]subagents.Grant{"review": grant, "daily": grant}}); err != nil {
-		t.Fatal(err)
-	}
-	if err := app.Run(context.Background(), []string{"--json", "sub-agent-management", "status"}); err != nil {
-		t.Fatal(err)
-	}
-	var status struct {
-		Presets       []map[string]any  `json:"presets"`
-		GrantProblems []presets.Problem `json:"grant_problems"`
-	}
-	if err := json.Unmarshal(output.Bytes(), &status); err != nil {
-		t.Fatal(err, output.String())
-	}
-	for _, p := range status.Presets {
-		_, hasGrant := p["execution"]
-		if hasGrant != (p["name"] == "review") {
-			t.Fatalf("grant shown on wrong preset: %v", p)
+		var value map[string]any
+		if err := json.Unmarshal(output.Bytes(), &value); err != nil {
+			t.Fatal(err, output.String())
 		}
+		return value
 	}
-	if len(status.GrantProblems) != 1 || status.GrantProblems[0].Name != "daily" {
-		t.Fatalf("stray grant not reported only as a problem: %+v", status.GrantProblems)
+	before := status()
+	if before["enabled"] != false || before["grant_problems"] != nil || before["configuration"] != nil {
+		t.Fatalf("status still reads a separate switch or grants: %v", before)
+	}
+	registerAgentx(t, app.Hooks.Home)
+	after := status()
+	preset := after["presets"].([]any)[0].(map[string]any)
+	if after["enabled"] != true || preset["execution"] != nil || preset["auth"] != nil || !strings.Contains(after["write_behavior"].(string), "read-only unless it sets write") {
+		t.Fatalf("status = %v", after)
 	}
 }
 
@@ -107,7 +122,7 @@ func TestSubagentStatusListsRolesAndInvalidRoles(t *testing.T) {
 	if err := json.Unmarshal(output.Bytes(), &status); err != nil {
 		t.Fatal(err, output.String())
 	}
-	if len(status.Roles) != 2 || status.Roles[0]["name"] != "general-purpose" || status.Roles[1]["name"] != "security" || len(status.InvalidRoles) != 1 || !strings.Contains(status.InvalidRoles[0].Err, "unknown field") || !strings.Contains(status.RoleBehavior, "never change agent, model, effort, grant or permissions") {
+	if len(status.Roles) != 2 || status.Roles[0]["name"] != "general-purpose" || status.Roles[1]["name"] != "security" || len(status.InvalidRoles) != 1 || !strings.Contains(status.InvalidRoles[0].Err, "unknown field") || !strings.Contains(status.RoleBehavior, "never change agent, model, effort, write scope or permissions") {
 		t.Fatalf("%+v", status)
 	}
 }
