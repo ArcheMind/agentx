@@ -77,3 +77,21 @@ func TestLoadKeepsValidRolesBesideBrokenOnes(t *testing.T) {
 		t.Fatalf("%v %v %v", list, problems, err)
 	}
 }
+
+func TestSymlinkedRoleDirectoryIsRejectedByLoadAndRead(t *testing.T) {
+	home := t.TempDir()
+	target := filepath.Join(t.TempDir(), "elsewhere")
+	os.MkdirAll(target, 0o700)
+	os.WriteFile(filepath.Join(target, FileName), []byte("---\ndescription: Linked\n---\nLinked instructions.\n"), 0o600)
+	os.MkdirAll(Dir(home), 0o700)
+	if err := os.Symlink(target, filepath.Join(Dir(home), "linked")); err != nil {
+		t.Fatal(err)
+	}
+	list, problems, err := Load(home)
+	if err != nil || len(list) != 0 || len(problems) != 1 || problems[0].Name != "linked" || !strings.Contains(problems[0].Err, "symlinks are not followed") {
+		t.Fatal("Load:", list, problems, err)
+	}
+	if _, err := Read(home, "linked"); err == nil || !strings.Contains(err.Error(), "symlinks are not followed") {
+		t.Fatal("Read accepted a symlinked role directory:", err)
+	}
+}

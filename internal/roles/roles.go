@@ -105,15 +105,16 @@ func Read(home, name string) (Role, error) {
 	if err := ValidName(name); err != nil {
 		return Role{Name: name}, err
 	}
-	if !exactEntry(home, name) {
+	entry := exactEntry(home, name)
+	if entry == nil {
 		return Role{Name: name}, fmt.Errorf("role %q is not declared in %s", name, Dir(home))
+	}
+	if !entry.IsDir() {
+		return Role{Name: name}, fmt.Errorf("%s is not a role directory (symlinks are not followed); each role is a directory containing %s", filepath.Join(Dir(home), name), FileName)
 	}
 	data, err := os.ReadFile(Path(home, name))
 	if os.IsNotExist(err) {
-		if info, statErr := os.Stat(filepath.Join(Dir(home), name)); statErr == nil && info.IsDir() {
-			return Role{Name: name}, fmt.Errorf("%s is missing", FileName)
-		}
-		return Role{Name: name}, fmt.Errorf("role %q is not declared in %s", name, Dir(home))
+		return Role{Name: name}, fmt.Errorf("%s is missing", FileName)
 	}
 	if err != nil {
 		return Role{Name: name}, err
@@ -137,11 +138,6 @@ func Load(home string) ([]Role, []presets.Problem, error) {
 		if strings.HasPrefix(name, ".") {
 			continue
 		}
-		path := filepath.Join(Dir(home), name)
-		if !entry.IsDir() {
-			problems = append(problems, presets.Problem{Name: name, Path: path, Err: "not a role directory; each role is a directory containing " + FileName})
-			continue
-		}
 		role, err := Read(home, name)
 		if err != nil {
 			problems = append(problems, presets.Problem{Name: name, Path: Path(home, name), Err: err.Error()})
@@ -152,16 +148,17 @@ func Load(home string) ([]Role, []presets.Problem, error) {
 	return valid, problems, nil
 }
 
-// exactEntry stops case-insensitive filesystems from resolving one role under another spelling.
-func exactEntry(home, name string) bool {
+// exactEntry stops case-insensitive filesystems from resolving one role under another spelling;
+// its type is the entry's own, so Load and Read judge a symlinked role directory identically.
+func exactEntry(home, name string) os.DirEntry {
 	entries, err := os.ReadDir(Dir(home))
 	if err != nil {
-		return false
+		return nil
 	}
 	for _, entry := range entries {
 		if entry.Name() == name {
-			return true
+			return entry
 		}
 	}
-	return false
+	return nil
 }
