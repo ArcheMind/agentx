@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -20,8 +21,15 @@ func WriteSessionFile(detail Detail, agentID, dir, homeDir string) (string, erro
 
 	switch agentID {
 	case "claude":
-		path := filepath.Join(dir, id+".jsonl")
-		return path, writeJSONLFile(path, SerializeClaude(detail))
+		newID := newUUID()
+		cwdEncoded := strings.ReplaceAll(detail.Workspace, "/", "-")
+		claudeDir := filepath.Join(homeDir, ".claude", "projects", cwdEncoded)
+		if err := os.MkdirAll(claudeDir, 0700); err != nil {
+			return "", fmt.Errorf("create claude session directory: %w", err)
+		}
+		path := filepath.Join(claudeDir, newID+".jsonl")
+		detail.ID = newID
+		return newID, writeJSONLFile(path, SerializeClaude(detail))
 	case "codex":
 		newID := newUUID()
 		now := time.Now()

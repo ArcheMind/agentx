@@ -894,11 +894,29 @@ func piAssistantBlocks(value any) []ContentBlock {
 				Signature: stringValue(obj["thinkingSignature"]),
 			})
 		case "toolCall":
+			id := stringValue(obj["id"])
+			if id == "" {
+				id = stringValue(obj["toolCallId"])
+			}
+			name := stringValue(obj["name"])
+			if name == "" {
+				name = stringValue(obj["toolName"])
+			}
+			input := obj["arguments"]
+			if input == nil {
+				input = obj["input"]
+			}
+			if s, ok := input.(string); ok && s != "" {
+				var parsed any
+				if json.Unmarshal([]byte(s), &parsed) == nil {
+					input = parsed
+				}
+			}
 			blocks = append(blocks, ContentBlock{
 				Type:  "tool_use",
-				ID:    stringValue(obj["toolCallId"]),
-				Name:  stringValue(obj["toolName"]),
-				Input: obj["input"],
+				ID:    id,
+				Name:  name,
+				Input: input,
 			})
 		case "text":
 			blocks = append(blocks, ContentBlock{Type: "text", Text: stringValue(obj["text"])})

@@ -1,6 +1,8 @@
 package sessions
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"path/filepath"
 )
@@ -12,23 +14,27 @@ type FileEntry struct {
 }
 
 // SerializeClaude converts a unified Detail back to Claude Code's native JSONL records.
+// See docs/native-rollout-protocols/ for the wire format reference.
 func SerializeClaude(detail Detail) []map[string]any {
 	var records []map[string]any
+	claudeEnvelope := func(recType, uuid, parentUuid, ts string) map[string]any {
+		return map[string]any{
+			"type": recType, "sessionId": detail.ID,
+			"cwd": detail.Workspace, "timestamp": ts,
+			"uuid": uuid, "parentUuid": parentUuid,
+			"version": "1", "userType": "external",
+			"isSidechain": false, "entrypoint": "cli",
+		}
+	}
 	for _, m := range detail.Messages {
 		switch m.Role {
 		case "user":
-			records = append(records, map[string]any{
-				"type":       "user",
-				"sessionId":  detail.ID,
-				"cwd":        detail.Workspace,
-				"timestamp":  m.Timestamp,
-				"uuid":       m.ID,
-				"parentUuid": m.ParentID,
-				"message": map[string]any{
-					"role":    "user",
-					"content": claudeSerializeUserContent(m.Content),
-				},
-			})
+			rec := claudeEnvelope("user", m.ID, m.ParentID, m.Timestamp)
+			rec["message"] = map[string]any{
+				"role":    "user",
+				"content": claudeSerializeUserContent(m.Content),
+			}
+			records = append(records, rec)
 		case "assistant":
 			var blocks []any
 			for _, b := range m.Content {
@@ -56,14 +62,9 @@ func SerializeClaude(detail Detail) []map[string]any {
 			if m.StopReason != "" {
 				msg["stop_reason"] = m.StopReason
 			}
-			records = append(records, map[string]any{
-				"type":       "assistant",
-				"sessionId":  detail.ID,
-				"timestamp":  m.Timestamp,
-				"uuid":       m.ID,
-				"parentUuid": m.ParentID,
-				"message":    msg,
-			})
+			rec := claudeEnvelope("assistant", m.ID, m.ParentID, m.Timestamp)
+			rec["message"] = msg
+			records = append(records, rec)
 		case "tool":
 			result := map[string]any{
 				"type":        "tool_result",
@@ -73,17 +74,12 @@ func SerializeClaude(detail Detail) []map[string]any {
 			if m.IsError {
 				result["is_error"] = true
 			}
-			records = append(records, map[string]any{
-				"type":       "user",
-				"sessionId":  detail.ID,
-				"timestamp":  m.Timestamp,
-				"uuid":       m.ID,
-				"parentUuid": m.ParentID,
-				"message": map[string]any{
-					"role":    "user",
-					"content": []any{result},
-				},
-			})
+			rec := claudeEnvelope("user", m.ID, m.ParentID, m.Timestamp)
+			rec["message"] = map[string]any{
+				"role":    "user",
+				"content": []any{result},
+			}
+			records = append(records, rec)
 		}
 	}
 	return records
@@ -109,6 +105,8 @@ func claudeSerializeUserContent(blocks []ContentBlock) any {
 }
 
 // SerializeCodex converts a unified Detail back to Codex CLI's native JSONL records.
+// It emits both ResponseItem records (model context) and EventMsg records (TUI display)
+// per docs/native-rollout-protocols/codex-0.163.0/PROTOCOL.md.
 func SerializeCodex(detail Detail) []map[string]any {
 	meta := map[string]any{
 		"id":          detail.ID,
@@ -127,9 +125,31 @@ func SerializeCodex(detail Detail) []map[string]any {
 		"timestamp": detail.StartedAt,
 		"payload":   meta,
 	}}
+
+	turnID := ""
+	turnOpen := false
+	openTurn := func(ts string) {
+		turnID = "turn-" + codexItemID()
+		turnOpen = true
+		records = append(records, codexEvent(ts, map[string]any{
+			"type": "turn_started", "turn_id": turnID,
+		}))
+	}
+	closeTurn := func(ts string) {
+		if !turnOpen {
+			return
+		}
+		records = append(records, codexEvent(ts, map[string]any{
+			"type": "turn_complete", "turn_id": turnID,
+		}))
+		turnOpen = false
+	}
+
 	for _, m := range detail.Messages {
 		switch m.Role {
 		case "user":
+			closeTurn(m.Timestamp)
+			openTurn(m.Timestamp)
 			var content []any
 			for _, b := range m.Content {
 				if b.Type == "text" {
@@ -145,13 +165,21 @@ func SerializeCodex(detail Detail) []map[string]any {
 					"content": content,
 				},
 			})
+			records = append(records, codexEvent(m.Timestamp, map[string]any{
+				"type": "user_message", "message": textContent(m.Content),
+			}))
 		case "assistant":
 			var textBlocks []any
 			var toolBlocks []ContentBlock
+			var agentText string
 			for _, b := range m.Content {
 				switch b.Type {
 				case "text":
 					textBlocks = append(textBlocks, map[string]any{"type": "output_text", "text": b.Text})
+					if agentText != "" {
+						agentText += "\n"
+					}
+					agentText += b.Text
 				case "tool_use":
 					toolBlocks = append(toolBlocks, b)
 				}
@@ -167,6 +195,9 @@ func SerializeCodex(detail Detail) []map[string]any {
 						"content": textBlocks,
 					},
 				})
+				records = append(records, codexEvent(m.Timestamp, map[string]any{
+					"type": "agent_message", "message": agentText,
+				}))
 			}
 			for _, b := range toolBlocks {
 				args := ""
@@ -197,6 +228,7 @@ func SerializeCodex(detail Detail) []map[string]any {
 			})
 		}
 	}
+	closeTurn(detail.UpdatedAt)
 	return records
 }
 
@@ -324,6 +356,7 @@ func SerializePi(detail Detail) []map[string]any {
 			})
 		case "assistant":
 			var content []any
+			stopReason := "endTurn"
 			for _, b := range m.Content {
 				switch b.Type {
 				case "thinking":
@@ -335,27 +368,37 @@ func SerializePi(detail Detail) []map[string]any {
 				case "text":
 					content = append(content, map[string]any{"type": "text", "text": b.Text})
 				case "tool_use":
-					block := map[string]any{
-						"type":       "toolCall",
-						"toolCallId": b.ID,
-						"toolName":   b.Name,
-					}
+					args := ""
 					if b.Input != nil {
-						block["input"] = b.Input
+						data, _ := json.Marshal(b.Input)
+						args = string(data)
 					}
-					content = append(content, block)
+					content = append(content, map[string]any{
+						"type": "toolCall", "id": b.ID, "name": b.Name, "arguments": args,
+					})
+					stopReason = "toolUse"
 				}
 			}
+			if content == nil {
+				content = []any{}
+			}
 			msg := map[string]any{
-				"id":        m.ID,
-				"parentId":  m.ParentID,
-				"role":      "assistant",
-				"timestamp": m.Timestamp,
-				"content":   content,
+				"id":            m.ID,
+				"parentId":      m.ParentID,
+				"role":          "assistant",
+				"timestamp":     m.Timestamp,
+				"content":       content,
+				"stopReason":    stopReason,
+				"rawStopReason": "completed",
 				"usage": map[string]any{
 					"input": 0, "output": 0,
 					"cacheRead": 0, "cacheWrite": 0,
 					"reasoning": 0, "totalTokens": 0,
+					"cost": map[string]any{
+						"input": 0, "output": 0,
+						"cacheRead": 0, "cacheWrite": 0,
+						"total": 0,
+					},
 				},
 			}
 			if m.Model != "" {
@@ -371,6 +414,9 @@ func SerializePi(detail Detail) []map[string]any {
 				if b.Type == "text" {
 					content = append(content, map[string]any{"type": "text", "text": b.Text})
 				}
+			}
+			if content == nil {
+				content = []any{}
 			}
 			msg := map[string]any{
 				"role":       "toolResult",
@@ -516,6 +562,16 @@ func SerializeOpenCode(detail Detail, basePath string) (map[string]any, []FileEn
 	}
 
 	return info, entries
+}
+
+func codexEvent(ts string, payload map[string]any) map[string]any {
+	return map[string]any{"type": "event_msg", "timestamp": ts, "payload": payload}
+}
+
+func codexItemID() string {
+	var b [8]byte
+	_, _ = rand.Read(b[:])
+	return hex.EncodeToString(b[:])
 }
 
 func itoa(n int) string {
