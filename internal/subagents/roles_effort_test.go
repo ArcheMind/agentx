@@ -345,3 +345,19 @@ func TestRoleCatalogAndSchemaShowDeclaredRoles(t *testing.T) {
 		t.Fatal(note)
 	}
 }
+
+type rejectedEffortRunner struct{}
+
+func (rejectedEffortRunner) Execute(_ context.Context, p runtime.CommandPlan, _ runtime.ExecuteOptions) (runtime.CommandResult, error) {
+	if result, ok := authCheck(p); ok {
+		return result, nil
+	}
+	return runtime.CommandResult{ExitCode: 1, Stdout: "{\"type\":\"thread.started\",\"thread_id\":\"12345678-1234-1234-1234-123456789abc\"}\n{\"type\":\"turn.failed\",\"error\":{\"message\":\"Unsupported value: 'minimal' is not supported with the 'test-model' model.\"}}\n"}, fmt.Errorf("exit status 1")
+}
+
+func TestNativeEffortRejectionReasonIsReturned(t *testing.T) {
+	s := testServer(t, rejectedEffortRunner{})
+	if _, err := s.call("ExternalSubagent", []byte(`{"description":"x","prompt":"x","model":"review","run_in_background":false}`)); err == nil || !strings.Contains(err.Error(), "native error: {\"message\":\"Unsupported value: 'minimal'") {
+		t.Fatal(err)
+	}
+}

@@ -611,7 +611,7 @@ func (s *Server) execute(ctx context.Context, a *ExternalSubagentState, prompt s
 		if ctx.Err() != nil {
 			return "", nil, &executionCancelled{cause: err}
 		}
-		return "", nil, fmt.Errorf("%s execution failed: %s; stderr: %s", a.Option.Agent, runtime.RedactSecrets(err.Error()), runtime.RedactSecrets(withoutCodexTelemetry(result.Stderr)))
+		return "", nil, fmt.Errorf("%s execution failed: %s; stderr: %s%s", a.Option.Agent, runtime.RedactSecrets(err.Error()), runtime.RedactSecrets(withoutCodexTelemetry(result.Stderr)), nativeFailure(a, result.Stdout))
 	}
 	report, usage, err := parseOutput(a, result.Stdout)
 	if err != nil {
