@@ -11,14 +11,7 @@ import (
 	"github.com/ArcheMind/agentx/internal/runtime"
 )
 
-const (
-	IsolationWorktree = "worktree"
-	IsolationRemote   = "remote"
-)
-
-// RemoteUnsupported is returned for isolation "remote": no installed runtime offers a remote
-// environment whose identity, result retrieval and cancellation AgentX can verify.
-const RemoteUnsupported = `isolation "remote" unsupported; no task started and nothing runs locally instead. No installed runtime provides a verifiable remote execution environment with cancellation: Codex 0.163 "codex cloud" can submit, poll, diff and apply Codex Cloud tasks but has no cancel command and runs against a Codex Cloud environment bound to a pushed GitHub branch, not this working directory; "codex exec-server --remote" requires a remote host the user provisions; Pi has no remote execution`
+const IsolationWorktree = "worktree"
 
 // Worktree is the git worktree an ExternalSubagent runs in for its whole lifetime. AgentX never
 // removes it, because continuation reuses it and its uncommitted work belongs to the user.
@@ -168,5 +161,5 @@ func IsolationLimits(agent string) string {
 	} else {
 		text += "With write, the worktree is the only writable root (writable_roots is rejected with isolation), so the original checkout is not writable; without write the run stays read-only; reads are not path-restricted. "
 	}
-	return text + "Remote: rejected (no verifiable remote execution environment with cancellation). "
+	return text
 }

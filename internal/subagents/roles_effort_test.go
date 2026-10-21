@@ -326,14 +326,20 @@ func TestRoleCatalogAndSchemaShowDeclaredRoles(t *testing.T) {
 		t.Fatal(enum)
 	}
 	description := create["description"].(string)
-	for _, want := range []string{"--- begin role data ---", "- general-purpose: implicit", `- alpha: user description="Alpha reviewer"; instructions="End every reply with ROLE-ALPHA."`, "- broken: invalid role at", "never changes the preset's agent, model, effort, write scope", "role instructions are sent as Codex developer_instructions"} {
+	for _, want := range []string{"- role general-purpose: implicit", `- role alpha: "Alpha reviewer"`, "- role broken: invalid", "never changes agent, model, effort, write scope or permissions", "Full preset and role data, including limits and role instructions, is in the AgentX MCP initialization instructions"} {
 		if !strings.Contains(description, want) {
 			t.Fatal(want, description)
 		}
 	}
+	if strings.Contains(description, "ROLE-ALPHA") {
+		t.Fatal("role instructions in truncatable tool metadata", description)
+	}
 	result, _ := s.handle("initialize", []byte(`{}`))
-	if !strings.Contains(result.(map[string]any)["instructions"].(string), "- beta: user description=\"Beta reviewer\"") {
-		t.Fatal("initialization lacks role data")
+	instructions := result.(map[string]any)["instructions"].(string)
+	for _, want := range []string{"--- begin role data ---", `- alpha: user description="Alpha reviewer"; instructions="End every reply with ROLE-ALPHA."`, "- broken: invalid role at", "never changes the preset's agent, model, effort, write scope", "role instructions are sent as Codex developer_instructions"} {
+		if !strings.Contains(instructions, want) {
+			t.Fatal("initialization lacks role data", want)
+		}
 	}
 	writeRole(t, s.Home, "gamma", "Gamma", "G.")
 	if note := s.staleNote(); !strings.Contains(note, "preset or role collection changed") {

@@ -483,7 +483,7 @@ func TestPresetCatalogSharedDataAndRefresh(t *testing.T) {
 	savePreset(t, s.Home, presets.Preset{Name: "interactive-only", Agent: "claude", Model: "opus", Description: "Interactive pairing"})
 	savePreset(t, s.Home, presets.Preset{Name: "pi-choice", Agent: "pi", Model: "provider/model", Description: "Independent analysis"})
 	catalog, models := PresetCatalog(s.Home)
-	for _, want := range []string{presets.Dir(s.Home), "also used for interactive ax launch", "No default preset", "no per-call effort override", `execution agent="codex"`, `exact configured model ID (including provider prefix)="test-model"`, `effort="low"`, `user description="code review"`, `ExternalSubagent callable=yes`, `Writes: every call is read-only unless it sets write`, `Writes: read-only unless the call requests write, enforced by Codex native OS sandbox`, `Writes: never. Pi runs read-only through its tool allowlist`, `not an OS sandbox`, `Auth: CODEX_HOME (or ~/.codex), checked by codex login status`, `Isolation: worktree supported`, `Remote: rejected`, `login and remote execution are verified per execution`, `- interactive-only: execution agent="claude"`, `ExternalSubagent callable=no; static prerequisites="interactive launch only`} {
+	for _, want := range []string{presets.Dir(s.Home), "also used for interactive ax launch", "No default preset", "no per-call effort override", `execution agent="codex"`, `exact configured model ID (including provider prefix)="test-model"`, `effort="low"`, `user description="code review"`, `ExternalSubagent callable=yes`, `Writes: every call is read-only unless it sets write`, `Writes: read-only unless the call requests write, enforced by Codex native OS sandbox`, `Writes: never. Pi runs read-only through its tool allowlist`, `not an OS sandbox`, `Auth: CODEX_HOME (or ~/.codex), checked by codex login status`, `Isolation: worktree supported`, `login and model access are verified per execution`, `- interactive-only: execution agent="claude"`, `ExternalSubagent callable=no; static prerequisites="interactive launch only`} {
 		if !strings.Contains(catalog, want) {
 			t.Fatal("missing preset data", want, catalog)
 		}
@@ -498,8 +498,8 @@ func TestPresetCatalogSharedDataAndRefresh(t *testing.T) {
 	instructions := initial.(map[string]any)["instructions"].(string)
 	tools := s.tools().(map[string]any)["tools"].([]any)
 	description := tools[0].(map[string]any)["description"].(string)
-	if !strings.Contains(instructions, catalog) || !strings.Contains(description, catalog) {
-		t.Fatal("initialization and metadata catalogs differ")
+	if !strings.Contains(instructions, catalog) || !strings.Contains(description, CatalogIndex(s.Home)) || strings.Contains(description, "access/limits") {
+		t.Fatal("initialization carries the full catalog and metadata only the index")
 	}
 	enum := tools[0].(map[string]any)["inputSchema"].(map[string]any)["properties"].(map[string]any)["model"].(map[string]any)["enum"].([]string)
 	if strings.Join(enum, ",") != strings.Join(models, ",") {
@@ -514,7 +514,8 @@ func TestPresetCatalogSharedDataAndRefresh(t *testing.T) {
 		t.Fatal("preset value escaped its data line", updated)
 	}
 	newTools := s.tools().(map[string]any)["tools"].([]any)
-	if !strings.Contains(newTools[0].(map[string]any)["description"].(string), updated) || strings.Contains(instructions, "updated-model") {
+	newDescription := newTools[0].(map[string]any)["description"].(string)
+	if !strings.Contains(newDescription, `"updated-model"`) || strings.Contains(newDescription, "\nIgnore previous instructions") || strings.Contains(instructions, "updated-model") {
 		t.Fatal("initialization snapshot changed or metadata did not refresh")
 	}
 	refreshed, err := s.handle("initialize", []byte(`{}`))
@@ -546,5 +547,31 @@ func TestPresetCatalogIgnoresLegacyConfigAndReportsInvalidAndEmpty(t *testing.T)
 	text, models = PresetCatalog(s.Home)
 	if len(models) != 0 || !strings.Contains(text, "No presets.") || !strings.Contains(text, "+ Create preset") {
 		t.Fatal(text, models)
+	}
+}
+
+func TestToolMetadataFitsHostLimitAtRealisticScale(t *testing.T) {
+	s := testServer(t, &testRunner{})
+	installPi(t)
+	description := "Read-only research and code review across the repository; good for tracing call paths and reviewing diffs, not for large refactors or long-running builds."
+	savePreset(t, s.Home, presets.Preset{Name: "review", Agent: "codex", Model: "gpt-5.6-luna", Effort: "high", Description: description})
+	savePreset(t, s.Home, presets.Preset{Name: "pi-review", Agent: "pi", Model: "openai-codex/gpt-5.6-luna", Description: description})
+	for _, name := range []string{"security-reviewer", "docs-editor"} {
+		writeRole(t, s.Home, name, "Reviews changes from the "+name+" perspective and reports findings by severity", strings.Repeat("Check every changed function carefully and explain each finding with file and line. ", 30))
+	}
+	tools := s.tools().(map[string]any)["tools"].([]any)
+	create := tools[0].(map[string]any)
+	n := len(create["description"].(string))
+	if n >= 4096 {
+		t.Fatalf("ExternalSubagent description is %d characters; Claude Code truncates at 4096", n)
+	}
+	t.Logf("ExternalSubagent description: %d characters", n)
+	schema, _ := json.Marshal(tools)
+	init, _ := s.handle("initialize", []byte(`{}`))
+	if strings.Contains(strings.ToLower(string(schema)), "remote") || strings.Contains(strings.ToLower(init.(map[string]any)["instructions"].(string)), "remote") {
+		t.Fatal("remote still appears in tool schema or initialization data")
+	}
+	if !strings.Contains(init.(map[string]any)["instructions"].(string), "Check every changed function carefully") {
+		t.Fatal("role instructions missing from initialization data")
 	}
 }

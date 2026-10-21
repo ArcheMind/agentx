@@ -93,9 +93,9 @@ other roles.
 
 How each runtime carries a role, and how AgentX checks it took effect:
 
-| Runtime | Carriage | Per-turn check |
+| Runtime | Carriage | Check |
 | --- | --- | --- |
-| Codex | `-c developer_instructions=<instructions>` (honoured under `--ignore-user-config`) | The rollout (`$CODEX_HOME/sessions/**/rollout-*-<thread>.jsonl`) must contain a `developer` message equal to the instructions |
+| Codex | `-c developer_instructions=<instructions>` (honoured under `--ignore-user-config`) | After each turn, the session's rollout (`$CODEX_HOME/sessions/**/rollout-*-<thread>.jsonl`) must contain a `developer` message equal to the instructions. A resumed turn appends to the same rollout, so this confirms the session carries the role; it does not prove that the resumed turn re-sent it |
 | Pi | `--append-system-prompt <file>` with a locked copy of the instructions | The AgentX observer extension records, for every provider request, whether the request contains the instructions; all must |
 
 A failed check fails the turn; the text is never silently dropped. With a role,
@@ -276,11 +276,14 @@ the enforcing layer, static prerequisites, and invalid entries with their
 location. A role DATA block follows: `general-purpose`, each
 declared role with its description and full instructions, and invalid role
 files. The `subagent_type` enum lists `general-purpose` plus the valid declared
-roles. The same catalog supplies `ExternalSubagent` metadata and
-its selectable `model` values (callable presets only). With no presets the
-catalog says so and that the user creates them in `ax`; none are generated.
-Static checks do
-not verify remote availability. `model` selects a preset independently of the
+roles. The same collections supply the selectable `model` values (callable
+presets only) and the `subagent_type` enum. `ExternalSubagent` tool metadata
+carries only a compact index (one line per preset and role: agent, model,
+effort, callability, description) because hosts truncate tool descriptions
+(Claude Code keeps 4096 characters); limits and role instructions are only in
+the initialization data. With no presets the catalog says so and that the user
+creates them in `ax`; none are generated. Static checks do not verify login or
+model access. `model` selects a preset independently of the
 `subagent_type` role; session listing reports created objects, not presets.
 Role file changes are part of the snapshot: a call result notes when presets
 or roles changed since initialization.
@@ -336,9 +339,8 @@ is required and names one callable preset; there is no default preset. The prese
 fixes agent, model and effort; there is no `effort` parameter and no per-call
 override. Reports name the preset, agent, actual model, effort and role, and a
 `Native evidence:` line states the executed effort and role carriage that the
-native records show for that turn. `isolation` accepts the native spellings
-`worktree` (supported, see below) and `remote` (rejected, see below); other
-values are rejected. `write` (boolean, default false) and `writable_roots`
+native records show for that turn. `isolation` accepts only `worktree` (see
+below); any other value is rejected before any work starts. `write` (boolean, default false) and `writable_roots`
 (absolute directories) request write access for this ExternalSubagent; see
 [Write scope and isolation](#write-scope-and-isolation). Reports carry a
 `Write scope:` line and the discovered `Auth` line. Names start with an ASCII
@@ -443,17 +445,6 @@ Inspect each one before removing it. Then run `git -C <repo> worktree remove
 <path>` and `git -C <repo> branch -D agentx/<id>` for each. If a worktree
 directory was deleted by hand, run `git -C <repo> worktree prune` to drop its
 stale metadata. The branch stays until you delete it.
-
-`isolation:"remote"` is rejected, and nothing runs locally instead. None of the
-installed runtimes offers a remote environment whose identity, result retrieval
-and cancellation AgentX can verify:
-- Codex 0.163 `codex cloud` can submit, poll, diff and apply tasks, but it has
-  no cancel command. Its tasks run in a Codex Cloud environment bound to a
-  pushed GitHub branch, not in this working directory.
-- `codex exec-server --remote` needs a remote host that the user provisions.
-- Pi has no remote execution.
-
-This gap (004 G06/A07) stays open.
 
 ## Native execution and permission limits
 
@@ -572,7 +563,8 @@ stay rejected. Evidence is written to `evidence.json` in the printed directory.
 Codex and Pi with `isolation:"worktree"`. It checks five Codex cases: a write
 inside the worktree, an absolute write to the original (OS-denied per rollout),
 read-only in a worktree, native failure, and cancellation after partial output.
-It also checks Pi's working directory and the rejection of `remote`. A sixth
+It also checks Pi's working directory and that an isolation value other than
+`worktree` is rejected. A sixth
 Codex case writes through a case-variant spelling of the repository: the
 sandbox arguments must contain exactly the worktree and no repository path,
 and the write must be OS-denied per rollout. A call passing `writable_roots`

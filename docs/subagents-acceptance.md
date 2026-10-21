@@ -109,6 +109,13 @@ this document, including the policy, roles/effort and isolation sections below,
 was verified under the earlier model. Re-verification under the new model is
 recorded in a later section.
 
+Note (2026-10-21, same day): the user decided that remote execution is not
+supported. G06/A07 is closed as unsupported: it was neither delivered nor is
+it pending. `isolation` accepts only `worktree`; `"remote"` is rejected like
+any unknown value, and the tool schema and initialization data no longer
+mention it. The A07 row and the remote statements below record the earlier
+"rejected for an external reason" behavior.
+
 ## Roles and effort (backlog 004 G04, G09)
 
 IDs in this section are backlog 004 acceptance IDs (A05, A12, A13), not the

@@ -47,9 +47,9 @@ const shell=(cmd,marker)=>`Authorized isolation acceptance test ${marker}. Using
 const results={}
 try{
  const init=await rpc('initialize',{protocolVersion:'2024-11-05',capabilities:{},clientInfo:{name:'agentx-isolation-live-smoke',version:'1'}})
- assert(init.instructions.includes('Isolation: worktree supported')&&init.instructions.includes('Remote: rejected'),'initialization does not expose isolation support')
+ assert(init.instructions.includes('Isolation: worktree supported')&&!/remote/i.test(init.instructions),'initialization does not expose isolation support or still mentions remote')
  const tools=await rpc('tools/list')
- assert(tools.tools[0].inputSchema.properties.isolation.description.includes('remote: rejected'),'tool schema does not describe isolation support')
+ assert(JSON.stringify(tools.tools[0].inputSchema.properties.isolation.enum)===JSON.stringify(['worktree'])&&!/remote/i.test(JSON.stringify(tools.tools)),'tool schema offers more than worktree isolation or mentions remote')
  const probe=async(id,model,cmd,write)=>{const marker=`[isolation ${id} ${randomUUID()}]`;const report=await call('ExternalSubagent',{description:`isolation ${id}`,prompt:shell(cmd,marker),model,isolation:'worktree',...(write?{write:true}:{}),run_in_background:false});const thread=threadFor(marker);assert(thread,`${id}: no native thread: ${report.text}`);const path=rollout(thread);const attempts=toolCalls(path).filter(c=>c.input.includes('printf'));assert(attempts.length>=1,`${id}: rollout ${path} shows no attempt`);return {report,thread,rollout:path,attempt:attempts[0].input.slice(0,300),output:attempts.map(a=>a.output).join('\n').slice(0,400),wt:worktreeOf(report.text),native:nativeRun(marker)}}
  const escapeTarget=join(cwd,'escape.txt'),variantTarget=join(repoAlias,'sub','variant-escape.txt')
  assert(existsSync(join(repoAlias,'sub','tracked.txt')),'case-variant spelling does not name the repository on this filesystem')
@@ -57,7 +57,7 @@ try{
   probe('write','iso','printf isolated > agent.txt',true),
   probe('escape','iso',`printf escaped > ${escapeTarget}`,true),
   probe('read-only','iso','printf readonly > ro.txt',false),
-  call('ExternalSubagent',{description:'remote',prompt:'Reply ok',model:'iso',isolation:'remote',run_in_background:false}),
+  call('ExternalSubagent',{description:'unknown isolation',prompt:'Reply ok',model:'iso',isolation:'remote',run_in_background:false}),
   call('ExternalSubagent',{description:'failure retention',prompt:'Reply ok',model:'iso-badmodel',isolation:'worktree',run_in_background:false}),
   probe('variant','iso',`printf escaped > ${variantTarget}`,true),
   probe('dotgit','iso','printf broken > ../.git',true),
@@ -89,9 +89,9 @@ try{
  results.caseVariantTarget={sandboxRoots:JSON.parse(rootsArg[1]),target:variantTarget,thread:variant.thread,rollout:variant.rollout,attempt:variant.attempt,runtimeOutput:variant.output,filesystem:null}
  assert(!readonly.report.failed&&readonly.output.includes('operation not permitted')&&read(join(readonly.wt[1],'sub','ro.txt'))===null,`read-only: ${readonly.output}`)
  results.readOnlyWorktree={worktree:readonly.wt[1],thread:readonly.thread,rollout:readonly.rollout,runtimeOutput:readonly.output}
- // Remote never runs, locally or otherwise.
- assert(remote.failed&&remote.text.includes('no cancel command')&&remote.text.includes('nothing runs locally'),remote.text)
- results.remote=remote.text
+ // Any isolation value other than worktree is rejected like an unknown value, before any work.
+ assert(remote.failed&&remote.text.includes('isolation "remote" unsupported; supported: worktree; no task started'),remote.text)
+ results.unknownIsolation=remote.text
  // Native failure keeps the worktree and names it.
  const failed=worktreeOf(failure.text)
  assert(failure.failed&&failed&&existsSync(failed[1])&&failure.text.includes('kept after completion, failure and cancellation'),`failure: ${failure.text}`)

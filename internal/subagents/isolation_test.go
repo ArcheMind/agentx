@@ -182,17 +182,16 @@ func TestWorktreeKeptOnFailureAndCancellation(t *testing.T) {
 	}
 }
 
-func TestWorktreeIsolationRejectsWithoutGitAndRemoteNeverRunsLocally(t *testing.T) {
+func TestWorktreeIsolationRejectsWithoutGitAndUnknownValues(t *testing.T) {
 	r := &gitRunner{testRunner: &testRunner{}}
 	s := testServer(t, r)
 	if _, err := s.call("ExternalSubagent", []byte(`{"description":"x","prompt":"x","model":"review","isolation":"worktree"}`)); err == nil || !strings.Contains(err.Error(), "inside a git work tree") {
 		t.Fatal(err)
 	}
-	if _, err := s.call("ExternalSubagent", []byte(`{"description":"x","prompt":"x","model":"review","isolation":"remote"}`)); err == nil || !strings.Contains(err.Error(), "no cancel command") || !strings.Contains(err.Error(), "nothing runs locally") {
-		t.Fatal(err)
-	}
-	if _, err := s.call("ExternalSubagent", []byte(`{"description":"x","prompt":"x","model":"review","isolation":"container"}`)); err == nil {
-		t.Fatal("unknown isolation accepted")
+	for _, value := range []string{"remote", "container"} {
+		if _, err := s.call("ExternalSubagent", []byte(`{"description":"x","prompt":"x","model":"review","isolation":"`+value+`"}`)); err == nil || err.Error() != `isolation "`+value+`" unsupported; supported: worktree; no task started` {
+			t.Fatal(value, err)
+		}
 	}
 	repo := dirtyRepo(t, s)
 	untracked := filepath.Join(repo, "untracked-dir")

@@ -138,7 +138,7 @@ func Limits(o presets.Preset) string {
 	} else {
 		text.WriteString("Effort is fixed by the preset; each turn fails unless every completed model response in Codex telemetry reports exactly that effort (for example gpt-5.6-luna silently runs ultra as max); native rejection of an unsupported level is returned as failure. ")
 	}
-	text.WriteString("Remote availability is unverified until execution.")
+	text.WriteString("Model availability is verified only by execution.")
 	return text.String()
 }
 
