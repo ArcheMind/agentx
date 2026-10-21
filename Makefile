@@ -58,7 +58,7 @@ test-mcp-race:
 	go test -race ./internal/subagents ./internal/app
 
 test-mcp-syntax:
-	for file in test/smoke/mcp-*.mjs test/smoke/presets.mjs; do node --check "$$file"; done
+	for file in test/smoke/mcp-*.mjs test/smoke/presets.mjs; do node --check "$$file" || exit 1; done
 	python3 -c 'import ast; from pathlib import Path; ast.parse(Path("test/smoke/pty-host.py").read_text())'
 
 smoke: build
