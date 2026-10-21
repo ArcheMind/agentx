@@ -31,7 +31,7 @@ type externalCallLog struct {
 func (r ExecRunner) Execute(ctx context.Context, plan CommandPlan, options ExecuteOptions) (CommandResult, error) {
 	cmd := exec.CommandContext(ctx, plan.Executable, plan.Args...)
 	cmd.Dir = plan.Cwd
-	cmd.Env = mergeEnvironment(os.Environ(), plan.Env)
+	cmd.Env = mergeEnvironment(os.Environ(), plan.Env, plan.UnsetEnv)
 	stdin := ""
 	if !options.Interactive && options.Stdin != nil {
 		data, err := io.ReadAll(options.Stdin)
@@ -86,14 +86,14 @@ func (r ExecRunner) log(plan CommandPlan, stdin string, result CommandResult, er
 	}
 	entry := externalCallLog{
 		Event:    "external_call",
-		Input:    plan,
-		Stdin:    stdin,
-		Output:   result.Stdout,
-		ErrorOut: result.Stderr,
+		Input:    redactPlan(plan),
+		Stdin:    RedactSecrets(stdin),
+		Output:   RedactSecrets(result.Stdout),
+		ErrorOut: RedactSecrets(result.Stderr),
 		ExitCode: result.ExitCode,
 	}
 	if err != nil {
-		entry.Error = err.Error()
+		entry.Error = RedactSecrets(err.Error())
 	}
 	encoded, marshalErr := json.Marshal(entry)
 	if marshalErr != nil {
@@ -103,13 +103,16 @@ func (r ExecRunner) log(plan CommandPlan, stdin string, result CommandResult, er
 	fmt.Fprintln(r.Log, string(encoded))
 }
 
-func mergeEnvironment(base []string, overrides map[string]string) []string {
+func mergeEnvironment(base []string, overrides map[string]string, unset []string) []string {
 	values := make(map[string]string, len(base)+len(overrides))
 	for _, item := range base {
 		key, value, ok := strings.Cut(item, "=")
 		if ok {
 			values[key] = value
 		}
+	}
+	for _, key := range unset {
+		delete(values, key)
 	}
 	for key, value := range overrides {
 		values[key] = value

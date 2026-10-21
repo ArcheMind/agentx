@@ -28,8 +28,29 @@ Create a JSON configuration with explicit native model IDs:
       "model": "openai-codex/gpt-5.6-luna",
       "description": "Independent review using Pi and its read-only tools",
       "enabled": true
+    },
+    {
+      "name": "codex-writer",
+      "agent": "codex",
+      "model": "gpt-5.6-luna",
+      "description": "Bounded edits inside the agentx checkout",
+      "enabled": true
     }
-  ]
+  ],
+  "grants": {
+    "codex-review": {
+      "execution": {"policy": "read-only", "approval": "never"},
+      "auth": {"source": "codex-home", "path": "/Users/me/.codex", "method": "chatgpt"}
+    },
+    "pi-review": {
+      "execution": {"policy": "read-only", "approval": "never"},
+      "auth": {"source": "pi-agent-dir", "path": "/Users/me/.pi/agent", "method": "oauth"}
+    },
+    "codex-writer": {
+      "execution": {"policy": "bounded-write", "writable_roots": ["/Users/me/work/agentx"], "approval": "never"},
+      "auth": {"source": "codex-home", "path": "/Users/me/.codex", "method": "chatgpt"}
+    }
+  }
 }
 ```
 
@@ -43,7 +64,7 @@ ax sub-agent-management disable
 
 Configuration lives at `~/.config/agentx/subagents.json`. `AX_SUBAGENT_HOME`
 overrides AgentX's configuration/state root for isolated environments; it does
-not change native agent credentials. Exact enabled options and their capability
+not change native agent credentials (each grant's `auth` does). Exact enabled options and their capability
 descriptions, static availability, limits, and efforts appear in the MCP tool
 description before selection. Missing executables and invalid configuration are
 errors, not confirmed remote availability. Remote authentication and model access
@@ -66,11 +87,65 @@ Previously accepted work, including queued messages, can finish and deliver
 results. `StopExternalSubagent` remains available. Disabling does not affect Claude native
 subagents or cancel work. Re-enabling retains combination configuration.
 
+## Grants: execution policy, approval and authentication
+
+Every option needs a grant under `grants.<option name>`; a missing grant, a grant
+for an unknown option, or any unsupported value rejects the whole configuration.
+Grants are kept apart from preset identity (`name`, `agent`, `model`,
+`description`, `efforts`) so presets never carry permissions or credentials;
+a grant references its preset only by name. Selecting a preset or delegating
+never grants more than its grant states.
+
+| Field | Values | Enforced by |
+| --- | --- | --- |
+| `execution.policy` | `read-only` (Codex, Pi); `bounded-write` (Codex only) | Codex: native OS sandbox (`sandbox_mode` `read-only` / `workspace-write`). Pi: tool allowlist only. |
+| `execution.writable_roots` | `bounded-write` only; absolute clean directories, not `/` | Codex `sandbox_workspace_write.writable_roots`; `/tmp`, `$TMPDIR` and command network access excluded |
+| `execution.approval` | `never` | Codex `approval_policy="never"`; Pi has no approval path |
+| `auth.source` / `auth.path` | Codex `codex-home` (`CODEX_HOME`); Pi `pi-agent-dir` (`PI_CODING_AGENT_DIR`) | Passed as that variable only |
+| `auth.method` | Codex `chatgpt` / `api-key`; Pi `oauth` / `api_key` | `codex login status` / `pi auth check --json` before every execution |
+
+`bounded-write` notes. Codex always makes its working directory writable, so
+the MCP server's working directory must be inside a writable root. Otherwise
+`ExternalSubagent` rejects the call before starting any work. Inside the roots,
+Codex keeps `.git` read-only (verified); other Codex-protected paths are not separately verified. Reads are not
+path-restricted under either policy. `bounded-write` is rejected for Pi: Pi
+has no runtime sandbox, and an allowlist that adds `bash`/`edit`/`write` could
+not bound side effects. That gap stays open until Pi, or AgentX around it,
+provides a real boundary.
+
+Approval is a user-selected independent policy, not host inheritance. With
+`never`, out-of-scope operations are denied by the sandbox and the denial is
+returned to the agent. No human is asked, and Claude's permission mode or
+approvals do not apply. Other approval values (such as on-request routing to a
+human or Codex automatic review) are rejected because no approval path is wired.
+
+Codex runs with `--ignore-user-config --ignore-rules --disable hooks`. MCP
+servers, hooks and `notify` programs from the user's `config.toml` run outside
+Codex's sandbox and would silently widen the grant, so they are not loaded.
+User-config defaults such as model effort, personality and service tier
+therefore also do not apply. Codex's built-in web search remains available.
+
+Authentication uses only the configured source. Inherited environment
+variables whose names look like credentials (`*KEY*`, `*TOKEN*`, `*SECRET*`,
+`*PASSWORD*`, `*CREDENTIAL*`, `*AUTH*`, `*COOKIE*`, `AWS_PROFILE`) are removed
+from both the preflight and the native process. Without this, Pi would silently
+use an inherited `OPENAI_API_KEY` when the selected directory has no login. If
+the source is not logged in, not ready for the model's provider, or logged in
+with a different method, the task fails with a reason that ends `no fallback
+identity`, and no native execution starts. AgentX never copies credentials
+between runtimes.
+
+Each option's grant summary and the actual enforcing layer appear in the preset
+catalog (MCP initialization and tool metadata), in `status` (`execution`, `auth`)
+and in every report's `Grant:` line. An ExternalSubagent pins the grant it was
+created with. If the grant changes, continuation and queued work are rejected
+instead of running with different permissions or a different identity.
+
 ## Claude discovery and background delivery
 
 MCP initialization includes a config-derived preset DATA catalog: configured
 names/default, execution agents/models, declared capability descriptions/efforts,
-readonly limits, feature enablement and static prerequisites. The same catalog
+grant summaries with their enforcing layer, feature enablement and static prerequisites. The same catalog
 supplies `ExternalSubagent` metadata and its selectable `model` values. Static
 checks do not verify remote availability. `model` selects a preset independently
 of the `subagent_type` role; session listing reports created objects, not presets.
@@ -152,12 +227,12 @@ Claude session resumes. Session loss or identity mismatch is failure, not retry.
 
 | Adapter | Boundary | Native continuation | Effort |
 | --- | --- | --- | --- |
-| Codex | `sandbox_mode="read-only"`, `approval_policy="never"` | Exact thread UUID | Explicit configured low/medium/high/xhigh; native errors remain errors |
-| Pi | `--tools read,grep,find,ls --no-extensions --no-skills --no-prompt-templates --no-approve` | Dedicated exact session path and pinned native ID | Unsupported; requests rejected |
+| Codex | Grant policy as native OS sandbox (`read-only` or `workspace-write` + roots), `approval_policy="never"`, user config/rules/hooks not loaded, `CODEX_HOME` from grant | Exact thread UUID | Explicit configured low/medium/high/xhigh; native errors remain errors |
+| Pi | Read-only only: `--tools read,grep,find,ls --no-extensions --no-skills --no-prompt-templates --no-approve`, `PI_CODING_AGENT_DIR` from grant | Dedicated exact session path and pinned native ID | Unsupported; requests rejected |
 
-Pi's allowlist is not an OS sandbox. Native authentication/configuration and
-project context still apply; these credentials and policies are not inherited
-from Claude. AgentX does not widen permissions for deprecated `mode`. Other
+Pi's allowlist is an application-level tool filter, not an OS sandbox.
+Native project context (for example AGENTS.md) still applies. Credentials
+and policies are not inherited from Claude. AgentX does not widen permissions for deprecated `mode`. Other
 agents (including Gemini) remain available for ordinary AgentX launch/exec but
 are not delivered MCP combinations in this integration.
 
@@ -168,7 +243,10 @@ authorization. Available native usage is shown as backend-reported external
 usage with native field names; unknown usage stays unknown. Codex resume usage
 may include context/cumulative fields; AgentX does not reinterpret it as Claude
 usage or fabricate tool counts. `AX_LOG=debug` logs raw command plans, stdin,
-stdout, stderr and errors to stderr; it may contain task contents.
+stdout, stderr and errors to stderr; it may contain task contents. Values of
+credential-like plan environment variables are logged as `<redacted>`, and
+`sk-…` keys, JWTs, bearer tokens and JSON token/key fields in logged I/O are
+masked. Removed variables are logged by name only (`unset_env`).
 
 ## Verification
 
@@ -180,6 +258,7 @@ make smoke-mcp-contract
 make smoke-mcp-live
 make smoke-mcp-channel
 make smoke-mcp-host-live
+make smoke-mcp-policy-live
 ```
 
 The live backend suite uses existing native logins, isolated AgentX configuration,
@@ -191,6 +270,13 @@ delayed backend fixture; it requires both channel registration and a subsequent
 assistant transcript containing a token absent from its prompt. This separates
 host-consumption evidence from actual-backend evidence. Neither fixture tests
 nor a server notification alone prove native execution or host delivery.
+
+`smoke-mcp-policy-live` runs real Codex and Pi through AgentX MCP. It covers
+bounded-write and read-only Codex, read-only Pi, and missing or mismatched auth
+sources, then checks results by filesystem state and logs. Override
+`AX_MCP_CODEX_HOME`, `AX_MCP_PI_AGENT_DIR`, `AX_MCP_CODEX_AUTH_METHOD` and
+`AX_MCP_PI_AUTH_METHOD` to select the auth sources the live smokes use (defaults:
+`~/.codex` chatgpt, `~/.pi/agent` oauth).
 
 See [acceptance evidence](subagents-acceptance.md) for scenarios and limitations.
 

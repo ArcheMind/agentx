@@ -24,7 +24,28 @@ type testRunner struct {
 	release chan struct{}
 }
 
+func authCheck(p runtime.CommandPlan) (runtime.CommandResult, bool) {
+	if len(p.Args) > 1 && p.Args[0] == "login" && p.Args[1] == "status" {
+		return runtime.CommandResult{Stderr: "Logged in using ChatGPT\n"}, true
+	}
+	if len(p.Args) > 1 && p.Args[0] == "auth" && p.Args[1] == "check" {
+		return runtime.CommandResult{Stdout: `{"status":"ready","provider":"provider","authType":"oauth"}`}, true
+	}
+	return runtime.CommandResult{}, false
+}
+
+func testGrant(t *testing.T, agent string) Grant {
+	t.Helper()
+	if agent == "pi" {
+		return Grant{Execution: ExecutionPolicy{Policy: "read-only", Approval: "never"}, Auth: AuthSource{Source: "pi-agent-dir", Path: t.TempDir(), Method: "oauth"}}
+	}
+	return Grant{Execution: ExecutionPolicy{Policy: "read-only", Approval: "never"}, Auth: AuthSource{Source: "codex-home", Path: t.TempDir(), Method: "chatgpt"}}
+}
+
 func (r *testRunner) Execute(ctx context.Context, p runtime.CommandPlan, o runtime.ExecuteOptions) (runtime.CommandResult, error) {
+	if result, ok := authCheck(p); ok {
+		return result, nil
+	}
 	data, _ := io.ReadAll(o.Stdin)
 	r.mu.Lock()
 	n := len(r.plans)
@@ -53,7 +74,7 @@ func testServer(t *testing.T, r runtime.Runner) *Server {
 	}
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	home := t.TempDir()
-	c := Config{Enabled: true, Default: "review", Options: []Option{{Name: "review", Agent: "codex", Model: "test-model", Description: "code review", Enabled: true, Efforts: []string{"low"}}}}
+	c := Config{Enabled: true, Default: "review", Options: []Option{{Name: "review", Agent: "codex", Model: "test-model", Description: "code review", Enabled: true, Efforts: []string{"low"}}}, Grants: map[string]Grant{"review": testGrant(t, "codex")}}
 	if err := SaveConfig(home, c); err != nil {
 		t.Fatal(err)
 	}
@@ -210,7 +231,10 @@ func TestParseFailuresAndUnknownUsage(t *testing.T) {
 
 type failureRunner struct{}
 
-func (failureRunner) Execute(context.Context, runtime.CommandPlan, runtime.ExecuteOptions) (runtime.CommandResult, error) {
+func (failureRunner) Execute(_ context.Context, p runtime.CommandPlan, _ runtime.ExecuteOptions) (runtime.CommandResult, error) {
+	if result, ok := authCheck(p); ok {
+		return result, nil
+	}
 	return runtime.CommandResult{Stderr: "model unavailable", ExitCode: 1}, fmt.Errorf("native request rejected")
 }
 
@@ -232,7 +256,8 @@ func TestExternalFailureIsToolErrorAndCannotResume(t *testing.T) {
 func TestMissingPiSessionAndNativeIdentityChangeFail(t *testing.T) {
 	s := testServer(t, &testRunner{})
 	a := &ExternalSubagentState{ID: "pi", Session: filepath.Join(t.TempDir(), "missing.jsonl"), Option: Option{Name: "review", Agent: "pi", Model: "provider/model", Enabled: true, Description: "test"}}
-	c := Config{Enabled: true, Options: []Option{a.Option}}
+	a.Grant = testGrant(t, "pi")
+	c := Config{Enabled: true, Options: []Option{a.Option}, Grants: map[string]Grant{"review": a.Grant}}
 	if err := SaveConfig(s.Home, c); err != nil {
 		t.Fatal(err)
 	}
@@ -349,6 +374,9 @@ func TestQueuedCancellationNotifiesEveryAcceptedTask(t *testing.T) {
 type ignoringCancelRunner struct{ started chan struct{} }
 
 func (r ignoringCancelRunner) Execute(ctx context.Context, p runtime.CommandPlan, o runtime.ExecuteOptions) (runtime.CommandResult, error) {
+	if result, ok := authCheck(p); ok {
+		return result, nil
+	}
 	close(r.started)
 	<-ctx.Done()
 	return runtime.CommandResult{Stdout: "{\"type\":\"thread.started\",\"thread_id\":\"12345678-1234-1234-1234-123456789abc\"}\n{\"type\":\"item.completed\",\"item\":{\"type\":\"agent_message\",\"text\":\"Finished naturally; cancel was ignored\"}}\n{\"type\":\"turn.completed\"}"}, nil
@@ -428,11 +456,12 @@ func TestPresetCatalogSharedDataAndRefresh(t *testing.T) {
 	s := testServer(t, &testRunner{})
 	config, _ := LoadConfig(s.Home)
 	config.Options = append(config.Options, Option{Name: "disabled-choice", Agent: "pi", Model: "provider/model", Description: "Independent analysis", Enabled: false})
+	config.Grants["disabled-choice"] = testGrant(t, "pi")
 	if err := SaveConfig(s.Home, config); err != nil {
 		t.Fatal(err)
 	}
 	catalog, models := PresetCatalog(s.Home)
-	for _, want := range []string{`Configured default preset: "review"`, `execution agent="codex"`, `exact configured model ID (including provider prefix)="test-model"`, `declared capabilities="code review"`, `enabled=false`, `option is disabled`, `declared efforts=[low]`, `Read-only native sandbox`, `Isolation: rejected (worktree and remote)`, `remote execution not verified`} {
+	for _, want := range []string{`Configured default preset: "review"`, `execution agent="codex"`, `exact configured model ID (including provider prefix)="test-model"`, `declared capabilities="code review"`, `enabled=false`, `option is disabled`, `declared efforts=[low]`, `grant="policy=read-only; approval=never; auth=codex-home`, `Execution policy: read-only, enforced by Codex native OS sandbox`, `enforced only by Pi's tool allowlist`, `not an OS sandbox`, `Isolation: rejected (worktree and remote)`, `remote execution not verified`} {
 		if !strings.Contains(catalog, want) {
 			t.Fatal("missing preset data", want, catalog)
 		}

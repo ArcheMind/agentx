@@ -45,6 +45,7 @@ func (e *executionCancelled) Error() string { return e.cause.Error() }
 type ExternalSubagentState struct {
 	ID, Name, Session, NativeID, Cwd, Effort, Status string
 	Option                                           Option
+	Grant                                            Grant
 	Jobs                                             []*Job
 	Running                                          bool
 	Cancel                                           context.CancelFunc
@@ -196,26 +197,26 @@ func (s *Server) tools() any {
 	}}
 }
 
-func (s *Server) enabledOption(name string) (Option, error) {
+func (s *Server) enabledOption(name string) (Option, Grant, error) {
 	config, err := LoadConfig(s.Home)
 	if err != nil {
-		return Option{}, err
+		return Option{}, Grant{}, err
 	}
 	if !config.Enabled {
-		return Option{}, fmt.Errorf("ExternalSubagents disabled; enable with ax sub-agent-management enable")
+		return Option{}, Grant{}, fmt.Errorf("ExternalSubagents disabled; enable with ax sub-agent-management enable")
 	}
 	if name == "" {
 		name = config.Default
 	}
 	if name == "" {
-		return Option{}, fmt.Errorf("model is required: no default combination configured")
+		return Option{}, Grant{}, fmt.Errorf("model is required: no default combination configured")
 	}
 	for _, o := range config.Options {
 		if o.Name == name {
-			return o, o.Ready()
+			return o, config.Grants[o.Name], config.Ready(o)
 		}
 	}
-	return Option{}, fmt.Errorf("model option %q is not configured", name)
+	return Option{}, Grant{}, fmt.Errorf("model option %q is not configured", name)
 }
 
 func (s *Server) target(to string) (*ExternalSubagentState, error) {
@@ -266,8 +267,12 @@ func (s *Server) call(name string, raw json.RawMessage) (string, error) {
 			s.mu.Unlock()
 			return "", fmt.Errorf("invalid deprecated mode")
 		}
-		o, err := s.enabledOption(in.Model)
+		o, g, err := s.enabledOption(in.Model)
 		if err != nil {
+			s.mu.Unlock()
+			return "", err
+		}
+		if _, err := g.ResolvedRoots(s.Cwd); err != nil {
 			s.mu.Unlock()
 			return "", err
 		}
@@ -275,7 +280,7 @@ func (s *Server) call(name string, raw json.RawMessage) (string, error) {
 			s.mu.Unlock()
 			return "", fmt.Errorf("option %s does not support effort %s", o.Name, in.Effort)
 		}
-		a := &ExternalSubagentState{ID: "ax-" + randomID(), Name: in.Name, Option: o, Cwd: s.Cwd, Effort: in.Effort, Status: "queued"}
+		a := &ExternalSubagentState{ID: "ax-" + randomID(), Name: in.Name, Option: o, Grant: g, Cwd: s.Cwd, Effort: in.Effort, Status: "queued"}
 		s.agents[a.ID] = a
 		if a.Name != "" {
 			s.names[a.Name] = a.ID
@@ -316,14 +321,14 @@ func (s *Server) call(name string, raw json.RawMessage) (string, error) {
 			s.mu.Unlock()
 			return "", err
 		}
-		o, err := s.enabledOption(a.Option.Name)
+		o, g, err := s.enabledOption(a.Option.Name)
 		if err != nil {
 			s.mu.Unlock()
 			return "", err
 		}
-		if !reflect.DeepEqual(o, a.Option) {
+		if !reflect.DeepEqual(o, a.Option) || !reflect.DeepEqual(g, a.Grant) {
 			s.mu.Unlock()
-			return "", fmt.Errorf("original option %s changed; cannot resume this ExternalSubagent without changing its identity", a.Option.Name)
+			return "", fmt.Errorf("original option %s or its grant changed; cannot resume this ExternalSubagent without changing its identity, permissions or auth source", a.Option.Name)
 		}
 		if a.Status == "failed" || a.Status == "cancelled" {
 			s.mu.Unlock()
@@ -416,7 +421,7 @@ func (s *Server) call(name string, raw json.RawMessage) (string, error) {
 }
 
 func (s *Server) render(a *ExternalSubagentState, j *Job) string {
-	text := fmt.Sprintf("AgentX ExternalSubagent %s (name=%q; option=%s; agent=%s; actual model=%s; connection=%s)\nTask %s: %s; ExternalSubagent status: %s.\n", a.ID, a.Name, a.Option.Name, a.Option.Agent, a.Option.Model, s.connectionID, j.ID, j.Status, a.Status)
+	text := fmt.Sprintf("AgentX ExternalSubagent %s (name=%q; option=%s; agent=%s; actual model=%s; connection=%s)\nGrant: %s\nTask %s: %s; ExternalSubagent status: %s.\n", a.ID, a.Name, a.Option.Name, a.Option.Agent, a.Option.Model, s.connectionID, a.Grant.Summary(), j.ID, j.Status, a.Status)
 	if j.Summary != "" {
 		text += "Summary: " + j.Summary + "\n"
 	}
@@ -514,12 +519,12 @@ func (s *Server) execute(ctx context.Context, a *ExternalSubagentState, prompt s
 	}
 	identityPresent := false
 	for _, o := range config.Options {
-		if o.Name == a.Option.Name && reflect.DeepEqual(o, a.Option) {
+		if o.Name == a.Option.Name && reflect.DeepEqual(o, a.Option) && reflect.DeepEqual(config.Grants[o.Name], a.Grant) {
 			identityPresent = true
 		}
 	}
 	if !identityPresent {
-		return "", nil, fmt.Errorf("original option %s changed or was removed before execution; no replacement selected", a.Option.Name)
+		return "", nil, fmt.Errorf("original option %s or its grant changed or was removed before execution; no replacement selected", a.Option.Name)
 	}
 	if a.Session != "" {
 		if a.Option.Agent == "pi" {
@@ -528,19 +533,30 @@ func (s *Server) execute(ctx context.Context, a *ExternalSubagentState, prompt s
 			}
 		}
 	}
-	plan, err := drivers.ExecPlan(a.Option.Agent, a.Cwd, a.Option.Model, "")
+	if err := a.Grant.Ready(); err != nil {
+		return "", nil, err
+	}
+	roots, err := a.Grant.ResolvedRoots(a.Cwd)
 	if err != nil {
 		return "", nil, err
 	}
+	if err := s.verifyAuth(ctx, a.Option, a.Grant); err != nil {
+		return "", nil, err
+	}
+	var plan runtime.CommandPlan
 	if a.Option.Agent == "codex" {
-		plan, err = drivers.ExecPlan("codex", a.Cwd, a.Option.Model, a.Session)
+		plan, err = drivers.CodexPolicyExecPlan(a.Cwd, a.Option.Model, a.Session, a.Grant.Execution.Policy, roots, a.Effort)
 		if err != nil {
 			return "", nil, err
 		}
-		if a.Effort != "" {
-			plan.Args = append(plan.Args[:len(plan.Args)-1], "-c", fmt.Sprintf("model_reasoning_effort=%q", a.Effort), "-")
-		}
 	} else {
+		if a.Grant.Execution.Policy != drivers.PolicyReadOnly {
+			return "", nil, fmt.Errorf("Pi supports only the read-only policy")
+		}
+		plan, err = drivers.ExecPlan("pi", a.Cwd, a.Option.Model, "")
+		if err != nil {
+			return "", nil, err
+		}
 		if a.Session == "" {
 			dir := filepath.Join(s.Home, ".local", "state", "agentx", "subagents", a.ID)
 			if err := os.MkdirAll(dir, 0700); err != nil {
@@ -553,6 +569,7 @@ func (s *Server) execute(ctx context.Context, a *ExternalSubagentState, prompt s
 			plan.Args = append(plan.Args, "--thinking", a.Effort)
 		}
 	}
+	plan.Env, plan.UnsetEnv = authEnvironment(a.Option, a.Grant)
 	result, err := s.Runner.Execute(ctx, plan, runtime.ExecuteOptions{Stdin: strings.NewReader(prompt), CancelProcessGroup: true})
 	if err != nil {
 		if ctx.Err() != nil {

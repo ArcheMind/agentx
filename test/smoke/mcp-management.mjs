@@ -11,7 +11,8 @@ function run(action,input){const result=spawnSync(executable,['sub-agent-managem
 function assert(value,message){if(!value)throw Error(message)}
 const unrelated={type:'stdio',command:'echo',args:['unrelated-server']}
 await writeFile(join(home,'.claude.json'),JSON.stringify({mcpServers:{unrelated}}))
-run('configure',JSON.stringify({enabled:false,default:'review',options:[{name:'review',agent:'codex',model:'gpt-5.6-luna',description:'Read-only review',enabled:true}]}))
+run('configure',JSON.stringify({enabled:false,default:'review',options:[{name:'review',agent:'codex',model:'gpt-5.6-luna',description:'Read-only review',enabled:true}],grants:{review:{execution:{policy:'read-only',approval:'never'},auth:{source:'codex-home',path:home,method:'chatgpt'}}}}))
+assert(JSON.parse(run('status')).options[0].execution.policy==='read-only','grant not visible in status')
 assert(JSON.parse(run('status')).enabled===false,'initial disabled state')
 run('enable');run('enable');run('disable');run('enable')
 const status=JSON.parse(run('status'))

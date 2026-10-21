@@ -58,7 +58,7 @@ func (a App) subagentManagement(ctx context.Context, args []string) error {
 		}
 		for _, o := range config.Options {
 			if o.Enabled {
-				if err := o.Ready(); err != nil {
+				if err := config.Ready(o); err != nil {
 					return fmt.Errorf("option %s: %w", o.Name, err)
 				}
 			}
@@ -120,10 +120,11 @@ func (a App) subagentManagement(ctx context.Context, args []string) error {
 		options := []map[string]any{}
 		for _, o := range config.Options {
 			reason := "static requirements satisfied; remote request not verified"
-			if err := o.Ready(); err != nil {
+			if err := config.Ready(o); err != nil {
 				reason = err.Error()
 			}
-			options = append(options, map[string]any{"name": o.Name, "agent": o.Agent, "model": o.Model, "enabled": o.Enabled, "description": o.Description, "limits": subagents.Limits(o), "status": reason, "efforts": o.Efforts})
+			grant := config.Grants[o.Name]
+			options = append(options, map[string]any{"name": o.Name, "agent": o.Agent, "model": o.Model, "enabled": o.Enabled, "description": o.Description, "execution": grant.Execution, "auth": grant.Auth, "limits": subagents.Limits(o, grant), "status": reason, "efforts": o.Efforts})
 		}
 		defaultName := config.Default
 		if defaultName == "" {

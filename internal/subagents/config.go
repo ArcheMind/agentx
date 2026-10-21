@@ -25,9 +25,10 @@ type Option struct {
 }
 
 type Config struct {
-	Enabled bool     `json:"enabled"`
-	Default string   `json:"default,omitempty"`
-	Options []Option `json:"options"`
+	Enabled bool             `json:"enabled"`
+	Default string           `json:"default,omitempty"`
+	Options []Option         `json:"options"`
+	Grants  map[string]Grant `json:"grants,omitempty"`
 }
 
 func ConfigPath(home string) string {
@@ -96,6 +97,18 @@ func (c Config) Validate() error {
 		if err := o.Validate(); err != nil {
 			return fmt.Errorf("option %s: %w", o.Name, err)
 		}
+		grant, ok := c.Grants[o.Name]
+		if !ok {
+			return fmt.Errorf("option %s has no grant: configure grants.%s with execution policy and auth source", o.Name, o.Name)
+		}
+		if err := grant.Validate(o.Agent); err != nil {
+			return fmt.Errorf("grant %s: %w", o.Name, err)
+		}
+	}
+	for name := range c.Grants {
+		if !seen[name] {
+			return fmt.Errorf("grant %q does not match a configured option", name)
+		}
 	}
 	if c.Default != "" && !seen[c.Default] {
 		return fmt.Errorf("default %q is not configured", c.Default)
@@ -149,6 +162,13 @@ func (o Option) Ready() error {
 	return nil
 }
 
+func (c Config) Ready(o Option) error {
+	if err := o.Ready(); err != nil {
+		return err
+	}
+	return c.Grants[o.Name].Ready()
+}
+
 func SaveConfig(home string, c Config) error {
 	if err := c.Validate(); err != nil {
 		return err
@@ -180,13 +200,6 @@ func SaveConfig(home string, c Config) error {
 	return os.Rename(f.Name(), path)
 }
 
-func Limits(o Option) string {
-	if o.Agent == "pi" {
-		return "Read-only tool allowlist (read, grep, find, ls); extensions, skills, prompt templates and project approval disabled. Not an OS sandbox. Native credentials; does not inherit Claude permissions. Role: general-purpose only. Isolation: rejected (worktree and remote). Effort selection: rejected (Pi may silently clamp thinking levels). Exact provider/model required. Remote availability is unverified until execution."
-	}
-	return "Read-only native sandbox; approval_policy=never. Native credentials; does not inherit Claude permissions. Role: general-purpose only. Isolation: rejected (worktree and remote). Advertised efforts are user-verified model capabilities. Remote availability is unverified until execution."
-}
-
 func PresetCatalog(home string) (string, []string) {
 	config, err := LoadConfig(home)
 	models := []string{}
@@ -206,12 +219,12 @@ func PresetCatalog(home string) (string, []string) {
 	}
 	for _, option := range config.Options {
 		readiness := "requirements satisfied"
-		if err := option.Ready(); err != nil {
+		if err := config.Ready(option); err != nil {
 			readiness = err.Error()
 		} else {
 			models = append(models, option.Name)
 		}
-		fmt.Fprintf(&text, "- %s: execution agent=%q; exact configured model ID (including provider prefix)=%q; declared capabilities=%q; enabled=%t; static prerequisites=%q; declared efforts=%v; access/limits=%q\n", option.Name, option.Agent, option.Model, option.Description, option.Enabled, readiness, option.Efforts, Limits(option))
+		fmt.Fprintf(&text, "- %s: execution agent=%q; exact configured model ID (including provider prefix)=%q; declared capabilities=%q; enabled=%t; static prerequisites=%q; declared efforts=%v; grant=%q; access/limits=%q\n", option.Name, option.Agent, option.Model, option.Description, option.Enabled, readiness, option.Efforts, config.Grants[option.Name].Summary(), Limits(option, config.Grants[option.Name]))
 	}
 	text.WriteString("--- end preset data ---")
 	return text.String(), models

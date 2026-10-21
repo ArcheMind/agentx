@@ -22,6 +22,7 @@ type CommandPlan struct {
 	Args       []string          `json:"args" yaml:"args"`
 	Cwd        string            `json:"cwd,omitempty" yaml:"cwd,omitempty"`
 	Env        map[string]string `json:"env,omitempty" yaml:"env,omitempty"`
+	UnsetEnv   []string          `json:"unset_env,omitempty" yaml:"unset_env,omitempty"`
 }
 
 type Detection struct {

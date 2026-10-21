@@ -16,7 +16,7 @@ func TestSubagentLaunchDryRun(t *testing.T) {
 	app := New(false, strings.NewReader(""), &output, &bytes.Buffer{})
 	app.Hooks.Home = t.TempDir()
 	app.Hooks.Project = t.TempDir()
-	if err := subagents.SaveConfig(app.Hooks.Home, subagents.Config{Enabled: true, Options: []subagents.Option{{Name: "test", Agent: "codex", Model: "test", Description: "test", Enabled: true}}}); err != nil {
+	if err := subagents.SaveConfig(app.Hooks.Home, subagents.Config{Enabled: true, Options: []subagents.Option{{Name: "test", Agent: "codex", Model: "test", Description: "test", Enabled: true}}, Grants: map[string]subagents.Grant{"test": {Execution: subagents.ExecutionPolicy{Policy: "read-only", Approval: "never"}, Auth: subagents.AuthSource{Source: "codex-home", Path: app.Hooks.Home, Method: "chatgpt"}}}}); err != nil {
 		t.Fatal(err)
 	}
 	if err := app.Run(context.Background(), []string{"--json", "claude", "--cwd", app.Hooks.Project, "--subagents", "--dry-run"}); err != nil {
