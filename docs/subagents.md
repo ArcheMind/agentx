@@ -117,8 +117,8 @@ execution. No native-default model or automatic fallback is used.
 
 The earlier `default`/`options` keys in `subagents.json` and the `configure`
 command no longer exist; a file containing them is reported as invalid. Move each
-former option once into the collection, keep its grant under the same name, and
-drop everything else from the file:
+former option once into the collection, add a grant for each preset under its
+name, and drop everything else from the file:
 
 ```sh
 mkdir -p ~/.agentx/presets/codex-review ~/.agentx/presets/pi-review

@@ -355,7 +355,7 @@ func TestConfigurationErrorDoesNotOfferPresetEdit(t *testing.T) {
 	os.WriteFile(subagents.ConfigPath(home), []byte(`{"enabled":true,"default":"x","options":[]}`), 0o600)
 	application.Run(context.Background(), nil)
 	output := stdout.String()
-	if len(runner.plans) != 0 || !strings.Contains(output, "docs/subagents.md") || !strings.Contains(output, "keep its grant under the preset name") || strings.Contains(output, "Edit preset") {
+	if len(runner.plans) != 0 || !strings.Contains(output, "docs/subagents.md") || !strings.Contains(output, "add a grant for each preset under its name") || strings.Contains(output, "Edit preset") {
 		t.Fatal(output)
 	}
 }

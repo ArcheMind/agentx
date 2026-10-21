@@ -70,7 +70,7 @@ func LoadConfig(home string) (Config, error) {
 		return config, err
 	}
 	if err := StrictDecode(data, &config); err != nil {
-		return config, fmt.Errorf("invalid ExternalSubagent configuration %s: %w. This file now holds only {\"enabled\": true|false, \"grants\": {<preset name>: grant}}; presets live in %s/<name>/PRESET.md. To migrate, move each former option into its own PRESET.md, keep its grant under the preset name (a callable preset without one is listed but not callable) and drop every other key; see \"Migrating from the earlier options configuration\" in docs/subagents.md (https://github.com/ArcheMind/agentx/blob/main/docs/subagents.md#migrating-from-the-earlier-options-configuration)", ConfigPath(home), err, presets.Dir(home))
+		return config, fmt.Errorf("invalid ExternalSubagent configuration %s: %w. This file now holds only {\"enabled\": true|false, \"grants\": {<preset name>: grant}}; presets live in %s/<name>/PRESET.md. To migrate, move each former option into its own PRESET.md, add a grant for each preset under its name (a callable preset without one is listed but not callable) and drop every other key; see \"Migrating from the earlier options configuration\" in docs/subagents.md (https://github.com/ArcheMind/agentx/blob/main/docs/subagents.md#migrating-from-the-earlier-options-configuration)", ConfigPath(home), err, presets.Dir(home))
 	}
 	return config, nil
 }
