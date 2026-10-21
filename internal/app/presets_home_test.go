@@ -315,3 +315,47 @@ func TestEditChangesOnlyConfirmedFieldsAndCancelKeepsOriginal(t *testing.T) {
 		t.Fatal(stdout.String())
 	}
 }
+
+func TestEditAndCopyEffortUseListedLevels(t *testing.T) {
+	listed := `{"id":2,"result":{"data":[{"model":"gpt-5.6-luna","supportedReasoningEfforts":[{"reasoningEffort":"low"},{"reasoningEffort":"medium"}],"defaultReasoningEffort":"low"}]}}`
+	application, stdout, runner := presetApp(t, "m"+"j\r"+"j\r"+"jj\r"+"jj\r"+"\r"+"q"+"q", "codex")
+	runner.response = listed
+	home := application.Hooks.Home
+	mustCreate(t, home, deepReview)
+	application.Run(context.Background(), nil)
+	if current, _ := presets.Read(home, "deep-review"); current.Effort != "medium" {
+		t.Fatalf("edited = %#v output = %q", current, stdout.String())
+	}
+	if output := stdout.String(); !strings.Contains(output, "Explicit levels listed by Codex for gpt-5.6-luna") || strings.Contains(output, "ultra") || strings.Contains(output, "entered manually") {
+		t.Fatal(output)
+	}
+	application.Stdin = strings.NewReader("m" + "jjj\r" + "copy\n" + "jj\r" + "jj\r" + "k\r" + "j\r" + "q" + "q")
+	stdout.Reset()
+	application.Run(context.Background(), nil)
+	if copied, err := presets.Read(home, "copy"); err != nil || copied.Effort != "low" || strings.Contains(stdout.String(), "ultra") {
+		t.Fatalf("copy = %#v err = %v output = %q", copied, err, stdout.String())
+	}
+}
+
+func TestUnlistedModelEffortNoteIsHonest(t *testing.T) {
+	application, stdout, runner := presetApp(t, "m"+"j\r"+"j\r"+"jj\r"+"q"+"q"+"q", "codex")
+	runner.response = `{"id":2,"result":{"data":[{"model":"other","supportedReasoningEfforts":[{"reasoningEffort":"low"}]}]}}`
+	mustCreate(t, application.Hooks.Home, deepReview)
+	application.Run(context.Background(), nil)
+	if output := stdout.String(); !strings.Contains(output, "gpt-5.6-luna is not in the Codex CLI model list, so its levels were not confirmed") || !strings.Contains(output, "(unverified for this model)") {
+		t.Fatal(output)
+	}
+}
+
+func TestConfigurationErrorDoesNotOfferPresetEdit(t *testing.T) {
+	application, stdout, runner := presetApp(t, "\r"+"\r"+"q", "claude")
+	home := application.Hooks.Home
+	mustCreate(t, home, presets.Preset{Name: "daily", Description: "Everyday", Agent: "claude", Model: "opus"})
+	os.MkdirAll(filepath.Dir(subagents.ConfigPath(home)), 0o700)
+	os.WriteFile(subagents.ConfigPath(home), []byte(`{"enabled":true,"default":"x","options":[]}`), 0o600)
+	application.Run(context.Background(), nil)
+	output := stdout.String()
+	if len(runner.plans) != 0 || !strings.Contains(output, "docs/subagents.md") || !strings.Contains(output, "keep its grant under the preset name") || strings.Contains(output, "Edit preset") {
+		t.Fatal(output)
+	}
+}

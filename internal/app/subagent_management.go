@@ -138,7 +138,7 @@ func (a App) prepareMCPSubagents(request *runtime.RunRequest, explicit bool) err
 	}
 	if !config.Enabled {
 		if explicit {
-			return fmt.Errorf("ExternalSubagents disabled; configure and enable with ax sub-agent-management")
+			return fmt.Errorf("ExternalSubagents disabled; enable with ax sub-agent-management enable")
 		}
 		return nil
 	}

@@ -479,7 +479,7 @@ func TestExternalSubagentToolNamesAndUnchangedContract(t *testing.T) {
 			t.Fatal("changed parameter", key)
 		}
 	}
-	if len(props) != 9 || props["effort"] != nil || !Contains(props["model"].(map[string]any)["enum"].([]string), "review") {
+	if len(props) != 9 || props["effort"] != nil || !presets.Contains(props["model"].(map[string]any)["enum"].([]string), "review") {
 		t.Fatal("changed model selection contract")
 	}
 	for _, old := range []string{"Agent", "SendMessage", "TaskStop", "ListAgents"} {

@@ -382,8 +382,9 @@ See [acceptance evidence](subagents-acceptance.md) for scenarios and limitations
 
 The four names above replace the earlier MCP `Agent`, `SendMessage`, `TaskStop`
 and `ListAgents` names. Old names are rejected; there are no compatibility aliases.
-The parameter keys, `model` combination selection, `subagent_type` role,
-configuration and lifecycle are unchanged. Reconnect Claude MCP after upgrading
+The `subagent_type` role and lifecycle are unchanged; `model` now names a preset
+from the shared collection and the per-call `effort` key was removed (see
+Presets above). Reconnect Claude MCP after upgrading
 to refresh tool metadata; update any explicit MCP tool permission rules to the
 new names. Native Claude tools retain their own names and behavior.
 

@@ -9,13 +9,10 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
-	"regexp"
 	"strings"
 
 	"github.com/ArcheMind/agentx/internal/presets"
 )
-
-var NamePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$`)
 
 // Config holds the feature switch and per-preset execution grants; preset identity lives only in
 // the shared ~/.agentx/presets collection.
@@ -72,7 +69,7 @@ func LoadConfig(home string) (Config, error) {
 		return config, err
 	}
 	if err := StrictDecode(data, &config); err != nil {
-		return config, fmt.Errorf("invalid ExternalSubagent configuration %s: %w; it holds only {\"enabled\": bool, \"grants\": {<preset>: grant}} and presets live in %s", ConfigPath(home), err, presets.Dir(home))
+		return config, fmt.Errorf("invalid ExternalSubagent configuration %s: %w. This file now holds only {\"enabled\": true|false, \"grants\": {<preset name>: grant}}; presets live in %s/<name>/PRESET.md. To migrate, move each former option into its own PRESET.md, keep its grant under the preset name and drop every other key; see \"Migrating from the earlier options configuration\" in docs/subagents.md (https://github.com/ArcheMind/agentx/blob/main/docs/subagents.md#migrating-from-the-earlier-options-configuration)", ConfigPath(home), err, presets.Dir(home))
 	}
 	return config, nil
 }
@@ -120,15 +117,6 @@ func (c Config) Validate(home string, list []presets.Preset, problems []presets.
 		}
 	}
 	return nil
-}
-
-func Contains(values []string, value string) bool {
-	for _, item := range values {
-		if item == value {
-			return true
-		}
-	}
-	return false
 }
 
 // Ready reports static prerequisites only; remote login and model access are verified by execution.

@@ -237,14 +237,14 @@ checks are not a sandbox penetration test.
 | --- | --- |
 | A01 First use | Live isolated management installs persistent MCP entry. Actual Claude discovers and invokes both configured real engine choices without registration. |
 | A02 Single call | Actual Claude creates each real backend object in one Agent call. Separate live foreground calls return terminal native reports, identities and hints. |
-| A03 Defaults | Deterministic configured-default execution; removing default rejects omitted model. |
+| A03 Defaults | Historical (pre-002): configured-default execution. Since 002 there is no default preset; an omitted `model` is rejected (deterministic server test). |
 | A04 Constraints | Unknown/disabled choices and unsupported role/effort/isolation reject; capabilities/limits visible in generated tool description. |
 | A05 Fore/background | Live both engines false waits; real Claude true returns queued then consumes channel. Deterministic omitted background returns queued immediately. |
 | A06 Memory | Live distinct first-turn labels recalled via both native sessions, no caller history replay. |
 | A07 Busy message | Actual Claude's exact SendMessage results report each matching real worker running and message accepted/queued; both later recall their own context through channel results. |
 | A08 Parallel/addressing | Live different engines parallel with distinct contexts; deterministic same-combination fresh sessions, name reassignment and old-ID access. |
 | A09 Cancellation | Real ListAgents shows Pi survivor and Codex target running together; cancelling Codex terminates it while Pi later completes. Deterministic per-queued-task notifications and unknown/already-ended cases supplement this. |
-| A10 Disable/re-enable | Live isolated management preserves options; deterministic new-work rejection and completion of accepted queue while disabled. |
+| A10 Disable/re-enable | Live isolated management preserves the presets collection (`make smoke-mcp-management`); deterministic new-work rejection and completion of accepted queue while disabled. |
 | A11 Configuration changes | Each new task reads current config. Original option pinned at acceptance/dequeue; changed or removed identity rejects continuation. |
 | A12 Parameters | Deterministic required/optional/unknown/null/wrong-type/case/empty checks. Deprecated mode/team_name cannot alter readonly native plan. Live Codex low effort; Pi effort and all isolation reject. |
 | A13 Failures | Injected unavailable-model/execution failure is a tool error. Malformed/incomplete output, missing Pi session, changed native ID fail without retry. Ignored cancellation is explicitly unconfirmed, not cancelled. |

@@ -99,7 +99,7 @@ func TestBoundedWriteMapsToCodexSandboxAndConfiguredAuth(t *testing.T) {
 		}
 	}
 	config, _ := LoadConfig(s.Home)
-	if plan.Env["CODEX_HOME"] != config.Grants["review"].Auth.Path || !Contains(plan.UnsetEnv, "AGENTX_TEST_API_KEY") {
+	if plan.Env["CODEX_HOME"] != config.Grants["review"].Auth.Path || !presets.Contains(plan.UnsetEnv, "AGENTX_TEST_API_KEY") {
 		t.Fatalf("auth environment not explicit: %#v %#v", plan.Env, plan.UnsetEnv)
 	}
 	for _, value := range plan.Env {

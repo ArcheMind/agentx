@@ -71,7 +71,7 @@ func (g Grant) Validate(agent string) error {
 	if !filepath.IsAbs(g.Auth.Path) || filepath.Clean(g.Auth.Path) != g.Auth.Path {
 		return fmt.Errorf("auth.path %q must be an absolute, clean path", g.Auth.Path)
 	}
-	if !Contains(expected.methods, g.Auth.Method) {
+	if !presets.Contains(expected.methods, g.Auth.Method) {
 		return fmt.Errorf("auth.method %q unsupported for %s; supported: %s", g.Auth.Method, agent, strings.Join(expected.methods, ", "))
 	}
 	return nil
