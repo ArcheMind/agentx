@@ -105,8 +105,8 @@ func (a App) Run(ctx context.Context, args []string) error {
 		return a.skill(ctx, args[1:])
 	case "hook":
 		return a.hook(ctx, args[1:])
-	case "sub-agent-management":
-		return a.subagentManagement(ctx, args[1:])
+	case "preset":
+		return a.preset(ctx, args[1:])
 	case "convert":
 		return a.convert(args[1:])
 	default:
@@ -330,7 +330,6 @@ func (a App) runAgent(ctx context.Context, args []string) error {
 	}
 	request := runtime.RunRequest{}
 	dryRun := false
-	withSubagents := false
 	for index := 1; index < len(args); index++ {
 		switch args[index] {
 		case "--":
@@ -350,8 +349,6 @@ func (a App) runAgent(ctx context.Context, args []string) error {
 			request.Cwd = args[index]
 		case "--dry-run":
 			dryRun = true
-		case "--subagents":
-			withSubagents = true
 		default:
 			return fmt.Errorf("unknown run option %q; native arguments must follow --", args[index])
 		}
@@ -373,13 +370,8 @@ func (a App) runAgent(ctx context.Context, args []string) error {
 	if !info.IsDir() {
 		return fmt.Errorf("working directory %s is not a directory", request.Cwd)
 	}
-	if withSubagents {
-		if agent.ID != "claude" {
-			return fmt.Errorf("--subagents is only supported by Claude Code")
-		}
-	}
 	if agent.ID == "claude" {
-		if err := a.prepareMCPSubagents(&request, withSubagents); err != nil {
+		if err := a.prepareMCPSubagents(&request); err != nil {
 			return err
 		}
 	}
@@ -775,12 +767,17 @@ func (a App) resumeSession(ctx context.Context, agent runtime.Agent, detail sess
 	if err != nil || !info.IsDir() {
 		return fmt.Errorf("session workspace %s is not an accessible directory", workspace)
 	}
-	stateDir := filepath.Join(a.Sessions.HomeDir, ".local", "state", "agentx", "resume")
-	sessionFile, err := sessions.WriteSessionFile(detail, agent.ID, stateDir)
-	if err != nil {
-		return fmt.Errorf("prepare resume session: %w", err)
+	var resumeToken string
+	if detail.Provider == agent.ID {
+		resumeToken = detail.ID
+	} else {
+		stateDir := filepath.Join(a.Sessions.HomeDir, ".local", "state", "agentx", "resume")
+		resumeToken, err = sessions.WriteSessionFile(detail, agent.ID, stateDir, a.Sessions.HomeDir)
+		if err != nil {
+			return fmt.Errorf("prepare resume session: %w", err)
+		}
 	}
-	request := runtime.RunRequest{Cwd: workspace, Model: model, PassthroughArgs: sessions.ResumeArgs(agent.ID, sessionFile)}
+	request := runtime.RunRequest{Cwd: workspace, Model: model, PassthroughArgs: sessions.ResumeArgs(agent.ID, resumeToken)}
 	if err := a.prepareHooks(&request, agent.ID, !dryRun); err != nil {
 		return err
 	}
@@ -876,12 +873,11 @@ Usage:
   ax [--json|--yaml] session <list|show|resume> [args...]
   ax [--json|--yaml] skill <list|show|install> [args...]
   ax [--json|--yaml] hook list
-  ax sub-agent-management <enable|disable|status>
-  ax claude [-- <native args...>]
-  ax agent exec <codex|pi|gemini> [--model <model>] [--resume <session-id>] [--cwd <path>] [--dry-run] < prompt.txt
+  ax [--json|--yaml] mcp <list|show> [args...]
+  ax [--json|--yaml] preset <list|show> [args...]
+  ax [--json|--yaml] convert <to|from> <provider>
 
-  ax convert --to <provider> [< unified.json]
-  ax convert --from <provider> [< native.jsonl]
+  ax agent exec <codex|pi|gemini> [--model <model>] [--resume <session-id>] [--cwd <path>] [--dry-run] < prompt.txt
 
   ax version
 
@@ -890,7 +886,6 @@ with a preset, create or manage presets (m), or continue a recent session.
 Presets live in ~/.agentx/presets/<name>/PRESET.md and are shared with MCP
 ExternalSubagents. The ax <agent> shortcut launches an installed agent directly.
 
-MCP inventory: ax mcp list | ax mcp show <name> [--scope project|user] [--source <path>]
 Agents: claude, codex, dsh, gemini, opencode, pi
 
 Set AX_LOG=debug or pass --verbose before the command to log raw external input,
@@ -910,36 +905,17 @@ func isConvertProvider(id string) bool {
 }
 
 func (a App) convert(args []string) error {
-	var toProvider, fromProvider string
-	for i := 0; i < len(args); i++ {
-		switch args[i] {
-		case "--to":
-			i++
-			if i >= len(args) {
-				return fmt.Errorf("--to requires a value")
-			}
-			toProvider = args[i]
-		case "--from":
-			i++
-			if i >= len(args) {
-				return fmt.Errorf("--from requires a value")
-			}
-			fromProvider = args[i]
-		default:
-			return fmt.Errorf("unknown convert option %q", args[i])
-		}
+	if len(args) < 2 {
+		return fmt.Errorf("usage: ax [--json|--yaml] convert <to|from> <provider>")
 	}
-	if toProvider == "" && fromProvider == "" {
-		return fmt.Errorf("usage: ax convert --to <provider> or ax convert --from <provider>")
+	switch args[0] {
+	case "to":
+		return a.convertTo(args[1])
+	case "from":
+		return a.convertFrom(args[1])
+	default:
+		return fmt.Errorf("usage: ax [--json|--yaml] convert <to|from> <provider>")
 	}
-	if toProvider != "" && fromProvider != "" {
-		return fmt.Errorf("--to and --from are mutually exclusive")
-	}
-
-	if toProvider != "" {
-		return a.convertTo(toProvider)
-	}
-	return a.convertFrom(fromProvider)
 }
 
 func (a App) convertTo(provider string) error {

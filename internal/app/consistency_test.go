@@ -29,8 +29,9 @@ func TestCrossLayerConsistency(t *testing.T) {
 		"session <list|show|resume>",
 		"skill <list|show|install>",
 		"hook list",
-		"convert --to <provider>",
-		"convert --from <provider>",
+		"mcp <list|show>",
+		"preset <list|show>",
+		"convert <to|from> <provider>",
 	} {
 		if !strings.Contains(help.String(), command) {
 			t.Errorf("help does not advertise %q", command)

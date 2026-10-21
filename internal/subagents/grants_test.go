@@ -186,7 +186,7 @@ func TestMissingOrMismatchedAuthFailsWithoutFallback(t *testing.T) {
 			t.Fatal(err)
 		}
 		savePreset(t, s.Home, presets.Preset{Name: "review", Agent: "pi", Model: "provider/model", Description: "d"})
-		if err := SaveConfig(s.Home, Config{Enabled: true, Grants: map[string]Grant{"review": testGrant(t, "pi")}}); err != nil {
+		if err := SaveConfig(s.Home, Config{Grants: map[string]Grant{"review": testGrant(t, "pi")}}); err != nil {
 			t.Fatal(err)
 		}
 		_, err := s.call("ExternalSubagent", []byte(`{"description":"x","prompt":"x","model":"review","run_in_background":false}`))

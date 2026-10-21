@@ -17,10 +17,7 @@ func TestSubagentLaunchDryRun(t *testing.T) {
 	app := New(false, strings.NewReader(""), &output, &bytes.Buffer{})
 	app.Hooks.Home = t.TempDir()
 	app.Hooks.Project = t.TempDir()
-	if err := subagents.SaveConfig(app.Hooks.Home, subagents.Config{Enabled: true}); err != nil {
-		t.Fatal(err)
-	}
-	if err := app.Run(context.Background(), []string{"--json", "claude", "--cwd", app.Hooks.Project, "--subagents", "--dry-run"}); err != nil {
+	if err := app.Run(context.Background(), []string{"--json", "claude", "--cwd", app.Hooks.Project, "--dry-run"}); err != nil {
 		t.Fatal(err)
 	}
 	var plan runtime.CommandPlan
@@ -29,9 +26,6 @@ func TestSubagentLaunchDryRun(t *testing.T) {
 	}
 	if len(plan.Args) != 4 || plan.Args[0] != "--mcp-config" || plan.Args[2] != "--dangerously-load-development-channels" || plan.Args[3] != "server:agentx" {
 		t.Fatalf("plan = %#v", plan)
-	}
-	if err := app.Run(context.Background(), []string{"codex", "--subagents", "--dry-run"}); err == nil {
-		t.Fatal("accepted Claude flag for Codex")
 	}
 }
 
@@ -49,7 +43,7 @@ func TestSubagentStatusShowsGrantOnlyForCallablePresets(t *testing.T) {
 	if err := subagents.SaveConfig(app.Hooks.Home, subagents.Config{Grants: map[string]subagents.Grant{"review": grant, "daily": grant}}); err != nil {
 		t.Fatal(err)
 	}
-	if err := app.Run(context.Background(), []string{"--json", "sub-agent-management", "status"}); err != nil {
+	if err := app.Run(context.Background(), []string{"--json", "preset", "list"}); err != nil {
 		t.Fatal(err)
 	}
 	var status struct {

@@ -80,21 +80,19 @@ If a native agent is missing at start, AgentX shows the reason and offers to edi
 the preset or go back; it never substitutes another agent, model or effort.
 Native rejection of a model or effort is the native agent's error.
 
-### Enable MCP
+### Presets and grants
 
 ```sh
-ax sub-agent-management enable
-ax sub-agent-management status
+ax preset list
+ax preset show codex-review
 ax claude
-ax sub-agent-management disable
 ```
 
-`~/.config/agentx/subagents.json` holds exactly the feature switch and the
-per-preset execution grants (see [Grants](#grants-execution-policy-approval-and-authentication)):
+`~/.config/agentx/subagents.json` holds the per-preset execution grants
+(see [Grants](#grants-execution-policy-approval-and-authentication)):
 
 ```json
 {
-  "enabled": true,
   "grants": {
     "codex-review": {
       "execution": {"policy": "read-only", "approval": "never"},
@@ -108,10 +106,11 @@ per-preset execution grants (see [Grants](#grants-execution-policy-approval-and-
 }
 ```
 
-`status` lists the collection with static readiness, each callable preset's
-`execution` and `auth`, invalid entries and live MCP connections. Static checks
-do not verify remote login or model access; those are established only by
-execution. No native-default model or automatic fallback is used.
+`ax preset list` shows the collection with static readiness, each callable
+preset's grants, and invalid entries. `ax preset show <name>` shows a single
+preset's detail. Static checks do not verify remote login or model access;
+those are established only by execution. No native-default model or automatic
+fallback is used.
 
 ### Migrating from the earlier `options` configuration
 

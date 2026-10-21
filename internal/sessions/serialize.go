@@ -111,9 +111,13 @@ func claudeSerializeUserContent(blocks []ContentBlock) any {
 // SerializeCodex converts a unified Detail back to Codex CLI's native JSONL records.
 func SerializeCodex(detail Detail) []map[string]any {
 	meta := map[string]any{
-		"id":        detail.ID,
-		"cwd":       detail.Workspace,
-		"timestamp": detail.StartedAt,
+		"id":          detail.ID,
+		"session_id":  detail.ID,
+		"cwd":         detail.Workspace,
+		"timestamp":   detail.StartedAt,
+		"originator":  "agentx",
+		"cli_version": "agentx",
+		"source":      "cli",
 	}
 	if detail.IsSubagent {
 		meta["source"] = map[string]any{"subagent": map[string]any{}}

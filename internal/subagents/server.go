@@ -207,9 +207,6 @@ func (s *Server) enabledOption(name string) (presets.Preset, Grant, error) {
 		return presets.Preset{}, Grant{}, err
 	}
 	config := state.Config
-	if !config.Enabled {
-		return presets.Preset{}, Grant{}, fmt.Errorf("ExternalSubagents disabled; enable with ax sub-agent-management enable")
-	}
 	if name == "" {
 		return presets.Preset{}, Grant{}, fmt.Errorf("model is required: name one preset from the AgentX preset list; there is no default preset")
 	}

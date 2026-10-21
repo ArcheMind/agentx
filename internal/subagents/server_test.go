@@ -88,7 +88,7 @@ func testServer(t *testing.T, r runtime.Runner) *Server {
 	}
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	home := t.TempDir()
-	if err := SaveConfig(home, Config{Enabled: true, Grants: map[string]Grant{"review": testGrant(t, "codex")}}); err != nil {
+	if err := SaveConfig(home, Config{Grants: map[string]Grant{"review": testGrant(t, "codex")}}); err != nil {
 		t.Fatal(err)
 	}
 	savePreset(t, home, reviewPreset)
@@ -127,7 +127,7 @@ func waitAgent(t *testing.T, s *Server, id string) {
 	}
 }
 
-func TestLifecycleQueueNamesResumeAndDisable(t *testing.T) {
+func TestLifecycleQueueNamesAndResume(t *testing.T) {
 	r := &testRunner{started: make(chan int, 8), release: make(chan struct{})}
 	s := testServer(t, r)
 	text := callTest(t, s, "ExternalSubagent", map[string]any{"description": "remember", "prompt": "secret-token", "name": "reviewer", "model": "review"})
@@ -136,14 +136,6 @@ func TestLifecycleQueueNamesResumeAndDisable(t *testing.T) {
 	}
 	<-r.started
 	callTest(t, s, "SendExternalSubagentMessage", map[string]any{"to": "reviewer", "message": "recall"})
-	config, _ := LoadConfig(s.Home)
-	config.Enabled = false
-	if err := SaveConfig(s.Home, config); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.call("SendExternalSubagentMessage", []byte(`{"to":"reviewer","message":"rejected"}`)); err == nil {
-		t.Fatal("disabled accepted work")
-	}
 	close(r.release)
 	waitAgent(t, s, "reviewer")
 	r.mu.Lock()
@@ -151,8 +143,6 @@ func TestLifecycleQueueNamesResumeAndDisable(t *testing.T) {
 		t.Fatalf("no native continuation: %#v", r.plans)
 	}
 	r.mu.Unlock()
-	config.Enabled = true
-	SaveConfig(s.Home, config)
 	s.mu.Lock()
 	old := s.names["reviewer"]
 	s.mu.Unlock()
@@ -383,7 +373,7 @@ func TestMissingPiSessionAndNativeIdentityChangeFail(t *testing.T) {
 	s := testServer(t, &testRunner{})
 	a := &ExternalSubagentState{ID: "pi", Session: filepath.Join(t.TempDir(), "missing.jsonl"), Option: presets.Preset{Name: "review", Agent: "pi", Model: "provider/model", Description: "test"}, Grant: testGrant(t, "pi")}
 	savePreset(t, s.Home, a.Option)
-	if err := SaveConfig(s.Home, Config{Enabled: true, Grants: map[string]Grant{"review": a.Grant}}); err != nil {
+	if err := SaveConfig(s.Home, Config{Grants: map[string]Grant{"review": a.Grant}}); err != nil {
 		t.Fatal(err)
 	}
 	if _, _, err := s.execute(context.Background(), a, "continue"); err == nil || !strings.Contains(err.Error(), "original Pi session unavailable") {
@@ -630,17 +620,8 @@ func TestPresetCatalogSharedDataAndRefresh(t *testing.T) {
 	}
 }
 
-func TestPresetCatalogDisabledInvalidAndEmpty(t *testing.T) {
+func TestPresetCatalogInvalidAndEmpty(t *testing.T) {
 	s := testServer(t, &testRunner{})
-	config, _ := LoadConfig(s.Home)
-	config.Enabled = false
-	if err := SaveConfig(s.Home, config); err != nil {
-		t.Fatal(err)
-	}
-	text, _ := PresetCatalog(s.Home)
-	if !strings.Contains(text, "Feature enabled: false (false blocks new work)") {
-		t.Fatal(text)
-	}
 	broken := filepath.Join(presets.Dir(s.Home), "broken")
 	os.MkdirAll(broken, 0700)
 	os.WriteFile(filepath.Join(broken, presets.FileName), []byte("---\nagent: unknown\nmodel: m\n---\nx\n"), 0600)
@@ -656,7 +637,7 @@ func TestPresetCatalogDisabledInvalidAndEmpty(t *testing.T) {
 	if len(models) != 0 || !strings.Contains(text, "No presets.") || !strings.Contains(text, "+ Create preset") {
 		t.Fatal(text, models)
 	}
-	if err := os.WriteFile(ConfigPath(s.Home), []byte(`{"enabled":true,"options":[]}`), 0600); err != nil {
+	if err := os.WriteFile(ConfigPath(s.Home), []byte(`{"options":[]}`), 0600); err != nil {
 		t.Fatal(err)
 	}
 	text, models = PresetCatalog(s.Home)

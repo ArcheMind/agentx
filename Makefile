@@ -1,4 +1,4 @@
-.PHONY: fmt check test test-subagents smoke-subagents smoke-subagents-live audit build smoke smoke-live smoke-clean smoke-hooks-live smoke-skills-clean smoke-skills-live verify clean
+.PHONY: fmt check test test-subagents smoke-subagents smoke-subagents-live audit build install smoke smoke-live smoke-clean smoke-hooks-live smoke-skills-clean smoke-skills-live verify clean
 .PHONY: smoke-mcp-management smoke-mcp-live smoke-mcp-channel smoke-mcp-host-live verify-mcp-host-evidence test-mcp-race test-mcp-syntax
 .PHONY: smoke-mcp-contract
 .PHONY: smoke-mcp-presets smoke-presets smoke-mcp-policy-live
@@ -26,6 +26,9 @@ audit:
 build:
 	mkdir -p bin
 	go build -trimpath -o bin/ax ./cmd/ax
+
+install: build
+	install -m 0755 bin/ax "$${AX_INSTALL_DIR:-$$HOME/.local/bin}/ax"
 
 smoke-mcp-channel: build
 	node test/smoke/mcp-channel.mjs "$(CURDIR)/bin/ax"

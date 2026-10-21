@@ -71,8 +71,7 @@ ax dsh -- --profile acp
 
 ```bash
 ax                                  # create presets: + Create preset…, manage with m
-ax sub-agent-management enable
-ax sub-agent-management status
+ax preset list
 ax claude
 ```
 
@@ -96,8 +95,8 @@ The launcher opts in only to the named AgentX development channel; Claude asks
 users to acknowledge its local-development warning. First-party Claude access and
 host channel feature/org approval are required. Headless Claude does not deliver
 these unsolicited channel results; use foreground tasks there. Execution is
-read-only; Pi uses a tool allowlist, not an OS sandbox. Disabling blocks new work
-without cancelling accepted tasks. MCP reconnect loses actionable task objects.
+read-only; Pi uses a tool allowlist, not an OS sandbox. MCP reconnect loses
+actionable task objects.
 
 See [ExternalSubagent integration](docs/subagents.md) for exact tool inputs and boundaries.
 The execution command reads stdin and streams the selected CLI's native JSONL:
@@ -219,9 +218,9 @@ ax [--json|--yaml] auth <list|show|login|logout> [args...]
 ax [--json|--yaml] session <list|show|resume> [args...]
 ax [--json|--yaml] skill <list|show|install> [args...]
 ax [--json|--yaml] hook list
-
-ax convert --to <provider> [< unified.json]
-ax convert --from <provider> [< native.jsonl]
+ax [--json|--yaml] mcp <list|show> [args...]
+ax [--json|--yaml] preset <list|show> [args...]
+ax [--json|--yaml] convert <to|from> <provider>
 
 ax version
 ```

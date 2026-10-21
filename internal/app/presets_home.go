@@ -236,7 +236,7 @@ func (a App) startPreset(ctx context.Context, reader *bufio.Reader, home string,
 		return a.startFailure(ctx, reader, home, p, problem, true)
 	}
 	if agent.ID == "claude" {
-		if err := a.prepareMCPSubagents(&request, false); err != nil {
+		if err := a.prepareMCPSubagents(&request); err != nil {
 			return a.startFailure(ctx, reader, home, p, err.Error(), false)
 		}
 	}
@@ -732,8 +732,6 @@ func (a App) presetChangeNote(home string) {
 	switch {
 	case err != nil:
 		note = "MCP: ExternalSubagent configuration rejected: " + err.Error()
-	case !config.Enabled:
-		note = "MCP: ExternalSubagents are disabled (ax sub-agent-management enable); nothing to refresh."
 	default:
 		if count := len(subagents.Connections(home)); count == 0 {
 			note = "MCP: no running AgentX MCP connection; Claude sees this change when it next connects."
