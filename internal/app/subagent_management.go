@@ -32,7 +32,7 @@ func (a App) subagentManagement(ctx context.Context, args []string) error {
 	}
 	switch args[0] {
 	case "enable":
-		if _, _, _, err := subagents.LoadValidated(home); err != nil {
+		if _, err := subagents.LoadState(home); err != nil {
 			return err
 		}
 		executable, err := os.Executable()
@@ -96,10 +96,11 @@ func (a App) subagentManagement(ctx context.Context, args []string) error {
 		fmt.Fprintln(a.Stdout, "AgentX disabled for new ExternalSubagent and SendExternalSubagentMessage work immediately. Running/previously accepted work can finish and report; use StopExternalSubagent to cancel. MCP stays connected for cancellation and results. Claude native subagents are unaffected.")
 		return nil
 	case "status":
-		config, list, problems, err := subagents.LoadValidated(home)
+		state, err := subagents.LoadState(home)
 		if err != nil {
 			return err
 		}
+		config, list, problems := state.Config, state.Presets, state.Problems
 		options := []map[string]any{}
 		for _, o := range list {
 			reason := "static requirements satisfied; remote request not verified"
@@ -114,7 +115,7 @@ func (a App) subagentManagement(ctx context.Context, args []string) error {
 		}
 		invalid := append([]presets.Problem{}, problems...)
 		return writeStructured(a.Stdout, map[string]any{
-			"enabled": config.Enabled, "configuration": subagents.ConfigPath(home), "presets_directory": presets.Dir(home), "presets": options, "invalid_presets": invalid,
+			"enabled": config.Enabled, "configuration": subagents.ConfigPath(home), "presets_directory": presets.Dir(home), "presets": options, "invalid_presets": invalid, "grant_problems": append([]presets.Problem{}, state.GrantProblems...),
 			"connections":      subagents.Connections(home),
 			"host_effective":   "connections lists live AgentX MCP processes and whether each host completed initialization. Empty means no active server observed. Channel delivery requires interactive Claude with named opt-in and feature/org approval; initialization alone cannot verify that host-controlled gate. Confirm channel registration in Claude debug log and an actual completion report. Restart/reconnect after enable or preset changes to refresh the initialization preset list; ax claude supplies --dangerously-load-development-channels server:agentx; direct claude needs that flag.",
 			"disable_behavior": "blocks new work, does not cancel accepted work; StopExternalSubagent remains available", "session_scope": "current MCP connection only; reconnect loses actionable ExternalSubagent objects; no automatic replay",

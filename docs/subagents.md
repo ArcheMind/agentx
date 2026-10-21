@@ -143,8 +143,9 @@ JSON
 
 Replace the `auth.path` values with your own absolute directories. A former
 option with several `efforts` becomes one preset per effort you use, and each of
-those presets needs its own grant entry. A former `enabled: false` option is
-simply not moved.
+those presets needs its own grant entry; a preset whose grant is missing is
+listed as not callable while the others work. A former `enabled: false` option
+is simply not moved.
 
 Enable uses Claude's user-scoped MCP configuration command and preserves other
 entries. An identical AgentX entry is reused; a conflicting entry is rejected.
@@ -162,21 +163,37 @@ subagents or cancel work. Re-enabling keeps the presets.
 ## Grants: execution policy, approval and authentication
 
 Every MCP-callable preset (agent `codex` or `pi`) needs a grant under
-`grants.<preset name>` in `subagents.json`. A callable preset without a grant, a
-grant naming no preset in the collection, a grant for an interactive-launch-only
-preset (`claude`, `gemini`, `opencode`), or any unsupported value rejects the
-whole configuration: MCP offers no presets, `ExternalSubagent` and `enable`
-fail with the reason, and `ax` shows it after every preset change. `disable`
-still works. Interactive-launch-only presets need no grant. A grant for an entry
-the collection reports as invalid is left unchecked until that entry is
-repaired, so one broken file never hides the rest.
+`grants.<preset name>` in `subagents.json` before it can run. Mismatches between
+the collection and the grants affect only the entries involved:
+
+- A callable preset without a grant is not callable: it is left out of the
+  `model` values, the catalog and `status` show `no grant`, and
+  `ExternalSubagent` or `SendExternalSubagentMessage` naming it is rejected with
+  that reason. Other presets keep working. Nothing ever runs without a valid
+  grant.
+- A grant naming no preset, or naming an interactive-launch-only preset
+  (`claude`, `gemini`, `opencode`), has no effect and is reported as a grant
+  problem in the catalog and in `status.grant_problems`.
+- Interactive-launch-only presets need no grant. A grant for an entry the
+  collection reports as invalid waits until that entry is repaired, so one
+  broken file never hides the rest.
+
+Structural errors in the security configuration still reject the whole file:
+a damaged `subagents.json`, unknown fields, an unsupported `policy`,
+`approval`, `auth.source` or `auth.method`, `bounded-write` for Pi, and
+`writable_roots` or `auth.path` that are not absolute, clean paths. These
+checks also apply to grants that currently have no effect (their agent is
+inferred from `auth.source`). Then MCP offers no presets, `ExternalSubagent` and
+`enable` fail with the reason, and `ax` shows it after every preset change;
+`disable` still works.
 
 Grants are kept apart from preset identity (`PRESET.md`: name, agent, model,
 effort, description) so presets never carry permissions or credentials; a grant
-references its preset only by name. Creating, duplicating or renaming a callable
-preset in `ax` therefore also requires adding or renaming its grant entry;
-deleting one requires removing its grant. Selecting a preset or delegating never
-grants more than its grant states.
+references its preset only by name. A callable preset created, duplicated or
+renamed in `ax` stays not callable until its grant entry is added or renamed,
+and `ax` says so after the change; a deleted preset leaves its grant as a
+reported problem until removed. Selecting a preset or delegating never grants
+more than its grant states.
 
 | Field | Values | Enforced by |
 | --- | --- | --- |
@@ -237,15 +254,17 @@ each preset is callable as ExternalSubagent, grant summaries with their
 enforcing layer, feature enablement, static prerequisites, and invalid entries
 with their location. The same catalog supplies `ExternalSubagent` metadata and
 its selectable `model` values (callable presets only). With no presets the
-catalog says so and that the user creates them in `ax`; none are generated. A
-configuration rejected for a missing, orphaned or invalid grant replaces the
-catalog with the rejection reason and offers no `model` values. Static checks do
+catalog says so and that the user creates them in `ax`; none are generated.
+Presets without a grant are listed as not callable with the reason, and stray
+grants are listed as grant problems. A configuration rejected for a structural
+error replaces the catalog with the rejection reason and offers no `model`
+values. Static checks do
 not verify remote availability. `model` selects a preset independently of the
 `subagent_type` role; session listing reports created objects, not presets.
 Initialization instructions are a connection snapshot. After saving, renaming or
 deleting a preset, `ax` says whether running AgentX MCP connections still show
-the old list and to reconnect (`/mcp`) or restart Claude, or why the
-configuration is now rejected. New calls always use the saved preset; a call
+the old list and to reconnect (`/mcp`) or restart Claude, which callable
+presets still lack a grant, and any stray grant or structural rejection. New calls always use the saved preset; a call
 result notes when the collection changed since the connection initialized. A
 fresh `tools/list` reads the current collection.
 

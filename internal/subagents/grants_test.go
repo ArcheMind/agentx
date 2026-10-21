@@ -22,38 +22,45 @@ func TestGrantValidationRejectsUnsupportedAndMissing(t *testing.T) {
 		list   []presets.Preset
 		grants map[string]Grant
 	}{
-		"missing grant":     {codex, nil},
-		"orphan grant":      {codex, map[string]Grant{"w": valid, "other": valid}},
-		"interactive grant": {interactive, map[string]Grant{"i": valid}},
-		"unknown policy":    {codex, map[string]Grant{"w": {Execution: ExecutionPolicy{Policy: "full-access", Approval: "never"}, Auth: valid.Auth}}},
-		"empty policy":      {codex, map[string]Grant{"w": {Execution: ExecutionPolicy{Approval: "never"}, Auth: valid.Auth}}},
-		"approval":          {codex, map[string]Grant{"w": {Execution: ExecutionPolicy{Policy: "read-only", Approval: "on-request"}, Auth: valid.Auth}}},
-		"read-only roots":   {codex, map[string]Grant{"w": {Execution: ExecutionPolicy{Policy: "read-only", WritableRoots: []string{"/x"}, Approval: "never"}, Auth: valid.Auth}}},
-		"no roots":          {codex, map[string]Grant{"w": {Execution: ExecutionPolicy{Policy: "bounded-write", Approval: "never"}, Auth: valid.Auth}}},
-		"relative root":     {codex, map[string]Grant{"w": {Execution: ExecutionPolicy{Policy: "bounded-write", WritableRoots: []string{"rel"}, Approval: "never"}, Auth: valid.Auth}}},
-		"filesystem root":   {codex, map[string]Grant{"w": {Execution: ExecutionPolicy{Policy: "bounded-write", WritableRoots: []string{"/"}, Approval: "never"}, Auth: valid.Auth}}},
-		"pi write":          {pi, map[string]Grant{"p": {Execution: ExecutionPolicy{Policy: "bounded-write", WritableRoots: []string{"/x"}, Approval: "never"}, Auth: testGrant(t, "pi").Auth}}},
-		"wrong source":      {pi, map[string]Grant{"p": valid}},
-		"wrong method":      {codex, map[string]Grant{"w": {Execution: valid.Execution, Auth: AuthSource{Source: "codex-home", Path: valid.Auth.Path, Method: "oauth"}}}},
-		"relative auth":     {codex, map[string]Grant{"w": {Execution: valid.Execution, Auth: AuthSource{Source: "codex-home", Path: "home", Method: "chatgpt"}}}},
+		"unknown policy":       {codex, map[string]Grant{"w": {Execution: ExecutionPolicy{Policy: "full-access", Approval: "never"}, Auth: valid.Auth}}},
+		"empty policy":         {codex, map[string]Grant{"w": {Execution: ExecutionPolicy{Approval: "never"}, Auth: valid.Auth}}},
+		"approval":             {codex, map[string]Grant{"w": {Execution: ExecutionPolicy{Policy: "read-only", Approval: "on-request"}, Auth: valid.Auth}}},
+		"read-only roots":      {codex, map[string]Grant{"w": {Execution: ExecutionPolicy{Policy: "read-only", WritableRoots: []string{"/x"}, Approval: "never"}, Auth: valid.Auth}}},
+		"no roots":             {codex, map[string]Grant{"w": {Execution: ExecutionPolicy{Policy: "bounded-write", Approval: "never"}, Auth: valid.Auth}}},
+		"relative root":        {codex, map[string]Grant{"w": {Execution: ExecutionPolicy{Policy: "bounded-write", WritableRoots: []string{"rel"}, Approval: "never"}, Auth: valid.Auth}}},
+		"filesystem root":      {codex, map[string]Grant{"w": {Execution: ExecutionPolicy{Policy: "bounded-write", WritableRoots: []string{"/"}, Approval: "never"}, Auth: valid.Auth}}},
+		"pi write":             {pi, map[string]Grant{"p": {Execution: ExecutionPolicy{Policy: "bounded-write", WritableRoots: []string{"/x"}, Approval: "never"}, Auth: testGrant(t, "pi").Auth}}},
+		"wrong source":         {pi, map[string]Grant{"p": valid}},
+		"wrong method":         {codex, map[string]Grant{"w": {Execution: valid.Execution, Auth: AuthSource{Source: "codex-home", Path: valid.Auth.Path, Method: "oauth"}}}},
+		"relative auth":        {codex, map[string]Grant{"w": {Execution: valid.Execution, Auth: AuthSource{Source: "codex-home", Path: "home", Method: "chatgpt"}}}},
+		"stray unknown policy": {nil, map[string]Grant{"other": {Execution: ExecutionPolicy{Policy: "full-access", Approval: "never"}, Auth: valid.Auth}}},
+		"stray pi write":       {interactive, map[string]Grant{"i": {Execution: ExecutionPolicy{Policy: "bounded-write", WritableRoots: []string{"/x"}, Approval: "never"}, Auth: testGrant(t, "pi").Auth}}},
+		"stray bad source":     {nil, map[string]Grant{"other": {Execution: valid.Execution, Auth: AuthSource{Source: "elsewhere", Path: valid.Auth.Path, Method: "chatgpt"}}}},
 	}
 	for name, c := range cases {
-		if err := (Config{Grants: c.grants}).Validate(home, c.list, nil); err == nil {
+		if _, err := (Config{Grants: c.grants}).Validate(home, c.list, nil); err == nil {
 			t.Errorf("%s accepted", name)
 		}
 	}
-	err := Config{Grants: map[string]Grant{"p": {Execution: ExecutionPolicy{Policy: "bounded-write", WritableRoots: []string{"/x"}, Approval: "never"}, Auth: testGrant(t, "pi").Auth}}}.Validate(home, pi, nil)
+	_, err := Config{Grants: map[string]Grant{"p": {Execution: ExecutionPolicy{Policy: "bounded-write", WritableRoots: []string{"/x"}, Approval: "never"}, Auth: testGrant(t, "pi").Auth}}}.Validate(home, pi, nil)
 	if err == nil || !strings.Contains(err.Error(), "no runtime sandbox") {
 		t.Fatal(err)
 	}
-	if err := (Config{}).Validate(home, interactive, nil); err != nil {
-		t.Fatal("interactive-launch-only preset must not require a grant:", err)
+	if stray, err := (Config{}).Validate(home, append(codex, interactive...), nil); err != nil || len(stray) != 0 {
+		t.Fatal("a preset without a grant must not reject the configuration:", stray, err)
 	}
-	if err := (Config{Grants: map[string]Grant{"broken": valid}}).Validate(home, nil, []presets.Problem{{Name: "broken"}}); err != nil {
-		t.Fatal("grant for a broken preset entry must not hide the rest of the configuration:", err)
+	if err := (Config{}).Ready(codex[0]); err == nil || !strings.Contains(err.Error(), "no grant") {
+		t.Fatal("callable preset without a grant must not be callable:", err)
+	}
+	stray, err := (Config{Grants: map[string]Grant{"w": valid, "other": valid, "i": valid}}).Validate(home, append(codex, interactive...), nil)
+	if err != nil || len(stray) != 2 || stray[0].Name != "i" || !strings.Contains(stray[0].Err, "interactive-launch-only") || stray[1].Name != "other" || !strings.Contains(stray[1].Err, "no matching preset") {
+		t.Fatal("stray grants must be reported, not rejected:", stray, err)
+	}
+	if stray, err := (Config{Grants: map[string]Grant{"broken": valid}}).Validate(home, nil, []presets.Problem{{Name: "broken"}}); err != nil || len(stray) != 0 {
+		t.Fatal("grant for a broken preset entry must not hide the rest of the configuration:", stray, err)
 	}
 	missing := Config{Grants: map[string]Grant{"w": {Execution: valid.Execution, Auth: AuthSource{Source: "codex-home", Path: filepath.Join(t.TempDir(), "absent"), Method: "chatgpt"}}}}
-	if err := missing.Validate(home, codex, nil); err != nil {
+	if _, err := missing.Validate(home, codex, nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := missing.Grants["w"].Ready(); err == nil || !strings.Contains(err.Error(), "unavailable") {

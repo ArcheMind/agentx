@@ -202,10 +202,11 @@ func (s *Server) tools() any {
 }
 
 func (s *Server) enabledOption(name string) (presets.Preset, Grant, error) {
-	config, _, _, err := LoadValidated(s.Home)
+	state, err := LoadState(s.Home)
 	if err != nil {
 		return presets.Preset{}, Grant{}, err
 	}
+	config := state.Config
 	if !config.Enabled {
 		return presets.Preset{}, Grant{}, fmt.Errorf("ExternalSubagents disabled; enable with ax sub-agent-management enable")
 	}
@@ -520,10 +521,11 @@ func (s *Server) completion(a *ExternalSubagentState, job *Job) {
 }
 
 func (s *Server) execute(ctx context.Context, a *ExternalSubagentState, prompt string) (string, any, error) {
-	config, _, _, err := LoadValidated(s.Home)
+	state, err := LoadState(s.Home)
 	if err != nil {
 		return "", nil, err
 	}
+	config := state.Config
 	if current, err := presets.Read(s.Home, a.Option.Name); err != nil || current != a.Option || !reflect.DeepEqual(config.Grants[a.Option.Name], a.Grant) {
 		return "", nil, fmt.Errorf("original preset %s or its grant changed or was removed before execution; no replacement selected", a.Option.Name)
 	}

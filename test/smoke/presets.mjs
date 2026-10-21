@@ -35,11 +35,11 @@ const create=ax('\r'+'j\r'+'smoke-model\n'+'jjj\r'+'smoke review\n'+'smoke-revie
 const presetFile=join(home,'.agentx','presets','smoke-review','PRESET.md')
 const saved=await readFile(presetFile,'utf8')
 assert(saved==='---\nagent: codex\nmodel: smoke-model\neffort: low\n---\n\nSmoke review preset for deterministic acceptance\n','saved file '+saved)
-assert(create.output.includes('Model list unavailable')&&create.output.includes('unverified for this model')&&create.output.includes('Error: Invalid name')&&create.output.includes('Saving does not run inference.')&&create.output.includes('MCP: ExternalSubagent configuration rejected: preset smoke-review is MCP-callable but has no grant'),'P05/P07/P08 create output: '+create.output)
+assert(create.output.includes('Model list unavailable')&&create.output.includes('unverified for this model')&&create.output.includes('Error: Invalid name')&&create.output.includes('Saving does not run inference.')&&create.output.includes('MCP: smoke-review is not callable as ExternalSubagent until grants.smoke-review is added')&&create.output.includes('MCP: no running AgentX MCP connection'),'P05/P07/P08 create output: '+create.output)
 const afterCreate=await argvFiles()
 assert(afterCreate.length===1&&JSON.parse(await readFile(join(home,afterCreate[0]),'utf8')).argv[0]==='app-server','P16: creation ran something besides model listing')
 await writeFile(subagentsConfig,JSON.stringify({enabled:true,grants:{'smoke-review':grant}}))
-evidence.P05='created via TUI; PRESET.md written; home lists it; missing grant for the new callable preset reported';evidence.P08='fake codex model list failure shown honestly, manual ID accepted';evidence.P16='only app-server model listing ran during creation'
+evidence.P05='created via TUI; PRESET.md written; home lists it; the new callable preset is reported not callable until granted';evidence.P08='fake codex model list failure shown honestly, manual ID accepted';evidence.P16='only app-server model listing ran during creation'
 
 const mcp=spawn(binary,['sub-agent-management','serve'],{cwd:workspace,env,stdio:['pipe','pipe','pipe']})
 let next=0,pending=''
@@ -52,18 +52,19 @@ try{
  assert(init.instructions.includes('- smoke-review: execution agent="codex"; exact configured model ID (including provider prefix)="smoke-model"; effort="low"; user description="Smoke review preset for deterministic acceptance"; ExternalSubagent callable=yes'),'P10 initialize catalog: '+init.instructions)
  const tools=(await rpc('tools/list')).result.tools
  assert(JSON.stringify(tools[0].inputSchema.properties.model.enum)===JSON.stringify(['smoke-review'])&&!tools[0].inputSchema.properties.effort,'P10 enum/effort schema')
- await writeFile(subagentsConfig,JSON.stringify({enabled:true,grants:{'smoke-review':grant,'smoke-review-pi':grant}}))
- const live=ax('m'+'jjj\r'+'smoke-review-pi\n'+'j\r'+'q'+'q')
- assert(live.output.includes('1 running AgentX MCP connection(s) still show the preset list'),'P15 change note: '+live.output)
+  const live=ax('m'+'jjj\r'+'smoke-review-pi\n'+'j\r'+'q'+'q')
+ assert(live.output.includes('1 running AgentX MCP connection(s) still show the preset list')&&live.output.includes('MCP: smoke-review-pi is not callable as ExternalSubagent until grants.smoke-review-pi is added'),'P15 change note: '+live.output)
  await writeFile(presetFile,saved.replace('Smoke review preset for deterministic acceptance','Hand-edited description'))
  await mkdir(join(home,'.agentx','presets','broken'))
  await writeFile(join(home,'.agentx','presets','broken','PRESET.md'),'---\nagent: codex\n---\nmissing model\n')
  const refreshed=(await rpc('tools/list')).result.tools[0]
- assert(refreshed.description.includes('user description="Hand-edited description"')&&refreshed.description.includes('- broken: invalid preset at')&&refreshed.description.includes('model is required'),'P14 MCP sees edited and broken items: '+refreshed.description)
+ assert(refreshed.description.includes('user description="Hand-edited description"')&&refreshed.description.includes('- broken: invalid preset at')&&refreshed.description.includes('model is required')&&refreshed.description.includes('- smoke-review-pi: execution agent="codex"')&&refreshed.description.includes('static prerequisites="no grant: add grants.smoke-review-pi')&&JSON.stringify(refreshed.inputSchema.properties.model.enum)===JSON.stringify(['smoke-review']),'P14 MCP sees edited and broken items: '+refreshed.description)
  const report=await call('ExternalSubagent',{description:'smoke',prompt:'check',model:'smoke-review',run_in_background:false})
  assert(report.includes('preset=smoke-review; agent=codex; actual model=smoke-model; effort=low')&&report.includes('Grant: policy=read-only; approval=never; auth=codex-home')&&report.includes('FAKE_REPORT check')&&report.includes('reconnect AgentX MCP to refresh the preset list'),'P10/P15 call: '+report)
  const override=await call('ExternalSubagent',{description:'smoke',prompt:'check',model:'smoke-review',effort:'high',run_in_background:false})
  assert(override.includes('unknown field "effort"'),'per-call effort override accepted: '+override)
+ const ungranted=await call('ExternalSubagent',{description:'smoke',prompt:'check',model:'smoke-review-pi',run_in_background:false})
+ assert(ungranted.includes('no grant: add grants.smoke-review-pi'),'preset without grant accepted: '+ungranted)
  evidence.P10='initialize, tools/list enum and ExternalSubagent use ~/.agentx/presets; report names preset, agent, model, effort'
  evidence.P15='TUI reports live MCP connection must reconnect; call result notes stale snapshot'
 }finally{mcp.stdin.end();await new Promise(done=>mcp.once('close',done))}

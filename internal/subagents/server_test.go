@@ -227,14 +227,40 @@ func TestAgentContractRejectsUnsupportedAndUnknownInputs(t *testing.T) {
 	if err := presets.Delete(s.Home, "review"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.call("ExternalSubagent", []byte(`{"description":"x","prompt":"x","model":"review"}`)); err == nil || !strings.Contains(err.Error(), `grant "review" does not match a preset`) {
-		t.Fatal("orphan grant accepted", err)
-	}
-	if err := SaveConfig(s.Home, Config{Enabled: true}); err != nil {
-		t.Fatal(err)
-	}
 	if _, err := s.call("ExternalSubagent", []byte(`{"description":"x","prompt":"x","model":"review"}`)); err == nil || !strings.Contains(err.Error(), "reconnect") {
 		t.Fatal("deleted preset accepted", err)
+	}
+}
+
+func TestMissingGrantDisablesOnlyThatPreset(t *testing.T) {
+	r := &testRunner{}
+	s := testServer(t, r)
+	ungranted := reviewPreset
+	ungranted.Name = "ungranted"
+	savePreset(t, s.Home, ungranted)
+	catalog, models := PresetCatalog(s.Home)
+	if strings.Join(models, ",") != "review" || !strings.Contains(catalog, `- ungranted: execution agent="codex"`) || !strings.Contains(catalog, `ExternalSubagent callable=no; static prerequisites="no grant: add grants.ungranted`) || !strings.Contains(catalog, `grant="none (not callable until a grant is added)"`) {
+		t.Fatal(models, catalog)
+	}
+	if _, err := s.call("ExternalSubagent", []byte(`{"description":"x","prompt":"x","model":"ungranted","run_in_background":false}`)); err == nil || !strings.Contains(err.Error(), "no grant") {
+		t.Fatal("preset without grant accepted", err)
+	}
+	callTest(t, s, "ExternalSubagent", map[string]any{"description": "x", "prompt": "x", "model": "review", "name": "kept", "run_in_background": false})
+	config, _ := LoadConfig(s.Home)
+	config.Grants["gone"] = config.Grants["review"]
+	delete(config.Grants, "review")
+	if err := SaveConfig(s.Home, config); err != nil {
+		t.Fatal(err)
+	}
+	catalog, models = PresetCatalog(s.Home)
+	if len(models) != 0 || !strings.Contains(catalog, `- grant gone in`) || !strings.Contains(catalog, "no matching preset") {
+		t.Fatal("orphan grant not reported", models, catalog)
+	}
+	if _, err := s.call("SendExternalSubagentMessage", []byte(`{"to":"kept","message":"again"}`)); err == nil || !strings.Contains(err.Error(), "no grant") {
+		t.Fatal("continuation ran after its grant was removed", err)
+	}
+	if len(r.plans) != 1 {
+		t.Fatal("native execution without a grant", len(r.plans))
 	}
 }
 

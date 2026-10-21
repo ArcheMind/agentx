@@ -37,7 +37,19 @@ var authSources = map[string]struct {
 	"pi":    {"pi-agent-dir", []string{"oauth", "api_key"}},
 }
 
+// Validate checks a grant against its preset agent; an empty agent (stray grant) is checked against
+// the agent its auth source implies, so structural errors are never silently ignored.
 func (g Grant) Validate(agent string) error {
+	if agent == "" {
+		for name, expected := range authSources {
+			if expected.source == g.Auth.Source {
+				agent = name
+			}
+		}
+		if agent == "" {
+			return fmt.Errorf("unsupported auth.source %q; supported: codex-home, pi-agent-dir", g.Auth.Source)
+		}
+	}
 	p := g.Execution
 	switch p.Policy {
 	case drivers.PolicyReadOnly:
@@ -129,6 +141,9 @@ func (g Grant) Summary() string {
 func Limits(o presets.Preset, g Grant) string {
 	if !presets.Agents[o.Agent].Subagent {
 		return "Not callable as ExternalSubagent; usable for interactive ax launch only."
+	}
+	if g.Execution.Policy == "" {
+		return "Not callable as ExternalSubagent until a grant (execution policy, approval and auth source) is configured; nothing runs without one."
 	}
 	var text strings.Builder
 	if o.Agent == "pi" {
