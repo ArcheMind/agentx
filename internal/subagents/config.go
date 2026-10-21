@@ -206,10 +206,11 @@ func PresetCatalog(home string) (string, []string) {
 		readiness := "requirements satisfied"
 		callable := "yes"
 		grant := "none required (interactive launch only)"
-		if g, ok := config.Grants[option.Name]; ok {
-			grant = g.Summary()
-		} else if presets.Agents[option.Agent].Subagent {
+		if presets.Agents[option.Agent].Subagent {
 			grant = "none (not callable until a grant is added)"
+			if g, ok := config.Grants[option.Name]; ok {
+				grant = g.Summary()
+			}
 		}
 		if err := config.Ready(option); err != nil {
 			readiness = err.Error()

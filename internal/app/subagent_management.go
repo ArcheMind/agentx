@@ -108,7 +108,7 @@ func (a App) subagentManagement(ctx context.Context, args []string) error {
 				reason = err.Error()
 			}
 			entry := map[string]any{"name": o.Name, "agent": o.Agent, "model": o.Model, "effort": presets.EffortLabel(o.Effort), "description": o.Description, "limits": subagents.Limits(o, config.Grants[o.Name]), "status": reason}
-			if grant, ok := config.Grants[o.Name]; ok {
+			if grant, ok := config.Grants[o.Name]; ok && presets.Agents[o.Agent].Subagent {
 				entry["execution"], entry["auth"] = grant.Execution, grant.Auth
 			}
 			options = append(options, entry)

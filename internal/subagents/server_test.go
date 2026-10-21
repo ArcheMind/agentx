@@ -264,6 +264,20 @@ func TestMissingGrantDisablesOnlyThatPreset(t *testing.T) {
 	}
 }
 
+func TestStrayGrantOnInteractivePresetAppearsOnlyAsProblem(t *testing.T) {
+	s := testServer(t, &testRunner{})
+	savePreset(t, s.Home, presets.Preset{Name: "daily", Agent: "claude", Model: "opus", Description: "Interactive pairing"})
+	config, _ := LoadConfig(s.Home)
+	config.Grants["daily"] = config.Grants["review"]
+	if err := SaveConfig(s.Home, config); err != nil {
+		t.Fatal(err)
+	}
+	catalog, _ := PresetCatalog(s.Home)
+	if !strings.Contains(catalog, `grant="none required (interactive launch only)"`) || !strings.Contains(catalog, "- grant daily in") || strings.Count(catalog, `grant="policy=`) != 1 {
+		t.Fatal(catalog)
+	}
+}
+
 func TestPresetFixesEffortAndStaleSnapshotIsReported(t *testing.T) {
 	r := &testRunner{}
 	s := testServer(t, r)
