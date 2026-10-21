@@ -4,24 +4,21 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 
+	"github.com/ArcheMind/agentx/internal/presets"
 	"github.com/ArcheMind/agentx/internal/runtime"
 	"github.com/ArcheMind/agentx/internal/subagents"
 )
 
 func (a App) subagentManagement(ctx context.Context, args []string) error {
 	if len(args) != 1 {
-		return fmt.Errorf("usage: ax sub-agent-management <configure|enable|disable|status|serve> (configure reads complete JSON config from stdin)")
+		return fmt.Errorf("usage: ax sub-agent-management <enable|disable|status|serve> (presets are managed from bare ax)")
 	}
-	home := a.Hooks.Home
-	if override := os.Getenv("AX_SUBAGENT_HOME"); override != "" {
-		home = override
-	}
+	home := a.presetHome()
 	if args[0] == "serve" {
 		cwd, err := os.Getwd()
 		if err != nil {
@@ -29,39 +26,14 @@ func (a App) subagentManagement(ctx context.Context, args []string) error {
 		}
 		return (&subagents.Server{Home: home, Cwd: cwd, Runner: a.Runner}).Serve(ctx, a.Stdin, a.Stdout)
 	}
-	if args[0] == "configure" {
-		data, err := io.ReadAll(io.LimitReader(a.Stdin, 1024*1024+1))
-		if err != nil {
-			return err
-		}
-		if len(data) > 1024*1024 {
-			return fmt.Errorf("configuration exceeds 1 MiB")
-		}
-		var config subagents.Config
-		if err := subagents.StrictDecode(data, &config); err != nil {
-			return err
-		}
-		if err := subagents.SaveConfig(home, config); err != nil {
-			return err
-		}
-		fmt.Fprintln(a.Stdout, "ExternalSubagent configuration saved. New work reads current configuration immediately. Reconnect Claude MCP to refresh tool descriptions and options; existing ExternalSubagent identities are pinned. Enabling requires the enable command to install the Claude MCP entry.")
-		return nil
-	}
 	config, err := subagents.LoadConfig(home)
 	if err != nil {
 		return err
 	}
 	switch args[0] {
 	case "enable":
-		if len(config.Options) == 0 {
-			return fmt.Errorf("no combinations configured; run ax sub-agent-management configure first")
-		}
-		for _, o := range config.Options {
-			if o.Enabled {
-				if err := o.Ready(); err != nil {
-					return fmt.Errorf("option %s: %w", o.Name, err)
-				}
-			}
+		if _, err := subagents.LoadState(home); err != nil {
+			return err
 		}
 		executable, err := os.Executable()
 		if err != nil {
@@ -107,6 +79,13 @@ func (a App) subagentManagement(ctx context.Context, args []string) error {
 		if err := subagents.SaveConfig(home, config); err != nil {
 			return err
 		}
+		list, problems, err := presets.Load(home)
+		if err != nil {
+			return err
+		}
+		if len(list)+len(problems) == 0 {
+			fmt.Fprintf(a.Stdout, "No presets in %s yet; run ax and choose + Create preset. ExternalSubagent rejects work until a callable preset exists.\n", presets.Dir(home))
+		}
 		fmt.Fprintln(a.Stdout, "AgentX enabled; Claude user MCP entry installed. Restart/reconnect Claude for discovery. Start via ax claude for named AgentX channel opt-in, or use claude --dangerously-load-development-channels server:agentx. Existing Claude sessions are not automatically changed. Channels require first-party Claude access and host feature/org approval. Disabled does not mean cancelled; StopExternalSubagent remains available.")
 		return nil
 	case "disable":
@@ -117,22 +96,28 @@ func (a App) subagentManagement(ctx context.Context, args []string) error {
 		fmt.Fprintln(a.Stdout, "AgentX disabled for new ExternalSubagent and SendExternalSubagentMessage work immediately. Running/previously accepted work can finish and report; use StopExternalSubagent to cancel. MCP stays connected for cancellation and results. Claude native subagents are unaffected.")
 		return nil
 	case "status":
+		state, err := subagents.LoadState(home)
+		if err != nil {
+			return err
+		}
+		config, list, problems := state.Config, state.Presets, state.Problems
 		options := []map[string]any{}
-		for _, o := range config.Options {
+		for _, o := range list {
 			reason := "static requirements satisfied; remote request not verified"
-			if err := o.Ready(); err != nil {
+			if err := config.Ready(o); err != nil {
 				reason = err.Error()
 			}
-			options = append(options, map[string]any{"name": o.Name, "agent": o.Agent, "model": o.Model, "enabled": o.Enabled, "description": o.Description, "limits": subagents.Limits(o), "status": reason, "efforts": o.Efforts})
+			entry := map[string]any{"name": o.Name, "agent": o.Agent, "model": o.Model, "effort": presets.EffortLabel(o.Effort), "description": o.Description, "limits": subagents.Limits(o, config.Grants[o.Name]), "status": reason}
+			if grant, ok := config.Grants[o.Name]; ok && presets.Agents[o.Agent].Subagent {
+				entry["execution"], entry["auth"] = grant.Execution, grant.Auth
+			}
+			options = append(options, entry)
 		}
-		defaultName := config.Default
-		if defaultName == "" {
-			defaultName = "none; model must be selected"
-		}
+		invalid := append([]presets.Problem{}, problems...)
 		return writeStructured(a.Stdout, map[string]any{
-			"enabled": config.Enabled, "configuration": subagents.ConfigPath(home), "default": defaultName, "options": options,
+			"enabled": config.Enabled, "configuration": subagents.ConfigPath(home), "presets_directory": presets.Dir(home), "presets": options, "invalid_presets": invalid, "grant_problems": append([]presets.Problem{}, state.GrantProblems...),
 			"connections":      subagents.Connections(home),
-			"host_effective":   "connections lists live AgentX MCP processes and whether each host completed initialization. Empty means no active server observed. Channel delivery requires interactive Claude with named opt-in and feature/org approval; initialization alone cannot verify that host-controlled gate. Confirm channel registration in Claude debug log and an actual completion report. Restart/reconnect after enable/configure; ax claude supplies --dangerously-load-development-channels server:agentx; direct claude needs that flag.",
+			"host_effective":   "connections lists live AgentX MCP processes and whether each host completed initialization. Empty means no active server observed. Channel delivery requires interactive Claude with named opt-in and feature/org approval; initialization alone cannot verify that host-controlled gate. Confirm channel registration in Claude debug log and an actual completion report. Restart/reconnect after enable or preset changes to refresh the initialization preset list; ax claude supplies --dangerously-load-development-channels server:agentx; direct claude needs that flag.",
 			"disable_behavior": "blocks new work, does not cancel accepted work; StopExternalSubagent remains available", "session_scope": "current MCP connection only; reconnect loses actionable ExternalSubagent objects; no automatic replay",
 		}, a.structuredDefault())
 	default:
@@ -140,18 +125,21 @@ func (a App) subagentManagement(ctx context.Context, args []string) error {
 	}
 }
 
-func (a App) prepareMCPSubagents(request *runtime.RunRequest, explicit bool) error {
-	home := a.Hooks.Home
+func (a App) presetHome() string {
 	if override := os.Getenv("AX_SUBAGENT_HOME"); override != "" {
-		home = override
+		return override
 	}
-	config, err := subagents.LoadConfig(home)
+	return a.Hooks.Home
+}
+
+func (a App) prepareMCPSubagents(request *runtime.RunRequest, explicit bool) error {
+	config, err := subagents.LoadConfig(a.presetHome())
 	if err != nil {
 		return err
 	}
 	if !config.Enabled {
 		if explicit {
-			return fmt.Errorf("ExternalSubagents disabled; configure and enable with ax sub-agent-management")
+			return fmt.Errorf("ExternalSubagents disabled; enable with ax sub-agent-management enable")
 		}
 		return nil
 	}

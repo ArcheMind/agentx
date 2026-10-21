@@ -22,6 +22,7 @@ type CommandPlan struct {
 	Args       []string          `json:"args" yaml:"args"`
 	Cwd        string            `json:"cwd,omitempty" yaml:"cwd,omitempty"`
 	Env        map[string]string `json:"env,omitempty" yaml:"env,omitempty"`
+	UnsetEnv   []string          `json:"unset_env,omitempty" yaml:"unset_env,omitempty"`
 }
 
 type Detection struct {
@@ -38,6 +39,9 @@ type Model struct {
 	DisplayName string `json:"display_name,omitempty" yaml:"display_name,omitempty"`
 	Description string `json:"description,omitempty" yaml:"description,omitempty"`
 	Source      string `json:"source" yaml:"source"`
+	// Efforts is set only when the source lists supported reasoning levels for this model.
+	Efforts       []string `json:"efforts,omitempty" yaml:"efforts,omitempty"`
+	DefaultEffort string   `json:"default_effort,omitempty" yaml:"default_effort,omitempty"`
 }
 
 type RunRequest struct {

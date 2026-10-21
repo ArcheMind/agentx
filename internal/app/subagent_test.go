@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ArcheMind/agentx/internal/presets"
 	"github.com/ArcheMind/agentx/internal/runtime"
 	"github.com/ArcheMind/agentx/internal/subagents"
 )
@@ -16,7 +17,7 @@ func TestSubagentLaunchDryRun(t *testing.T) {
 	app := New(false, strings.NewReader(""), &output, &bytes.Buffer{})
 	app.Hooks.Home = t.TempDir()
 	app.Hooks.Project = t.TempDir()
-	if err := subagents.SaveConfig(app.Hooks.Home, subagents.Config{Enabled: true, Options: []subagents.Option{{Name: "test", Agent: "codex", Model: "test", Description: "test", Enabled: true}}}); err != nil {
+	if err := subagents.SaveConfig(app.Hooks.Home, subagents.Config{Enabled: true}); err != nil {
 		t.Fatal(err)
 	}
 	if err := app.Run(context.Background(), []string{"--json", "claude", "--cwd", app.Hooks.Project, "--subagents", "--dry-run"}); err != nil {
@@ -31,6 +32,41 @@ func TestSubagentLaunchDryRun(t *testing.T) {
 	}
 	if err := app.Run(context.Background(), []string{"codex", "--subagents", "--dry-run"}); err == nil {
 		t.Fatal("accepted Claude flag for Codex")
+	}
+}
+
+func TestSubagentStatusShowsGrantOnlyForCallablePresets(t *testing.T) {
+	var output bytes.Buffer
+	app := New(false, strings.NewReader(""), &output, &bytes.Buffer{})
+	app.Hooks.Home = t.TempDir()
+	t.Setenv("AX_SUBAGENT_HOME", "")
+	for _, p := range []presets.Preset{{Name: "review", Agent: "codex", Model: "m", Description: "d"}, {Name: "daily", Agent: "claude", Model: "opus", Description: "d"}} {
+		if err := presets.Create(app.Hooks.Home, p); err != nil {
+			t.Fatal(err)
+		}
+	}
+	grant := subagents.Grant{Execution: subagents.ExecutionPolicy{Policy: "read-only", Approval: "never"}, Auth: subagents.AuthSource{Source: "codex-home", Path: app.Hooks.Home, Method: "chatgpt"}}
+	if err := subagents.SaveConfig(app.Hooks.Home, subagents.Config{Grants: map[string]subagents.Grant{"review": grant, "daily": grant}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.Run(context.Background(), []string{"--json", "sub-agent-management", "status"}); err != nil {
+		t.Fatal(err)
+	}
+	var status struct {
+		Presets       []map[string]any  `json:"presets"`
+		GrantProblems []presets.Problem `json:"grant_problems"`
+	}
+	if err := json.Unmarshal(output.Bytes(), &status); err != nil {
+		t.Fatal(err, output.String())
+	}
+	for _, p := range status.Presets {
+		_, hasGrant := p["execution"]
+		if hasGrant != (p["name"] == "review") {
+			t.Fatalf("grant shown on wrong preset: %v", p)
+		}
+	}
+	if len(status.GrantProblems) != 1 || status.GrantProblems[0].Name != "daily" {
+		t.Fatalf("stray grant not reported only as a problem: %+v", status.GrantProblems)
 	}
 }
 

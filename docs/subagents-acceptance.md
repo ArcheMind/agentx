@@ -32,6 +32,69 @@ without creating any work. It used no model inference. Existing lifecycle tests
 now call the renamed tools; historical host evidence is read only in explicit
 historical mode.
 
+## Execution policy, approval and authentication (backlog 004 G01–G03)
+
+Recorded 2026-10-21 with Codex CLI 0.163.0 (`gpt-5.6-luna`, `low`) and Pi CLI
+0.84.4 (`openai-codex/gpt-5.6-luna`). The runs are real native execution
+through the built AgentX stdio MCP server, not through a Claude host. Each Codex
+probe is one command in its own ExternalSubagent, so success does not depend on a
+model copying several commands correctly. Agent reports are not evidence.
+
+Codex 0.163 code mode runs shell commands and `apply_patch` inside its `exec`
+tool. Those nested calls do not appear in the `codex exec --json` event stream.
+For each probe, the smoke reads the native thread ID from the AgentX debug log
+(`thread.started`). It then opens `$CODEX_HOME/sessions/**/rollout-*-<thread>.jsonl`
+and asserts two things from `custom_tool_call` and `custom_tool_call_output`:
+the exact command or patch on the target path was actually attempted, and the
+runtime returned the expected result. It finally checks the target's filesystem
+state. Pi has no rollout of this kind, so its check is filesystem state plus an
+assertion that its session file contains no `write`/`edit`/`bash` tool call.
+Two consecutive per-probe `make smoke-mcp-policy-live` runs passed. Evidence
+directories (each with `server-debug.log`; rollout paths are listed in the
+smoke output): `/private/var/folders/34/yf5zv4k133l7nrksmz2flmw00000gn/T/agentx-mcp-policy-x6i3XY`
+and `…/agentx-mcp-policy-Tjvj8i`. An earlier version put six commands in one
+agent and judged only by file absence. During independent acceptance, that
+version failed once in two runs: the model miscopied a path and invented
+results. It is superseded.
+
+| ID | Status | Observation |
+| --- | --- | --- |
+| A01 | Pass (Codex); Pi write gap open | Codex `bounded-write` (roots `root`, `extra`): rollouts show both `printf` writes executed with exit 0, and `root/in.txt` / `extra/extra.txt` contain the requested content. Codex `read-only` in the same directory: the rollout shows the write executed and failing with `operation not permitted`, and `root/ro.txt` is absent. Pi `read-only` left `root/pi.txt` absent; Pi reported no write tool. Every report carried its actual `Grant:` line. Pi `bounded-write` is rejected at configuration time. |
+| A02 | Pass (Codex) | Shell writes, OS layer: in each rollout the write was executed and failed with `operation not permitted`. Targets: new `outside/out.txt` (absent afterwards), overwrite of `outside/existing.txt` (still `original`), the `/tmp` probe (absent), and the explicitly denied target `root/.git/agentx-denied.txt` (Codex-protected inside a writable root; absent). Patch, application layer: `apply_patch` adding `outside/patched.txt` was rejected by Codex's patch approval check (`patch rejected: writing outside of the project; rejected by user approval settings`) before any write; the file is absent. This rejection is not the OS sandbox. User-configurable deny subpaths are not offered because no runtime enforcement was established. |
+| A03 | Partial | Covered: the no-approver scenario (`approval:"never"`), observed above with the denial returned to the agent in both layers. Out-of-scope shell writes fail in the OS sandbox (`operation not permitted`). Out-of-scope `apply_patch` is rejected by Codex's application-level patch approval with no one asked (`rejected by user approval settings`). Pending: approve and deny scenarios. Non-interactive Codex/Pi execution has no approval route to a human, and AgentX does not forward runtime approval requests to Claude. Non-`never` values are rejected rather than claimed. Pi's boundary is described everywhere as a tool allowlist, not an OS sandbox. |
+| A04 | Pass | Configured sources: `CODEX_HOME=~/.codex` (chatgpt) and `PI_CODING_AGENT_DIR=~/.pi/agent` (oauth), visible in reports, catalog and `status`. An empty `CODEX_HOME` failed with `Not logged in; no fallback identity`. A method mismatch (configured `api-key`, actual ChatGPT) failed. An empty Pi dir failed with `credentials_not_configured; no fallback identity`. None of these started native execution (debug log). Twelve inherited credential-like variables were removed. Seven credential values (from `OPENAI_API_KEY` and both `auth.json` files) appeared in neither debug logs nor reports. Direct check: `PI_CODING_AGENT_DIR=<empty> pi auth check --model openai/gpt-5` is `ready` via the inherited `OPENAI_API_KEY`, and `not_ready` once it is removed. This is the implicit fallback AgentX now blocks. Identity here means source directory plus login method; the account inside a source is not verified, so switching accounts within the same `CODEX_HOME` is not detected. |
+
+What each runtime actually enforces:
+
+| Restriction | Codex | Pi |
+| --- | --- | --- |
+| File writes by commands | Native OS sandbox (`read-only` / `workspace-write` with roots) | Tool allowlist `read,grep,find,ls` only; application-level, not OS |
+| File writes by `apply_patch` | Codex application-level patch approval rejects paths outside the roots | No edit/write tool enabled |
+| Network from commands | Sandbox blocks | No shell tool is enabled; not OS-enforced |
+| Reads | Not path-restricted | Not path-restricted |
+| User MCP servers/hooks/notify | Not loaded (`--ignore-user-config --ignore-rules --disable hooks`); before this change user MCP servers such as a node REPL ran outside the sandbox | Extensions, skills, prompt templates and project approval disabled |
+| Approval | `approval_policy="never"`; no human path | None exists |
+| Auth source | `CODEX_HOME` + `codex login status` preflight (method only, not account) | `PI_CODING_AGENT_DIR` + `pi auth check` preflight (provider and auth type, not account) |
+
+Deterministic coverage (`go test ./internal/subagents ./internal/runtime`) adds
+the following:
+- Grant validation rejects missing or orphan grants, unknown or empty policies,
+  non-`never` approval, bad roots, Pi `bounded-write`, and wrong auth sources or
+  methods.
+- Policy maps to the expected Codex flags.
+- A working directory outside the roots is rejected before any work starts.
+- Auth failures never reach native execution.
+- A grant change rejects continuation.
+- Debug logs redact credentials, and unset variables do not reach the child.
+
+Note (2026-10-21): the user changed the grant/preset mismatch semantics. A
+callable preset without a grant is now only not callable, and an orphan grant or
+a grant on an interactive-launch-only preset is reported as a problem without
+effect. Structural grant errors still reject the whole configuration. This takes
+effect from integrate/wave-1 commit 0b7dbf3 ("Reject only the affected preset
+when grants and presets disagree"). The missing/orphan-grant rejection verified
+above reflects the earlier semantics.
+
 ## Environment and retained observations
 
 ### Current preset DATA visibility
@@ -182,14 +245,14 @@ checks are not a sandbox penetration test.
 | --- | --- |
 | A01 First use | Live isolated management installs persistent MCP entry. Actual Claude discovers and invokes both configured real engine choices without registration. |
 | A02 Single call | Actual Claude creates each real backend object in one Agent call. Separate live foreground calls return terminal native reports, identities and hints. |
-| A03 Defaults | Deterministic configured-default execution; removing default rejects omitted model. |
+| A03 Defaults | Historical (pre-002): configured-default execution. Since 002 there is no default preset; an omitted `model` is rejected (deterministic server test). |
 | A04 Constraints | Unknown/disabled choices and unsupported role/effort/isolation reject; capabilities/limits visible in generated tool description. |
 | A05 Fore/background | Live both engines false waits; real Claude true returns queued then consumes channel. Deterministic omitted background returns queued immediately. |
 | A06 Memory | Live distinct first-turn labels recalled via both native sessions, no caller history replay. |
 | A07 Busy message | Actual Claude's exact SendMessage results report each matching real worker running and message accepted/queued; both later recall their own context through channel results. |
 | A08 Parallel/addressing | Live different engines parallel with distinct contexts; deterministic same-combination fresh sessions, name reassignment and old-ID access. |
 | A09 Cancellation | Real ListAgents shows Pi survivor and Codex target running together; cancelling Codex terminates it while Pi later completes. Deterministic per-queued-task notifications and unknown/already-ended cases supplement this. |
-| A10 Disable/re-enable | Live isolated management preserves options; deterministic new-work rejection and completion of accepted queue while disabled. |
+| A10 Disable/re-enable | Live isolated management preserves the presets collection (`make smoke-mcp-management`); deterministic new-work rejection and completion of accepted queue while disabled. |
 | A11 Configuration changes | Each new task reads current config. Original option pinned at acceptance/dequeue; changed or removed identity rejects continuation. |
 | A12 Parameters | Deterministic required/optional/unknown/null/wrong-type/case/empty checks. Deprecated mode/team_name cannot alter readonly native plan. Live Codex low effort; Pi effort and all isolation reject. |
 | A13 Failures | Injected unavailable-model/execution failure is a tool error. Malformed/incomplete output, missing Pi session, changed native ID fail without retry. Ignored cancellation is explicitly unconfirmed, not cancelled. |
@@ -225,9 +288,14 @@ checks are not a sandbox penetration test.
 - General-purpose, local readonly native execution and configured Codex effort
   are supported. Pi explicit effort, worktree/remote isolation, other MCP engine
   adapters and cross-connection recovery are unsupported and rejected/reported.
-- Pi's allowlist is not an OS sandbox. Native credentials/context do not inherit
-  Claude permissions. Deprecated mode never grants extra access.
+- Pi's allowlist is not an OS sandbox. Pi `bounded-write` is rejected; a real
+  Pi write boundary (004 G02 for Pi) remains open. Approve and deny approval
+  scenarios (004 A03) remain pending: only `approval:"never"` exists, and host
+  approvals are not inherited. Native context does not inherit Claude
+  permissions, and authentication comes only from each grant's source.
+  Deprecated mode never grants extra access.
 
 Reproduce deterministic/management checks with
 `make verify test-mcp-race smoke-mcp-management`. Paid native/host checks use
-`make smoke-mcp-live smoke-mcp-channel smoke-mcp-host-live` and existing logins.
+`make smoke-mcp-live smoke-mcp-channel smoke-mcp-host-live smoke-mcp-policy-live`
+and the logins selected by each grant's auth source.

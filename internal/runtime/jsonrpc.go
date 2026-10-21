@@ -19,7 +19,7 @@ func (r ExecRunner) ExecuteJSONRPC(ctx context.Context, plan CommandPlan, reques
 	defer cancel()
 	cmd := exec.CommandContext(commandCtx, plan.Executable, plan.Args...)
 	cmd.Dir = plan.Cwd
-	cmd.Env = mergeEnvironment(os.Environ(), plan.Env)
+	cmd.Env = mergeEnvironment(os.Environ(), plan.Env, plan.UnsetEnv)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, fmt.Errorf("open external command %s stdin: %w", plan.Executable, err)
