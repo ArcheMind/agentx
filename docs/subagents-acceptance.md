@@ -36,29 +36,45 @@ historical mode.
 
 Recorded 2026-10-21 with Codex CLI 0.163.0 (`gpt-5.6-luna`, `low`) and Pi CLI
 0.84.4 (`openai-codex/gpt-5.6-luna`). The runs are real native execution
-through the built AgentX stdio MCP server, not through a Claude host. Results
-were checked by filesystem state after execution, not by agent reports or logs.
-Two consecutive `make smoke-mcp-policy-live` runs passed. Evidence directories:
-`/private/var/folders/34/yf5zv4k133l7nrksmz2flmw00000gn/T/agentx-mcp-policy-CQJxZn`
-and `…/agentx-mcp-policy-c8VtRd`, each with `server-debug.log`.
+through the built AgentX stdio MCP server, not through a Claude host. Each Codex
+probe is one command in its own ExternalSubagent, so success does not depend on a
+model copying several commands correctly. Agent reports are not evidence.
+
+Codex 0.163 code mode runs shell commands and `apply_patch` inside its `exec`
+tool. Those nested calls do not appear in the `codex exec --json` event stream.
+For each probe, the smoke reads the native thread ID from the AgentX debug log
+(`thread.started`). It then opens `$CODEX_HOME/sessions/**/rollout-*-<thread>.jsonl`
+and asserts two things from `custom_tool_call` and `custom_tool_call_output`:
+the exact command or patch on the target path was actually attempted, and the
+runtime returned the expected result. It finally checks the target's filesystem
+state. Pi has no rollout of this kind, so its check is filesystem state plus an
+assertion that its session file contains no `write`/`edit`/`bash` tool call.
+Two consecutive per-probe `make smoke-mcp-policy-live` runs passed. Evidence
+directories (each with `server-debug.log`; rollout paths are listed in the
+smoke output): `/private/var/folders/34/yf5zv4k133l7nrksmz2flmw00000gn/T/agentx-mcp-policy-x6i3XY`
+and `…/agentx-mcp-policy-Tjvj8i`. An earlier version put six commands in one
+agent and judged only by file absence. During independent acceptance, that
+version failed once in two runs: the model miscopied a path and invented
+results. It is superseded.
 
 | ID | Status | Observation |
 | --- | --- | --- |
-| A01 | Pass (Codex); Pi write gap open | Codex `bounded-write` (roots `root`, `extra`) created `root/in.txt` and `extra/extra.txt` with the requested content. Codex `read-only` in the same directory left `root/ro.txt` absent (shell exit 1). Pi `read-only` left `root/pi.txt` absent; Pi reported no write tool. Every report carried its actual `Grant:` line. Pi `bounded-write` is rejected at configuration time. |
-| A02 | Pass (Codex) | Outside the roots: new `outside/out.txt` absent; existing `outside/existing.txt` still `original`; `/tmp` probe absent; `apply_patch` to `outside/patched.txt` refused. Explicitly denied target `root/.git/agentx-denied.txt` (Codex-protected inside a writable root) absent. User-configurable deny subpaths are not offered because no runtime enforcement was established. |
-| A03 | Partial | Covered: the no-approver scenario (`approval:"never"`). Out-of-scope operations are denied by the OS sandbox and returned to the agent, observed above. Pending: approve and deny scenarios. Non-interactive Codex/Pi execution has no approval route to a human, and AgentX does not forward runtime approval requests to Claude. Non-`never` values are rejected rather than claimed. Pi's boundary is described everywhere as a tool allowlist, not an OS sandbox. |
-| A04 | Pass | Configured sources: `CODEX_HOME=~/.codex` (chatgpt) and `PI_CODING_AGENT_DIR=~/.pi/agent` (oauth), visible in reports, catalog and `status`. An empty `CODEX_HOME` failed with `Not logged in; no fallback identity`. A method mismatch (configured `api-key`, actual ChatGPT) failed. An empty Pi dir failed with `credentials_not_configured; no fallback identity`. None of these started native execution (debug log). Twelve inherited credential-like variables were removed. Seven credential values (from `OPENAI_API_KEY` and both `auth.json` files) appeared in neither debug logs nor reports. Direct check: `PI_CODING_AGENT_DIR=<empty> pi auth check --model openai/gpt-5` is `ready` via the inherited `OPENAI_API_KEY`, and `not_ready` once it is removed. This is the implicit fallback AgentX now blocks. |
+| A01 | Pass (Codex); Pi write gap open | Codex `bounded-write` (roots `root`, `extra`): rollouts show both `printf` writes executed with exit 0, and `root/in.txt` / `extra/extra.txt` contain the requested content. Codex `read-only` in the same directory: the rollout shows the write executed and failing with `operation not permitted`, and `root/ro.txt` is absent. Pi `read-only` left `root/pi.txt` absent; Pi reported no write tool. Every report carried its actual `Grant:` line. Pi `bounded-write` is rejected at configuration time. |
+| A02 | Pass (Codex) | Shell writes, OS layer: in each rollout the write was executed and failed with `operation not permitted`. Targets: new `outside/out.txt` (absent afterwards), overwrite of `outside/existing.txt` (still `original`), the `/tmp` probe (absent), and the explicitly denied target `root/.git/agentx-denied.txt` (Codex-protected inside a writable root; absent). Patch, application layer: `apply_patch` adding `outside/patched.txt` was rejected by Codex's patch approval check (`patch rejected: writing outside of the project; rejected by user approval settings`) before any write; the file is absent. This rejection is not the OS sandbox. User-configurable deny subpaths are not offered because no runtime enforcement was established. |
+| A03 | Partial | Covered: the no-approver scenario (`approval:"never"`), observed above with the denial returned to the agent in both layers. Out-of-scope shell writes fail in the OS sandbox (`operation not permitted`). Out-of-scope `apply_patch` is rejected by Codex's application-level patch approval with no one asked (`rejected by user approval settings`). Pending: approve and deny scenarios. Non-interactive Codex/Pi execution has no approval route to a human, and AgentX does not forward runtime approval requests to Claude. Non-`never` values are rejected rather than claimed. Pi's boundary is described everywhere as a tool allowlist, not an OS sandbox. |
+| A04 | Pass | Configured sources: `CODEX_HOME=~/.codex` (chatgpt) and `PI_CODING_AGENT_DIR=~/.pi/agent` (oauth), visible in reports, catalog and `status`. An empty `CODEX_HOME` failed with `Not logged in; no fallback identity`. A method mismatch (configured `api-key`, actual ChatGPT) failed. An empty Pi dir failed with `credentials_not_configured; no fallback identity`. None of these started native execution (debug log). Twelve inherited credential-like variables were removed. Seven credential values (from `OPENAI_API_KEY` and both `auth.json` files) appeared in neither debug logs nor reports. Direct check: `PI_CODING_AGENT_DIR=<empty> pi auth check --model openai/gpt-5` is `ready` via the inherited `OPENAI_API_KEY`, and `not_ready` once it is removed. This is the implicit fallback AgentX now blocks. Identity here means source directory plus login method; the account inside a source is not verified, so switching accounts within the same `CODEX_HOME` is not detected. |
 
 What each runtime actually enforces:
 
 | Restriction | Codex | Pi |
 | --- | --- | --- |
-| File writes | Native OS sandbox (`read-only` / `workspace-write` with roots) | Tool allowlist `read,grep,find,ls` only; application-level, not OS |
+| File writes by commands | Native OS sandbox (`read-only` / `workspace-write` with roots) | Tool allowlist `read,grep,find,ls` only; application-level, not OS |
+| File writes by `apply_patch` | Codex application-level patch approval rejects paths outside the roots | No edit/write tool enabled |
 | Network from commands | Sandbox blocks | No shell tool is enabled; not OS-enforced |
 | Reads | Not path-restricted | Not path-restricted |
 | User MCP servers/hooks/notify | Not loaded (`--ignore-user-config --ignore-rules --disable hooks`); before this change user MCP servers such as a node REPL ran outside the sandbox | Extensions, skills, prompt templates and project approval disabled |
 | Approval | `approval_policy="never"`; no human path | None exists |
-| Auth source | `CODEX_HOME` + `codex login status` preflight | `PI_CODING_AGENT_DIR` + `pi auth check` preflight |
+| Auth source | `CODEX_HOME` + `codex login status` preflight (method only, not account) | `PI_CODING_AGENT_DIR` + `pi auth check` preflight (provider and auth type, not account) |
 
 Deterministic coverage (`go test ./internal/subagents ./internal/runtime`) adds
 the following:

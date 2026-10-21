@@ -133,14 +133,14 @@ func Limits(o Option, g Grant) string {
 		fmt.Fprintf(&text, "Auth: PI_CODING_AGENT_DIR=%q expecting %s for the model's provider, verified by pi auth check before each execution. ", g.Auth.Path, g.Auth.Method)
 	} else {
 		if g.Execution.Policy == drivers.PolicyBoundedWrite {
-			fmt.Fprintf(&text, "Execution policy: bounded-write, enforced by Codex native OS sandbox (workspace-write): writable only inside %q (working directory must be inside one; .git inside them stays read-only); writes elsewhere, including /tmp and $TMPDIR, and network access from commands are blocked; reads are not path-restricted. ", g.Execution.WritableRoots)
+			fmt.Fprintf(&text, "Execution policy: bounded-write, enforced by Codex native OS sandbox (workspace-write): writable only inside %q (working directory must be inside one; .git inside them stays read-only); command writes elsewhere, including /tmp and $TMPDIR, and network access from commands are blocked by the sandbox; apply_patch outside the roots is rejected by Codex application-level patch approval; reads are not path-restricted. ", g.Execution.WritableRoots)
 		} else {
 			text.WriteString("Execution policy: read-only, enforced by Codex native OS sandbox: no file writes, network access from commands blocked; reads are not path-restricted. ")
 		}
 		text.WriteString("Approval: never (user-selected; sandbox denials are returned to the agent; no human approval path; Claude permissions and approvals are not inherited). Codex user config.toml, exec rules and hooks are not loaded (their MCP servers, hooks and notify programs would run outside the sandbox); Codex built-in web search remains available. ")
 		fmt.Fprintf(&text, "Auth: CODEX_HOME=%q expecting %s login, verified by codex login status before each execution. ", g.Auth.Path, g.Auth.Method)
 	}
-	text.WriteString("Inherited credential-like environment variables are not passed; no fallback identity. ")
+	text.WriteString("Auth identity means the configured source directory plus login method; the account inside that source is not verified. Inherited credential-like environment variables are not passed; no fallback identity. ")
 	text.WriteString("Role: general-purpose only. Isolation: rejected (worktree and remote). ")
 	if o.Agent == "pi" {
 		text.WriteString("Effort selection: rejected (Pi may silently clamp thinking levels). Exact provider/model required. ")
