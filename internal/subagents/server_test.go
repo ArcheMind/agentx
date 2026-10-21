@@ -79,8 +79,10 @@ func (r *testRunner) Execute(ctx context.Context, p runtime.CommandPlan, o runti
 func testServer(t *testing.T, r runtime.Runner) *Server {
 	t.Helper()
 	bin := t.TempDir()
-	if err := os.WriteFile(filepath.Join(bin, "codex"), []byte("#!/bin/sh\nexit 0\n"), 0700); err != nil {
-		t.Fatal(err)
+	for _, agent := range []string{"codex", "pi"} {
+		if err := os.WriteFile(filepath.Join(bin, agent), []byte("#!/bin/sh\nexit 0\n"), 0700); err != nil {
+			t.Fatal(err)
+		}
 	}
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	home := t.TempDir()
