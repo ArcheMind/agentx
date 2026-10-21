@@ -38,6 +38,9 @@ type Model struct {
 	DisplayName string `json:"display_name,omitempty" yaml:"display_name,omitempty"`
 	Description string `json:"description,omitempty" yaml:"description,omitempty"`
 	Source      string `json:"source" yaml:"source"`
+	// Efforts is set only when the source lists supported reasoning levels for this model.
+	Efforts       []string `json:"efforts,omitempty" yaml:"efforts,omitempty"`
+	DefaultEffort string   `json:"default_effort,omitempty" yaml:"default_effort,omitempty"`
 }
 
 type RunRequest struct {

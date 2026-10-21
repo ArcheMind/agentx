@@ -59,6 +59,10 @@ func (CodexAppServerModels) ListModels(ctx context.Context, runner runtime.Runne
 				DisplayName string `json:"displayName"`
 				Description string `json:"description"`
 				Hidden      bool   `json:"hidden"`
+				Efforts     []struct {
+					Effort string `json:"reasoningEffort"`
+				} `json:"supportedReasoningEfforts"`
+				DefaultEffort string `json:"defaultReasoningEffort"`
 			} `json:"data"`
 		} `json:"result"`
 		Error *struct {
@@ -86,9 +90,15 @@ func (CodexAppServerModels) ListModels(ctx context.Context, runner runtime.Runne
 			continue
 		}
 		seen[id] = true
-		models = append(models, runtime.Model{
-			ID: id, DisplayName: item.DisplayName, Description: item.Description, Source: "codex app-server model/list",
-		})
+		model := runtime.Model{
+			ID: id, DisplayName: item.DisplayName, Description: item.Description, Source: "codex app-server model/list", DefaultEffort: item.DefaultEffort,
+		}
+		for _, effort := range item.Efforts {
+			if effort.Effort != "" {
+				model.Efforts = append(model.Efforts, effort.Effort)
+			}
+		}
+		models = append(models, model)
 	}
 	return models, nil
 }
