@@ -114,12 +114,36 @@ G01–G03 section. Evidence directory (with `server-debug.log` and
 | A07 | Open (external) | `isolation:"remote"` is rejected before any work with the external reason; no native process starts. Investigated 2026-10-21: `codex cloud` (exec/status/list/diff/apply) has no cancel command. It also runs in a Codex Cloud environment bound to a pushed GitHub branch, not this working directory; this account lists no tasks, and the CLI cannot list environments. `codex exec-server --remote` registers a WebSocket exec server that the user must provision on a remote host; none exists here, and starting one locally would only alias a local directory. Pi 0.84.4 has no remote execution. |
 | A13 (isolation) | Pass | The initialization catalog, each preset's limits (`Isolation: worktree supported …; Remote: rejected …`), the tool description and the `isolation` field description all state the same support. Reports carry the worktree path, branch, base, effective writable roots, retention and the state after the last task. Isolation is fixed per ExternalSubagent: continuation reuses the same worktree. A removed worktree fails explicitly, and the task never moves to the original directory. Unknown isolation values reject. |
 
+Note (2026-10-21, after independent acceptance of `a09587c`): the reviewer
+found that a writable root spelled as a case variant of the repository
+(`/…/REPO`) was treated as an unrelated root and kept. On case-insensitive
+APFS, the Codex sandbox then allowed writes to the original checkout. A real
+Codex run modified a tracked file (rollout exit 0, original `git status` showed
+` M top.txt`). The A06 pass above did not cover that grant shape. Fix:
+containment now compares directory identity (`os.SameFile` along the ancestor
+chain), and an unidentifiable root rejects the call. Deterministic regression
+tests cover case and Unicode NFC/NFD variants of the repository and of an
+ancestor, plus the plan's effective roots; they fail on the old string
+comparison. A live re-run of `make smoke-mcp-isolation-live` with an added
+probe passed:
+- Grant roots were `[repo, REPO]`; the effective roots were only the worktree.
+- `printf escaped > …/REPO/sub/variant-escape.txt` failed with `operation not
+  permitted` (rollout
+  `~/.codex/sessions/2026/10/21/rollout-2026-10-21T05-31-03-01a15e71-8f99-7e70-864b-373b0bd9f8e1.jsonl`),
+  and the file is absent.
+- The original snapshot was unchanged, and all 7 worktrees were kept.
+
+Evidence:
+`/private/var/folders/34/yf5zv4k133l7nrksmz2flmw00000gn/T/agentx-mcp-isolation-q97496`
+(`server-debug.log`, `smoke-output.json`). The live probe covers the case
+variant only; NFD is covered deterministically.
+
 Enforcement under `isolation:"worktree"`:
 
 | Aspect | Codex | Pi |
 | --- | --- | --- |
 | Working directory | Worktree path of the original working directory | Same |
-| Writes | OS sandbox. Roots inside or containing the repository are rebased into the worktree; unrelated roots keep their grant | No write tools (read-only only) |
+| Writes | OS sandbox. Roots inside or containing the repository (by directory identity, so spelling variants count) are rebased into the worktree; unrelated roots keep their grant | No write tools (read-only only) |
 | Reads | Not path-restricted: the original checkout stays readable | Not path-restricted |
 | Commits | The repository's `.git` is outside the roots, so the agent cannot commit; work stays uncommitted in the worktree | Not applicable |
 

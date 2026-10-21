@@ -351,23 +351,31 @@ Claude session resumes. Session loss or identity mismatch is failure, not retry.
   `~/.local/state/agentx/worktrees/<id>` on branch `agentx/<id>`, where `<id>`
   is the ExternalSubagent ID. The native agent's working directory is the
   matching path inside the worktree.
-- **The original checkout.** It is never modified. Its uncommitted and
-  untracked changes are not copied into the worktree; only git's own worktree
-  metadata in `.git` changes.
+- **The original checkout.** Its files are never modified. Its uncommitted and
+  untracked changes are not copied into the worktree. The original repository
+  does gain branch `agentx/<id>` and git's worktree metadata under
+  `.git/worktrees/`.
 - **Rejections.** The call is rejected before any work starts in three cases:
   the working directory is not inside a git work tree, there is no commit at
   `HEAD`, or the working directory (or a rebased writable root) is untracked at
   `HEAD` and therefore missing from the worktree. A rejected call leaves no
   worktree or branch behind.
 - **Repository hooks.** `git worktree add` runs the repository's own
-  `post-checkout` hook, as git always does. That hook is the user's code: it
-  runs outside any agent sandbox, and no agent-supplied code runs at that point.
+  `post-checkout` hook, as git always does. That hook is the repository's code,
+  not the agent's. It runs outside any agent sandbox, with AgentX's full
+  inherited environment, credential-like variables included. Choose worktree
+  isolation only for repositories whose hooks you trust.
 - **Why the worktree is outside the repository.** A nested worktree would show
   up as an untracked entry in the original checkout, and `git add -A` there
   would record it as an embedded repository.
 - **Writable roots under `bounded-write`.** A root inside the repository moves
   to the same path inside the worktree. A root containing the repository
-  shrinks to the worktree root. An unrelated root keeps its grant. Codex
+  shrinks to the worktree root. An unrelated root keeps its grant.
+  Containment is decided by directory identity (`os.SameFile` along the
+  ancestor chain), not by spelling. On case- and normalization-insensitive
+  filesystems such as default macOS APFS, `/x/REPO` or an NFD spelling of the
+  repository is therefore recognised as the repository. A root that cannot be
+  identified rejects the call. Codex
   therefore cannot write the original checkout: an absolute write there fails
   with `operation not permitted`. Reads are not path-restricted, so the
   original stays readable.
@@ -391,6 +399,20 @@ each task, the report also records the state: whether `HEAD` moved, plus
 `--force` to discard them), then `git -C <repo> branch -D agentx/<id>`. To take
 the agent's changes, inspect or copy them from the worktree, or commit them
 there yourself.
+
+Bulk cleanup. Retained worktrees accumulate until you remove them. To list
+them:
+
+```sh
+git -C <repo> worktree list                   # paths and branches, incl. AgentX ones
+git -C <repo> branch --list 'agentx/*'        # AgentX branches
+ls ~/.local/state/agentx/worktrees            # worktrees from every repository
+```
+
+Inspect each one before removing it. Then run `git -C <repo> worktree remove
+<path>` and `git -C <repo> branch -D agentx/<id>` for each. If a worktree
+directory was deleted by hand, run `git -C <repo> worktree prune` to drop its
+stale metadata. The branch stays until you delete it.
 
 `isolation:"remote"` is rejected, and nothing runs locally instead. None of the
 installed runtimes offers a remote environment whose identity, result retrieval
@@ -468,7 +490,10 @@ filesystem state. Override
 Codex and Pi with `isolation:"worktree"`. It checks five Codex cases: a write
 inside the worktree, an absolute write to the original (OS-denied per rollout),
 read-only in a worktree, native failure, and cancellation after partial output.
-It also checks Pi's working directory and the rejection of `remote`. Finally it
+It also checks Pi's working directory and the rejection of `remote`. A sixth
+Codex case grants both the repository and a case-variant spelling of it as
+writable roots; an absolute write to the original through that spelling must
+be OS-denied per rollout. Finally it
 asserts that the original checkout's status and file contents are byte-identical
 and that every worktree is kept.
 
