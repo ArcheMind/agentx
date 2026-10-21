@@ -775,11 +775,12 @@ func (a App) resumeSession(ctx context.Context, agent runtime.Agent, detail sess
 	if err != nil || !info.IsDir() {
 		return fmt.Errorf("session workspace %s is not an accessible directory", workspace)
 	}
-	prompt := sessions.ResumePrompt(detail)
-	request := runtime.RunRequest{Cwd: workspace, Model: model, PassthroughArgs: []string{prompt}}
-	if agent.ID == "opencode" {
-		request.PassthroughArgs = []string{"--prompt", prompt}
+	stateDir := filepath.Join(a.Sessions.HomeDir, ".local", "state", "agentx", "resume")
+	sessionFile, err := sessions.WriteSessionFile(detail, agent.ID, stateDir)
+	if err != nil {
+		return fmt.Errorf("prepare resume session: %w", err)
 	}
+	request := runtime.RunRequest{Cwd: workspace, Model: model, PassthroughArgs: sessions.ResumeArgs(agent.ID, sessionFile)}
 	if err := a.prepareHooks(&request, agent.ID, !dryRun); err != nil {
 		return err
 	}

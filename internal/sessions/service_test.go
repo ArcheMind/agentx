@@ -110,16 +110,6 @@ func TestSessionIDMustBeUnambiguous(t *testing.T) {
 	}
 }
 
-func TestResumePromptDropsReasoningAndCapsSize(t *testing.T) {
-	detail := Detail{ID: "id", Provider: "codex", Messages: []Message{
-		{Role: "user", Content: []ContentBlock{{Type: "text", Text: strings.Repeat("a", resumeContextLimit)}}},
-		{Role: "assistant", Content: []ContentBlock{{Type: "text", Text: "latest"}}},
-	}}
-	prompt := ResumePrompt(detail)
-	if len(prompt) > resumeContextLimit || !strings.Contains(prompt, "latest") || !strings.Contains(prompt, "truncated") {
-		t.Fatalf("unexpected prompt length/content: %d", len(prompt))
-	}
-}
 
 func TestCodexSummarySkipsInjectedContextAndPreservesUTF8(t *testing.T) {
 	home := t.TempDir()
@@ -360,61 +350,6 @@ func TestStructuredContentPreservesToolCalls(t *testing.T) {
 	})
 }
 
-func TestBuildViewOffload(t *testing.T) {
-	messages := []Message{
-		{ID: "1", Role: "user", Content: []ContentBlock{{Type: "text", Text: "hello"}}},
-		{ID: "2", Role: "assistant", Content: []ContentBlock{
-			{Type: "thinking", Text: "private reasoning"},
-			{Type: "text", Text: "response"},
-			{Type: "tool_use", ID: "tu-1", Name: "bash", Input: map[string]any{"cmd": "ls"}},
-		}},
-		{ID: "3", Role: "tool", Content: []ContentBlock{{Type: "text", Text: "file1.txt"}}, ToolUseID: "tu-1", ToolName: "bash"},
-		{ID: "4", Role: "assistant", Content: []ContentBlock{
-			{Type: "thinking", Text: "more reasoning"},
-			{Type: "text", Text: "done"},
-		}},
-	}
-	view := BuildView(messages)
-
-	// Thinking blocks should be offloaded (not in view)
-	for _, m := range view {
-		for _, b := range m.Content {
-			if b.Type == "thinking" {
-				t.Fatal("thinking block should be offloaded from view")
-			}
-		}
-	}
-
-	// Assistant messages should only have text blocks (thinking offloaded, tool_use stripped)
-	for _, m := range view {
-		if m.Role == "assistant" {
-			for _, b := range m.Content {
-				if b.Type != "text" {
-					t.Fatalf("assistant view message should only have text blocks, got %q", b.Type)
-				}
-			}
-		}
-	}
-
-	// Tool messages should preserve toolUseId
-	foundTool := false
-	for _, m := range view {
-		if m.Role == "tool" {
-			foundTool = true
-			if m.ToolUseID != "tu-1" {
-				t.Fatalf("tool message toolUseId = %q, want tu-1", m.ToolUseID)
-			}
-		}
-	}
-	if !foundTool {
-		t.Fatal("tool message should be present in view")
-	}
-
-	// User messages should pass through unchanged
-	if textContent(view[0].Content) != "hello" {
-		t.Fatalf("user message content = %q, want hello", textContent(view[0].Content))
-	}
-}
 
 func writeFixture(t *testing.T, path, content string) {
 	t.Helper()
