@@ -23,6 +23,7 @@ const (
 	presetAccent     = "\x1b[38;5;81m"
 	presetLineWidth  = 96
 	presetMinDesc    = 20
+	presetModelWidth = 24
 	homeHelp         = "↑/↓ or j/k select · Enter open · m manage presets · q/Esc cancel"
 	emptyPresetsHint = "Save an agent, model and effort for reuse."
 )
@@ -96,8 +97,22 @@ func buildHomeRows(list []presets.Preset, problems []presets.Problem, loadErr er
 	return rows, items
 }
 
+// presetCombo is the compact home-row form; summaries show the full model ID and native default explicitly.
 func presetCombo(p presets.Preset) string {
-	return presets.AgentName(p.Agent) + " · " + p.Model + " · " + homeEffort(p.Effort)
+	combo := presets.AgentName(p.Agent) + " · " + middleTruncate(p.Model, presetModelWidth)
+	if p.Effort != "" {
+		combo += " · " + p.Effort
+	}
+	return combo
+}
+
+func middleTruncate(value string, width int) string {
+	runes := []rune(value)
+	if len(runes) <= width {
+		return value
+	}
+	head := (width - 1) / 2
+	return string(runes[:head]) + "…" + string(runes[len(runes)-(width-1-head):])
 }
 
 func homeEffort(effort string) string {
