@@ -87,6 +87,14 @@ the following:
 - A grant change rejects continuation.
 - Debug logs redact credentials, and unset variables do not reach the child.
 
+Note (2026-10-21): the user changed the grant/preset mismatch semantics. A
+callable preset without a grant is now only not callable, and an orphan grant or
+a grant on an interactive-launch-only preset is reported as a problem without
+effect. Structural grant errors still reject the whole configuration. This takes
+effect from integrate/wave-1 commit 0b7dbf3 ("Reject only the affected preset
+when grants and presets disagree"). The missing/orphan-grant rejection verified
+above reflects the earlier semantics.
+
 ## Environment and retained observations
 
 ### Current preset DATA visibility
