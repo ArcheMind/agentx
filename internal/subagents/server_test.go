@@ -486,7 +486,7 @@ func TestPresetCatalogSharedDataAndRefresh(t *testing.T) {
 	savePreset(t, s.Home, presets.Preset{Name: "interactive-only", Agent: "claude", Model: "opus", Description: "Interactive pairing"})
 	savePreset(t, s.Home, presets.Preset{Name: "pi-choice", Agent: "pi", Model: "provider/model", Description: "Independent analysis"})
 	catalog, models := PresetCatalog(s.Home)
-	if strings.Contains(catalog, "interactive-only") || strings.Contains(CatalogIndex(s.Home), "interactive-only") {
+	if strings.Contains(catalog, "interactive-only") || strings.Contains(CatalogIndex(s.Home, HostToolDescriptionLimit), "interactive-only") {
 		t.Fatal("interactive-launch-only preset listed in MCP data", catalog)
 	}
 	if _, err := s.call("ExternalSubagent", []byte(`{"description":"x","prompt":"x","model":"interactive-only"}`)); err == nil || !strings.Contains(err.Error(), "interactive launch only") {
@@ -507,7 +507,7 @@ func TestPresetCatalogSharedDataAndRefresh(t *testing.T) {
 	instructions := initial.(map[string]any)["instructions"].(string)
 	tools := s.tools().(map[string]any)["tools"].([]any)
 	description := tools[0].(map[string]any)["description"].(string)
-	if !strings.Contains(instructions, catalog) || !strings.Contains(description, CatalogIndex(s.Home)) || strings.Contains(description, "access/limits") {
+	if !strings.Contains(instructions, catalog) || !strings.Contains(description, "Preset and role index") || strings.Contains(description, "access/limits") {
 		t.Fatal("initialization carries the full catalog and metadata only the index")
 	}
 	enum := tools[0].(map[string]any)["inputSchema"].(map[string]any)["properties"].(map[string]any)["model"].(map[string]any)["enum"].([]string)
@@ -559,6 +559,40 @@ func TestPresetCatalogIgnoresLegacyConfigAndReportsInvalidAndEmpty(t *testing.T)
 	}
 }
 
+func TestToolMetadataFitsHostLimitInTheWorstCase(t *testing.T) {
+	s := testServer(t, &testRunner{})
+	installPi(t)
+	long := strings.Repeat("Read-only research and code review across the repository; good for tracing call paths. ", 2)
+	for i := 0; i < 60; i++ {
+		savePreset(t, s.Home, presets.Preset{Name: fmt.Sprintf("review-%02d", i), Agent: "codex", Model: "gpt-5.6-luna", Effort: "high", Description: long})
+		writeRole(t, s.Home, fmt.Sprintf("role-%02d", i), long, strings.Repeat("Check every changed function carefully. ", 200))
+	}
+	tools := s.tools().(map[string]any)["tools"].([]any)
+	create := tools[0].(map[string]any)
+	description := create["description"].(string)
+	t.Logf("ExternalSubagent description: %d bytes", len(description))
+	if len(description) >= HostToolDescriptionLimit {
+		t.Fatalf("ExternalSubagent description is %d bytes; Claude Code truncates at %d", len(description), HostToolDescriptionLimit)
+	}
+	for _, want := range []string{"Every call is read-only unless it sets write", "In write mode the MCP working directory is always writable as well (native Codex behavior); writable_roots grants additional directories.", "Pi presets never write", "more entries omitted; full catalog in initialization data."} {
+		if !strings.Contains(description, want) {
+			t.Fatalf("description lost %q:\n%s", want, description)
+		}
+	}
+	if !strings.Contains(description, "- preset review-00:") || !strings.HasSuffix(description, "full catalog in initialization data.\n") {
+		t.Fatal("truncation note is not the complete last line", description[len(description)-200:])
+	}
+	schema, _ := json.Marshal(tools)
+	init, _ := s.handle("initialize", []byte(`{}`))
+	instructions := init.(map[string]any)["instructions"].(string)
+	if strings.Contains(strings.ToLower(string(schema)), "remote") || strings.Contains(strings.ToLower(instructions), "remote") {
+		t.Fatal("remote still appears in tool schema or initialization data")
+	}
+	if !strings.Contains(instructions, "- review-59:") || !strings.Contains(instructions, "- role-59:") {
+		t.Fatal("initialization data lost entries the index omitted")
+	}
+}
+
 func TestToolMetadataFitsHostLimitAtRealisticScale(t *testing.T) {
 	s := testServer(t, &testRunner{})
 	installPi(t)
@@ -571,7 +605,10 @@ func TestToolMetadataFitsHostLimitAtRealisticScale(t *testing.T) {
 	tools := s.tools().(map[string]any)["tools"].([]any)
 	create := tools[0].(map[string]any)
 	n := len(create["description"].(string))
-	if n >= 4096 {
+	if strings.Contains(create["description"].(string), "omitted") || !strings.Contains(create["description"].(string), "- role docs-editor:") {
+		t.Fatal("index truncated at realistic scale")
+	}
+	if n >= HostToolDescriptionLimit {
 		t.Fatalf("ExternalSubagent description is %d characters; Claude Code truncates at 4096", n)
 	}
 	t.Logf("ExternalSubagent description: %d characters", n)
