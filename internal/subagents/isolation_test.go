@@ -247,3 +247,28 @@ func TestConcurrentWorktreeCreationInOneRepository(t *testing.T) {
 		t.Fatal("worktrees created:", n)
 	}
 }
+
+type noLoginGitRunner struct{ *gitRunner }
+
+func (r noLoginGitRunner) Execute(ctx context.Context, p runtime.CommandPlan, o runtime.ExecuteOptions) (runtime.CommandResult, error) {
+	if len(p.Args) > 1 && p.Args[0] == "login" {
+		return runtime.CommandResult{Stderr: "Not logged in", ExitCode: 1}, errors.New("exit status 1")
+	}
+	return r.gitRunner.Execute(ctx, p, o)
+}
+
+func TestWorktreeIsKeptAndNamedWhenAuthPreflightFails(t *testing.T) {
+	inner := &gitRunner{testRunner: &testRunner{}}
+	s := testServer(t, noLoginGitRunner{inner})
+	dirtyRepo(t, s)
+	_, err := s.call("ExternalSubagent", []byte(`{"description":"x","prompt":"x","model":"review","isolation":"worktree","name":"noauth","run_in_background":false}`))
+	s.mu.Lock()
+	a, _ := s.target("noauth")
+	s.mu.Unlock()
+	if err == nil || !strings.Contains(err.Error(), "no fallback identity") || a == nil || a.Worktree == nil || !strings.Contains(err.Error(), "Isolation: worktree path=\""+a.Worktree.Path+"\"") {
+		t.Fatal(err)
+	}
+	if _, statErr := os.Stat(a.Worktree.Path); statErr != nil || len(inner.plans) != 0 {
+		t.Fatal("worktree not kept or native execution started after failed preflight", statErr, len(inner.plans))
+	}
+}

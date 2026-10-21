@@ -430,7 +430,9 @@ it and cannot rebind it. If the worktree has been removed, continuation fails
 and never falls back to the original directory.
 
 Retention: AgentX never removes a worktree, whether the task completed, failed
-or was cancelled, and including after the MCP connection ends. Continuation
+or was cancelled, and including after the MCP connection ends. This includes a
+task whose auth preflight failed: the worktree was already created, no native
+execution ran, and the failure report names the worktree path. Continuation
 needs the worktree, and any uncommitted work in it belongs to the user. Every
 report names the path, branch, base commit and write scope. After
 each task, the report also records the state: whether `HEAD` moved, plus
