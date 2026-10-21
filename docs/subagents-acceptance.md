@@ -138,12 +138,42 @@ Evidence:
 (`server-debug.log`, `smoke-output.json`). The live probe covers the case
 variant only; NFD is covered deterministically.
 
+Note (2026-10-21, later the same day): the user decided on a subtraction fix
+instead, and it supersedes the directory-identity mapping of `23ead9d`.
+Isolation now overrides grant `writable_roots`: under `bounded-write` the
+sandbox's only writable root is the worktree, and no user-written path string
+reaches an isolated run. This removes the whole class of spelling variants
+(case, NFC/NFD, symlink, firmlink) rather than recognising each one.
+
+Deterministic tests use real git with a fake native runner. Grants made of a
+case or NFD variant of the repository, a variant subdirectory and an unrelated
+directory yield exactly `writable_roots=["<worktree>"]`, and the report states
+the override. A 16-way concurrent creation test also exposed a git race:
+concurrent `git worktree add` fails reading another worktree's `commondir`.
+That race first appeared in this live run. Creation is now serialized
+in-process; without the lock the test fails, with it the test passes.
+
+Live re-run of `make smoke-mcp-isolation-live` passed. Evidence:
+`/private/var/folders/34/yf5zv4k133l7nrksmz2flmw00000gn/T/agentx-mcp-isolation-VR8Eqe`
+(`server-debug.log`, `smoke-output.json`).
+- Grant roots `[…/REPO, …/unrelated]`: the effective roots were only the
+  worktree. `printf escaped > …/REPO/sub/variant-escape.txt` failed with
+  `operation not permitted` (rollout
+  `…/rollout-2026-10-21T05-34-05-01a15e74-55a6-71a1-af88-eb88ba917ac0.jsonl`),
+  and the file is absent.
+- Write inside the worktree: exit 0 (`…-01a15e74-54f8-79e2-abac-6700a4260665.jsonl`).
+- Absolute write to the original: denied (`…-01a15e74-5531-7cd2-bf89-8c7da695492b.jsonl`).
+- `printf broken > ../.git` against the worktree's `.git` file: denied
+  (`…-01a15e74-5626-7893-986a-9938b2004758.jsonl`); the file still holds its
+  `gitdir:` line.
+- The original snapshot was unchanged, and all 8 agent worktrees were kept.
+
 Enforcement under `isolation:"worktree"`:
 
 | Aspect | Codex | Pi |
 | --- | --- | --- |
 | Working directory | Worktree path of the original working directory | Same |
-| Writes | OS sandbox. Roots inside or containing the repository (by directory identity, so spelling variants count) are rebased into the worktree; unrelated roots keep their grant | No write tools (read-only only) |
+| Writes | OS sandbox. `bounded-write`: the only writable root is the worktree (grant `writable_roots` do not apply); the worktree's `.git` stays protected. `read-only`: no writable root | No write tools (read-only only) |
 | Reads | Not path-restricted: the original checkout stays readable | Not path-restricted |
 | Commits | The repository's `.git` is outside the roots, so the agent cannot commit; work stays uncommitted in the worktree | Not applicable |
 

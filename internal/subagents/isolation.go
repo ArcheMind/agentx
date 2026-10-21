@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/ArcheMind/agentx/internal/drivers"
 	"github.com/ArcheMind/agentx/internal/runtime"
@@ -28,6 +29,10 @@ type Worktree struct {
 	Remaining                          string
 }
 
+// worktreeMu serializes worktree creation: concurrent "git worktree add" in one repository reads
+// another worktree's half-written metadata and fails (observed with git 2.39).
+var worktreeMu sync.Mutex
+
 func WorktreeDir(home, id string) string {
 	return filepath.Join(home, ".local", "state", "agentx", "worktrees", id)
 }
@@ -41,72 +46,24 @@ func (s *Server) git(ctx context.Context, dir string, args ...string) (string, e
 	return strings.TrimSpace(result.Stdout), nil
 }
 
-// within reports whether path is base or lies below it, comparing directory identity rather than
-// spelling: on case- or normalization-insensitive filesystems, and through firmlinks, different
-// strings name the same directory and the sandbox follows the directory, not the string.
-func within(base, path string) (string, bool, error) {
-	baseInfo, err := os.Stat(base)
-	if err != nil {
-		return "", false, fmt.Errorf("cannot identify directory %s: %w", base, err)
+func within(base, path string) (string, bool) {
+	rel, err := filepath.Rel(base, path)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", false
 	}
-	var parts []string
-	for p := filepath.Clean(path); ; p = filepath.Dir(p) {
-		if info, err := os.Stat(p); err == nil && os.SameFile(info, baseInfo) {
-			rel := "."
-			for i := len(parts) - 1; i >= 0; i-- {
-				rel = filepath.Join(rel, parts[i])
-			}
-			return rel, true, nil
-		}
-		if filepath.Dir(p) == p {
-			return "", false, nil
-		}
-		parts = append(parts, filepath.Base(p))
-	}
-}
-
-// rebaseRoots maps writable roots onto the worktree so the original checkout never becomes
-// writable: roots inside the repository move into the worktree, roots containing the repository
-// shrink to the worktree, unrelated roots stay as granted. A root that cannot be identified is an
-// error, never "unrelated".
-func rebaseRoots(roots []string, repo, path string) ([]string, error) {
-	out := []string{}
-	seen := map[string]bool{}
-	for _, root := range roots {
-		mapped := root
-		rel, inside, err := within(repo, root)
-		if err != nil {
-			return nil, err
-		}
-		contains := false
-		if !inside {
-			if _, contains, err = within(root, repo); err != nil {
-				return nil, fmt.Errorf("writable root %s: %w; no task started", root, err)
-			}
-		}
-		switch {
-		case inside:
-			mapped = filepath.Join(path, rel)
-		case contains:
-			mapped = path
-		}
-		if !seen[mapped] {
-			seen[mapped] = true
-			out = append(out, mapped)
-		}
-	}
-	return out, nil
+	return rel, true
 }
 
 // createWorktree adds a new worktree at HEAD of the repository containing cwd and returns it with
 // the agent working directory inside it. A rejected call leaves no worktree behind. It ignores the
 // connection context so a connection ending mid-call cannot interrupt git half way.
+//
+// Under bounded-write the only writable root is the worktree itself: grant writable_roots never
+// reach an isolated run, so no spelling of a granted path can reopen the original checkout.
 func (s *Server) createWorktree(id, cwd string, g Grant) (*Worktree, string, error) {
 	ctx := context.Background()
-	roots, err := g.ResolvedRoots(cwd)
-	if err != nil {
-		return nil, "", err
-	}
+	worktreeMu.Lock()
+	defer worktreeMu.Unlock()
 	realCwd, err := filepath.EvalSymlinks(cwd)
 	if err != nil {
 		return nil, "", err
@@ -122,9 +79,9 @@ func (s *Server) createWorktree(id, cwd string, g Grant) (*Worktree, string, err
 	if err != nil {
 		return nil, "", fmt.Errorf("isolation %q requires a commit at HEAD of %s to base the worktree on; no task started: %w", IsolationWorktree, top, err)
 	}
-	rel, inside, err := within(top, realCwd)
-	if err != nil || !inside {
-		return nil, "", fmt.Errorf("working directory %s is not inside repository %s (%v); no task started", cwd, top, err)
+	rel, inside := within(top, realCwd)
+	if !inside {
+		return nil, "", fmt.Errorf("working directory %s is not inside repository %s; no task started", cwd, top)
 	}
 	parent := filepath.Dir(WorktreeDir(s.Home, id))
 	if err := os.MkdirAll(parent, 0700); err != nil {
@@ -134,7 +91,7 @@ func (s *Server) createWorktree(id, cwd string, g Grant) (*Worktree, string, err
 		return nil, "", err
 	}
 	path := filepath.Join(parent, id)
-	if _, inside, _ := within(top, path); inside {
+	if _, inside := within(top, path); inside {
 		return nil, "", fmt.Errorf("worktree location %s is inside repository %s; no task started", path, top)
 	}
 	w := &Worktree{Repo: top, Path: path, Branch: "agentx/" + id, Base: base, Original: realCwd}
@@ -155,14 +112,7 @@ func (s *Server) createWorktree(id, cwd string, g Grant) (*Worktree, string, err
 		return reject(fmt.Errorf("working directory %s is not tracked at HEAD %s, so it does not exist in the worktree; no task started", cwd, base))
 	}
 	if g.Execution.Policy == drivers.PolicyBoundedWrite {
-		if w.Roots, err = rebaseRoots(roots, top, w.Path); err != nil {
-			return reject(err)
-		}
-		for _, root := range w.Roots {
-			if info, err := os.Stat(root); err != nil || !info.IsDir() {
-				return reject(fmt.Errorf("writable root rebased to %s does not exist in the worktree (not tracked at HEAD %s); no task started", root, base))
-			}
-		}
+		w.Roots = []string{w.Path}
 	}
 	return w, agentCwd, nil
 }
@@ -206,7 +156,7 @@ func (s *Server) worktreeRemaining(w *Worktree) string {
 func (w *Worktree) describe(agentCwd string) string {
 	text := fmt.Sprintf("Isolation: worktree path=%q branch=%s base=%s repository=%q; agent cwd=%q. The original working directory %q is not modified; its uncommitted changes are not copied into the worktree.\n", w.Path, w.Branch, w.Base, w.Repo, agentCwd, w.Original)
 	if len(w.Roots) > 0 {
-		text += fmt.Sprintf("Effective writable roots (rebased into the worktree): %q\n", w.Roots)
+		text += fmt.Sprintf("Effective writable roots: %q (isolation overrides grant writable_roots; the effective writable root is the worktree itself)\n", w.Roots)
 	}
 	remaining := w.Remaining
 	if remaining == "" {
@@ -220,7 +170,7 @@ func IsolationLimits(agent string) string {
 	if agent == "pi" {
 		text += "For Pi this only changes the working directory; reads are not path-restricted, so the original checkout stays readable. "
 	} else {
-		text += "bounded-write roots that are, contain or lie inside the repository (compared by directory identity, so case or Unicode spelling variants count) are rebased into the worktree, so the original checkout is not writable; reads are not path-restricted. "
+		text += "Under bounded-write, isolation overrides grant writable_roots: the effective writable root is the worktree itself, so the original checkout and every granted path are not writable; read-only stays read-only; reads are not path-restricted. "
 	}
 	return text + "Remote: rejected (no verifiable remote execution environment with cancellation). "
 }

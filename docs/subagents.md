@@ -357,8 +357,8 @@ Claude session resumes. Session loss or identity mismatch is failure, not retry.
   `.git/worktrees/`.
 - **Rejections.** The call is rejected before any work starts in three cases:
   the working directory is not inside a git work tree, there is no commit at
-  `HEAD`, or the working directory (or a rebased writable root) is untracked at
-  `HEAD` and therefore missing from the worktree. A rejected call leaves no
+  `HEAD`, or the working directory is untracked at `HEAD` and therefore
+  missing from the worktree. A rejected call leaves no
   worktree or branch behind.
 - **Repository hooks.** `git worktree add` runs the repository's own
   `post-checkout` hook, as git always does. That hook is the repository's code,
@@ -368,20 +368,28 @@ Claude session resumes. Session loss or identity mismatch is failure, not retry.
 - **Why the worktree is outside the repository.** A nested worktree would show
   up as an untracked entry in the original checkout, and `git add -A` there
   would record it as an embedded repository.
-- **Writable roots under `bounded-write`.** A root inside the repository moves
-  to the same path inside the worktree. A root containing the repository
-  shrinks to the worktree root. An unrelated root keeps its grant.
-  Containment is decided by directory identity (`os.SameFile` along the
-  ancestor chain), not by spelling. On case- and normalization-insensitive
-  filesystems such as default macOS APFS, `/x/REPO` or an NFD spelling of the
-  repository is therefore recognised as the repository. A root that cannot be
-  identified rejects the call. Codex
-  therefore cannot write the original checkout: an absolute write there fails
-  with `operation not permitted`. Reads are not path-restricted, so the
-  original stays readable.
+- **Writable roots under `bounded-write`.** Isolation overrides the grant's
+  `writable_roots`: the effective writable root is the worktree itself, and
+  nothing else. No granted path reaches an isolated run. Granted paths are not
+  mapped into the worktree, not narrowed to it, and not passed through as
+  unrelated roots. An isolated task is meant to produce output only in the
+  copy, and passing user-written path strings to the sandbox reopens the
+  original. An earlier mapping reopened it on case-insensitive APFS: a root
+  spelled `/x/REPO` was taken as unrelated and made the original checkout
+  writable. Codex therefore cannot write the original checkout or any granted
+  path: an absolute write there fails with `operation not permitted`. Codex
+  still protects the worktree's own `.git` file inside that root (verified).
+  Reads are not path-restricted, so the original stays readable. The grant's
+  roots still apply to non-isolated runs, and must still exist.
 - **No commits.** The repository's `.git` lies outside the roots, so the agent
   cannot commit. Its work stays as uncommitted changes in the worktree.
-- **Read-only.** `read-only` stays read-only.
+- **Read-only.** `read-only` stays read-only: the sandbox is read-only and
+  has no writable root.
+- **Concurrent creation.** Worktree creation is serialized within one AgentX
+  process, because concurrent `git worktree add` in one repository fails
+  (git 2.39 reads another worktree's half-written metadata). Separate AgentX
+  processes on the same repository can still hit this; the call then fails
+  explicitly with no task started.
 - **Pi.** Pi is read-only only, so for Pi a worktree changes only the working
   directory. No OS boundary is added.
 
@@ -491,9 +499,11 @@ Codex and Pi with `isolation:"worktree"`. It checks five Codex cases: a write
 inside the worktree, an absolute write to the original (OS-denied per rollout),
 read-only in a worktree, native failure, and cancellation after partial output.
 It also checks Pi's working directory and the rejection of `remote`. A sixth
-Codex case grants both the repository and a case-variant spelling of it as
-writable roots; an absolute write to the original through that spelling must
-be OS-denied per rollout. Finally it
+Codex case grants only a case-variant spelling of the repository plus an
+unrelated directory. The sandbox must receive only the worktree, and an
+absolute write to the original through that spelling must be OS-denied per
+rollout. A seventh case writes the worktree's own `.git` file and must be
+denied. Finally it
 asserts that the original checkout's status and file contents are byte-identical
 and that every worktree is kept.
 

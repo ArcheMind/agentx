@@ -21,9 +21,11 @@ const before=snapshot()
 const codexHome=process.env.AX_MCP_CODEX_HOME??join(homedir(),'.codex'),piAgentDir=process.env.AX_MCP_PI_AGENT_DIR??join(homedir(),'.pi','agent')
 const codexModel=process.env.AX_MCP_CODEX_MODEL??'gpt-5.6-luna',piModel=process.env.AX_MCP_PI_MODEL??'openai-codex/gpt-5.6-luna'
 const codexAuth={source:'codex-home',path:codexHome,method:process.env.AX_MCP_CODEX_AUTH_METHOD??'chatgpt'},piAuth={source:'pi-agent-dir',path:piAgentDir,method:process.env.AX_MCP_PI_AUTH_METHOD??'oauth'}
-// A case-variant spelling names the same directory on default macOS APFS; it must not leave the original writable.
-const repoAlias=join(base,'REPO')
-const readOnly={policy:'read-only',approval:'never'},boundedWrite={policy:'bounded-write',writable_roots:[repo],approval:'never'},variantWrite={policy:'bounded-write',writable_roots:[repo,repoAlias],approval:'never'}
+// Isolation overrides grant writable_roots: neither a case-variant spelling of the repository (same
+// directory on default macOS APFS) nor an unrelated granted directory may reach the sandbox.
+const repoAlias=join(base,'REPO'),unrelated=join(base,'unrelated')
+await mkdir(unrelated)
+const readOnly={policy:'read-only',approval:'never'},boundedWrite={policy:'bounded-write',writable_roots:[repo],approval:'never'},variantWrite={policy:'bounded-write',writable_roots:[repoAlias,unrelated],approval:'never'}
 const presets={'iso-write':['codex',codexModel,boundedWrite,codexAuth],'iso-variant':['codex',codexModel,variantWrite,codexAuth],'iso-read':['codex',codexModel,readOnly,codexAuth],'iso-pi':['pi',piModel,readOnly,piAuth],'iso-badmodel':['codex','agentx-no-such-model',readOnly,codexAuth]}
 const grants={}
 for(const [name,[agent,model,execution,auth]] of Object.entries(presets)){const dir=join(home,'.agentx','presets',name);await mkdir(dir,{recursive:true});await writeFile(join(dir,'PRESET.md'),`---\nagent: ${agent}\nmodel: ${model}\n${agent==='codex'?'effort: low\n':''}---\n\nIsolation acceptance ${name}\n`);grants[name]={execution,auth}}
@@ -56,13 +58,14 @@ try{
  const probe=async(id,model,cmd)=>{const marker=`[isolation ${id} ${randomUUID()}]`;const report=await call('ExternalSubagent',{description:`isolation ${id}`,prompt:shell(cmd,marker),model,isolation:'worktree',run_in_background:false});const thread=threadFor(marker);assert(thread,`${id}: no native thread: ${report.text}`);const path=rollout(thread);const attempts=toolCalls(path).filter(c=>c.input.includes('printf'));assert(attempts.length>=1,`${id}: rollout ${path} shows no attempt`);return {report,thread,rollout:path,attempt:attempts[0].input.slice(0,300),output:attempts.map(a=>a.output).join('\n').slice(0,400),wt:worktreeOf(report.text),native:nativeRun(marker)}}
  const escapeTarget=join(cwd,'escape.txt'),variantTarget=join(repoAlias,'sub','variant-escape.txt')
  assert(existsSync(join(repoAlias,'sub','tracked.txt')),'case-variant spelling does not name the repository on this filesystem')
- const [write,escape,readonly,remote,failure,variant]=await Promise.all([
+ const [write,escape,readonly,remote,failure,variant,dotgit]=await Promise.all([
   probe('write','iso-write','printf isolated > agent.txt'),
   probe('escape','iso-write',`printf escaped > ${escapeTarget}`),
   probe('read-only','iso-read','printf readonly > ro.txt'),
   call('ExternalSubagent',{description:'remote',prompt:'Reply ok',model:'iso-read',isolation:'remote',run_in_background:false}),
   call('ExternalSubagent',{description:'failure retention',prompt:'Reply ok',model:'iso-badmodel',isolation:'worktree',run_in_background:false}),
   probe('variant','iso-variant',`printf escaped > ${variantTarget}`),
+  probe('dotgit','iso-write','printf broken > ../.git'),
  ])
  // Success: the write lands in the worktree, the Codex sandbox roots are the worktree, the original is untouched.
  assert(!write.report.failed&&write.wt,`write: ${write.report.text}`)
@@ -77,8 +80,13 @@ try{
  assert(!escape.report.failed&&escape.output.includes('operation not permitted')&&read(escapeTarget)===null,`escape: ${escape.output}`)
  results.escapeToOriginal={target:escapeTarget,thread:escape.thread,rollout:escape.rollout,attempt:escape.attempt,runtimeOutput:escape.output,filesystem:null}
  const variantArgs=variant.native.input.args.join(' ')
- assert(!variant.report.failed&&variantArgs.includes(`writable_roots=["${variant.wt[1]}"]`)&&!variantArgs.toLowerCase().includes(`"${repo.toLowerCase()}"`),`variant: sandbox roots ${variantArgs}`)
+ assert(!variant.report.failed&&variantArgs.includes(`writable_roots=["${variant.wt[1]}"]`)&&!variantArgs.toLowerCase().includes(`"${repo.toLowerCase()}`)&&!variantArgs.includes(unrelated),`variant: sandbox roots ${variantArgs}`)
+ assert(variant.report.text.includes('isolation overrides grant writable_roots; the effective writable root is the worktree itself'),`variant: report ${variant.report.text}`)
  assert(variant.output.includes('operation not permitted')&&read(join(cwd,'variant-escape.txt'))===null,`variant: ${variant.output}`)
+ // The worktree's own .git file stays protected by Codex inside the writable root.
+ const dotgitFile=join(dotgit.wt[1],'.git')
+ assert(!dotgit.report.failed&&dotgit.output.includes('operation not permitted')&&read(dotgitFile).startsWith('gitdir: '),`dotgit: ${dotgit.output}`)
+ results.worktreeDotGit={target:dotgitFile,thread:dotgit.thread,rollout:dotgit.rollout,attempt:dotgit.attempt,runtimeOutput:dotgit.output,filesystem:read(dotgitFile).trim()}
  results.caseVariantRoot={grantRoots:variantWrite.writable_roots,effectiveRoots:variant.wt[1],target:variantTarget,thread:variant.thread,rollout:variant.rollout,attempt:variant.attempt,runtimeOutput:variant.output,filesystem:null}
  assert(!readonly.report.failed&&readonly.output.includes('operation not permitted')&&read(join(readonly.wt[1],'sub','ro.txt'))===null,`read-only: ${readonly.output}`)
  results.readOnlyWorktree={worktree:readonly.wt[1],thread:readonly.thread,rollout:readonly.rollout,runtimeOutput:readonly.output}
@@ -115,5 +123,5 @@ try{
 }finally{clearTimeout(timer);child.stdin.end();await new Promise(r=>child.on('close',r));await writeFile(join(base,'server-debug.log'),stderr)}
 const list=git(repo,'worktree','list','--porcelain')
 results.worktreesAfterServerExit=list.split('\n').filter(l=>l.startsWith('worktree ')).map(l=>l.slice(9))
-assert(results.worktreesAfterServerExit.length===8,`worktrees not all retained: ${list}`)
+assert(results.worktreesAfterServerExit.length===9,`worktrees not all retained: ${list}`)
 console.log(JSON.stringify({passed:true,versions:{codex:spawnSync('codex',['--version'],{encoding:'utf8'}).stdout.trim(),pi:spawnSync('pi',['--version'],{encoding:'utf8'}).stdout.trim(),git:spawnSync('git',['--version'],{encoding:'utf8'}).stdout.trim()},scope:'real Codex/Pi through AgentX MCP with isolation=worktree; dirty original checkout snapshotted before/after; attempts and denials read from Codex rollouts; worktree filesystem state checked',results,evidence:base},null,2))

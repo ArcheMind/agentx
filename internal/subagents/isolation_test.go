@@ -52,8 +52,13 @@ func gitCmd(t *testing.T, dir string, args ...string) string {
 // untracked file, with the server working directory in a tracked subdirectory.
 func dirtyRepo(t *testing.T, s *Server) string {
 	t.Helper()
+	return dirtyRepoNamed(t, s, "Repo")
+}
+
+func dirtyRepoNamed(t *testing.T, s *Server, name string) string {
+	t.Helper()
 	tmp, _ := filepath.EvalSymlinks(t.TempDir())
-	repo := filepath.Join(tmp, "Repo")
+	repo := filepath.Join(tmp, name)
 	os.Mkdir(repo, 0700)
 	gitCmd(t, repo, "init", "-q")
 	os.MkdirAll(filepath.Join(repo, "sub"), 0700)
@@ -93,22 +98,7 @@ func variant(t *testing.T, dir string, spell func(string) string) string {
 	return other
 }
 
-func TestRebaseRootsNeverLeavesOriginalCheckoutWritable(t *testing.T) {
-	base, _ := filepath.EvalSymlinks(t.TempDir())
-	repo, other, wt := filepath.Join(base, "repo"), filepath.Join(base, "other"), filepath.Join(base, "wt")
-	for _, dir := range []string{filepath.Join(repo, "sub"), other, wt} {
-		os.MkdirAll(dir, 0700)
-	}
-	got, err := rebaseRoots([]string{filepath.Join(repo, "sub"), repo, base, other, filepath.Join(repo, "sub")}, repo, wt)
-	if err != nil || strings.Join(got, ",") != strings.Join([]string{filepath.Join(wt, "sub"), wt, other}, ",") {
-		t.Fatal(got, err)
-	}
-	if _, err := rebaseRoots([]string{filepath.Join(base, "missing")}, repo, wt); err == nil {
-		t.Fatal("unidentifiable root treated as unrelated")
-	}
-}
-
-func TestRebaseRootsComparesDirectoryIdentityNotSpelling(t *testing.T) {
+func TestWorktreeSandboxIgnoresGrantRootsWhateverTheirSpelling(t *testing.T) {
 	for name, c := range map[string]struct {
 		dir   string
 		spell func(string) string
@@ -117,39 +107,25 @@ func TestRebaseRootsComparesDirectoryIdentityNotSpelling(t *testing.T) {
 		"unicode": {"caf\u00e9", func(s string) string { return strings.ReplaceAll(s, "\u00e9", "e\u0301") }},
 	} {
 		t.Run(name, func(t *testing.T) {
-			tmp, _ := filepath.EvalSymlinks(t.TempDir())
-			base := filepath.Join(tmp, "Parent")
-			repo, wt := filepath.Join(base, c.dir), filepath.Join(tmp, "wt")
-			os.MkdirAll(filepath.Join(repo, "sub"), 0700)
-			os.MkdirAll(wt, 0700)
-			alias := variant(t, repo, c.spell)
-			got, err := rebaseRoots([]string{alias, filepath.Join(alias, "sub"), base}, repo, wt)
-			if err != nil || strings.Join(got, ",") != wt+","+filepath.Join(wt, "sub") {
-				t.Fatalf("spelling variant of the repository stayed writable: %v %v", got, err)
+			r := &gitRunner{testRunner: &testRunner{}}
+			s := testServer(t, r)
+			repo := dirtyRepoNamed(t, s, c.dir)
+			alias, other := variant(t, repo, c.spell), t.TempDir()
+			setPolicy(t, s, ExecutionPolicy{Policy: "bounded-write", WritableRoots: []string{alias, filepath.Join(alias, "sub"), other}, Approval: "never"})
+			text := callTest(t, s, "ExternalSubagent", map[string]any{"description": "x", "prompt": "x", "name": "v", "model": "review", "isolation": "worktree", "run_in_background": false})
+			s.mu.Lock()
+			a, _ := s.target("v")
+			s.mu.Unlock()
+			r.mu.Lock()
+			args := strings.Join(r.plans[0].Args, " ")
+			r.mu.Unlock()
+			if !strings.Contains(args, `writable_roots=["`+a.Worktree.Path+`"] `) || strings.Contains(args, `"`+alias) || strings.Contains(args, `"`+repo) || strings.Contains(args, other) {
+				t.Fatal("grant writable_roots reached the isolated sandbox:", args)
 			}
-			upper := variant(t, base, strings.ToUpper)
-			if got, err := rebaseRoots([]string{upper}, repo, wt); err != nil || strings.Join(got, ",") != wt {
-				t.Fatalf("spelling variant of an ancestor stayed writable: %v %v", got, err)
+			if !strings.Contains(text, "isolation overrides grant writable_roots; the effective writable root is the worktree itself") {
+				t.Fatal(text)
 			}
 		})
-	}
-}
-
-func TestWorktreeSandboxExcludesSpellingVariantOfRepository(t *testing.T) {
-	r := &gitRunner{testRunner: &testRunner{}}
-	s := testServer(t, r)
-	repo := dirtyRepo(t, s)
-	alias := variant(t, repo, strings.ToUpper)
-	setPolicy(t, s, ExecutionPolicy{Policy: "bounded-write", WritableRoots: []string{repo, alias}, Approval: "never"})
-	callTest(t, s, "ExternalSubagent", map[string]any{"description": "x", "prompt": "x", "name": "v", "model": "review", "isolation": "worktree", "run_in_background": false})
-	s.mu.Lock()
-	a, _ := s.target("v")
-	s.mu.Unlock()
-	r.mu.Lock()
-	args := strings.Join(r.plans[0].Args, " ")
-	r.mu.Unlock()
-	if !strings.Contains(args, `writable_roots=["`+a.Worktree.Path+`"]`) || strings.Contains(strings.ToLower(args), strings.ToLower(`"`+repo+`"`)) {
-		t.Fatal("original repository writable through a spelling variant:", args)
 	}
 }
 
@@ -172,8 +148,7 @@ func TestWorktreeIsolationRunsInWorktreeAndKeepsOriginalChanges(t *testing.T) {
 	plan := r.plans[0]
 	r.mu.Unlock()
 	args := strings.Join(plan.Args, " ")
-	realOther, _ := filepath.EvalSymlinks(other)
-	if plan.Cwd != filepath.Join(w.Path, "sub") || !strings.Contains(args, `writable_roots=["`+w.Path+`","`+realOther+`"]`) || strings.Contains(args, `"`+repo+`"`) {
+	if plan.Cwd != filepath.Join(w.Path, "sub") || !strings.Contains(args, `writable_roots=["`+w.Path+`"] `) || strings.Contains(args, `"`+repo+`"`) {
 		t.Fatalf("sandbox not bound to worktree: cwd=%s args=%s", plan.Cwd, args)
 	}
 	if after := gitCmd(t, repo, "status", "--porcelain"); after != before {
@@ -289,5 +264,26 @@ func TestPiWorktreeIsolationChangesOnlyWorkingDirectory(t *testing.T) {
 	defer r.mu.Unlock()
 	if a == nil || a.Worktree == nil || len(r.plans) != 1 || r.plans[0].Cwd != filepath.Join(a.Worktree.Path, "sub") || !strings.Contains(strings.Join(r.plans[0].Args, " "), "read,grep,find,ls") || a.Worktree.Roots != nil {
 		t.Fatal("Pi worktree plan wrong", r.plans)
+	}
+}
+
+func TestConcurrentWorktreeCreationInOneRepository(t *testing.T) {
+	r := &gitRunner{testRunner: &testRunner{}}
+	s := testServer(t, r)
+	repo := dirtyRepo(t, s)
+	errs := make(chan error, 16)
+	for i := 0; i < 16; i++ {
+		go func() {
+			_, err := s.call("ExternalSubagent", []byte(`{"description":"x","prompt":"x","model":"review","isolation":"worktree","run_in_background":false}`))
+			errs <- err
+		}()
+	}
+	for i := 0; i < 16; i++ {
+		if err := <-errs; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if n := strings.Count(gitCmd(t, repo, "worktree", "list"), "agentx/ax-"); n != 16 {
+		t.Fatal("worktrees created:", n)
 	}
 }
