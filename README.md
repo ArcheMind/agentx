@@ -5,25 +5,133 @@
 [![Release](https://img.shields.io/github/v/release/ArcheMind/agentx?display_name=tag)](https://github.com/ArcheMind/agentx/releases)
 [![License](https://img.shields.io/github/license/ArcheMind/agentx)](LICENSE)
 
-**One native workflow for every coding agent you already use.**
-
-Start a coding agent:
+**See every coding agent's work in one place, continue any of it in any agent, and configure them all once.**
 
 ```console
-$ ax codex
+$ ax                # every recent session, every agent
+$ ax codex          # start a new Codex session
 ```
+
+Claude Code, Codex CLI, DeepSeek Harness, Gemini CLI, OpenCode, and Pi run through their own executables, configuration, credentials, and session stores.
+
+## One list of every agent's work
+
+`ax` with no arguments opens one screen with your presets and the recent sessions of every agent, grouped by project.
 
 Start from a preset or resume recent work:
 
-```console
-$ ax
+```text
+New session · Presets
+› codex-review  Codex · gpt-5.6-luna · low     Read-only research and code review using native …
+  pi-review     Pi · openai-codex/gpt-5.6-luna  Read-only independent research and code review u…
+  + Create preset…
+
+Recent sessions · Current workspace
+  claude    Sep 11 05:08 (18m)      Design the interactive session-resume experience for the…
+  codex     Sep 11 04:42 (47m)      Refactor the OAuth callback and tighten token refresh ha…
+  gemini    Sep 11 04:08 (1h 03m)   Map the runtime boundaries before splitting the command …
+  opencode  Sep 11 03:50 (1h 10m)   Polish the session list layout and status copy
+  pi        Sep 11 03:24 (44m)      Reduce duplicate state in the keyboard navigation handler
+
+Recent sessions · Global
+  codex     Sep 10 12:20 (1h 15m)   ../data-pipeline      Fix the streaming response parser …
+  claude    Sep 10 10:48 (33m)      ../api-gateway        Review the production timeout inci…
+  opencode  Sep 10 10:20 (4h 00m)   ../analytics          Investigate the slow analytics que…
+  gemini    Sep 10 09:40 (2h 30m)   ../mobile-app         Prepare the mobile release checkli…
+  pi        Sep 10 06:15 (55m)      ../infrastructure     Add a preflight check before the p…
+
+↑/↓ or j/k select · Enter open · m manage presets · q/Esc cancel
 ```
 
-`ax` first lists your presets (saved agent, model and effort) under `New session · Presets`, ending with `+ Create preset…`; press `m` to view, edit, rename, duplicate or delete a preset. Below it, recent top-level sessions appear in separate `Recent sessions · Current workspace` and `Recent sessions · Global` sections. Times use your local timezone, and Global entries include their working directory. Move through every session, agent, and model with the arrow keys or `j`/`k`, press Enter to select, or press `q` to cancel. AgentX continues through the selected agent's native CLI. Pass `--include-subagents` to include provider sessions identified as child Agent work.
+Non-interactive and filtered:
 
-![Interactive session resume demo](docs/assets/interactive-resume.gif)
+```console
+ax session list --all --limit 20
+ax session list --source codex --all --include-subagents
+ax session show <session-id> --source claude --peek
+```
 
-`agentx` is a native-first runtime manager for Claude Code, Codex CLI, DeepSeek Harness, Gemini CLI, OpenCode, and Pi. It uses their existing executables, configuration, credentials, and session stores as the source of truth.
+Child Agent sessions stay hidden unless `--include-subagents` is set.
+
+## Continue it in any agent
+
+Press Enter on a session, then choose who continues it:
+
+```text
+Choose an agent:
+> claude
+  codex
+  gemini
+  opencode
+  pi
+```
+
+![Interactive session resume](docs/assets/interactive-resume.gif)
+
+The same hand-off without the screen:
+
+```console
+ax session resume codex <claude-session-id> --source claude
+```
+
+AgentX converts the session into the target agent's native transcript format and starts its native resume (`claude --resume`, `codex resume`, `pi --session`, …). Source sessions are only read, never modified.
+
+## Call another agent's preset from inside yours
+
+A preset saves agent, model, effort, and when to use it. The same collection feeds `ax` and the MCP tools, so Claude can run your Codex or Pi presets directly:
+
+```console
+$ ax preset list
+codex-review         codex      static requirements satisfied; login and model access verified per execution
+pi-review            pi         static requirements satisfied; login and model access verified per execution
+
+$ claude mcp add --scope user agentx -- "$(command -v ax)" preset serve
+```
+
+Then, inside Claude:
+
+> Use my codex-review and pi-review presets to review this change independently,
+> then compare their findings.
+
+Each call runs the preset's own native agent in its own session. No relay inference call, no per-task registration. Calls are read-only unless they ask for `write`; `isolation: "worktree"` runs the subagent in a fresh git worktree that is its only writable root.
+
+```text
+ExternalSubagent · SendExternalSubagentMessage · StopExternalSubagent · listExternalSubagentSessions
+```
+
+Exact inputs, limits, and acceptance evidence: [docs/subagents.md](docs/subagents.md).
+
+## Configure once, every agent follows
+
+```text
+~/.agents/skills/<name>/SKILL.md      codex · dsh · gemini · opencode · pi, Claude via .claude/skills
+~/.agents/hooks.json                  claude · codex · gemini · pi
+~/.agentx/presets/<name>/PRESET.md    ax · the ExternalSubagent tools above
+~/.agentx/roles/<name>/ROLE.md        subagent_type for the ExternalSubagent tools
+```
+
+```console
+$ ax skill install https://github.com/example/agent-skills.git --path skills/review --scope user
+$ ax hook list
+SCOPE    EVENT             COMMAND
+user     SessionStart      echo session started
+user     UserPromptSubmit  echo prompt submitted
+user     Stop              echo stopped
+```
+
+A preset is one small file:
+
+```markdown
+---
+agent: codex
+model: gpt-5.6-luna
+effort: low
+---
+
+Read-only research and code review. Not for large refactors.
+```
+
+`ax` shows `+ Create preset…` on the home screen and `m` edits the highlighted one. Native config stays native: AgentX never merges into your Claude, Codex, Gemini, or Pi configuration; hook and skill bridges are isolated and visible to the agent's own trust review.
 
 ## Install
 
@@ -33,7 +141,7 @@ $ ax
 curl -LsSf https://raw.githubusercontent.com/ArcheMind/agentx/main/install.sh | sh
 ```
 
-The installer downloads the release artifact for the current platform, verifies its SHA-256 checksum, and installs `ax` to `$HOME/.local/bin`. Set `AX_INSTALL_DIR` to choose another directory.
+Downloads the release artifact for the current platform, verifies its SHA-256 checksum, and installs `ax` to `$HOME/.local/bin`. Set `AX_INSTALL_DIR` for another directory.
 
 ### Go
 
@@ -41,173 +149,20 @@ The installer downloads the release artifact for the current platform, verifies 
 go install github.com/ArcheMind/agentx/cmd/ax@latest
 ```
 
-Prebuilt archives for macOS, Linux, and Windows are available on the [releases page](https://github.com/ArcheMind/agentx/releases). See [installation](docs/installation.md) for version pinning, verification, Windows setup, and source builds.
-
-## Start
-
-```bash
-# Start a new Codex session in the current directory
-ax codex
-
-# Or pick a preset or resume recent work interactively
-ax
-```
-
-Select a model or working directory when starting directly:
-
-```bash
-ax codex --model gpt-5.4 --cwd .
-```
-
-Arguments after `--` go directly to the native agent:
-
-```bash
-ax claude -- --permission-mode plan
-ax dsh -- --profile headless "review this change"
-ax dsh -- --profile acp
-```
-
-## MCP ExternalSubagent tools
-
-```bash
-ax                                  # create presets: + Create preset…, manage with m
-ax preset list
-claude mcp add --scope user agentx -- "$(command -v ax)" preset serve
-ax claude
-```
-
-Presets in `~/.agentx/presets/<name>/PRESET.md` save an agent, model, effort and
-a description once. Bare `ax` lists them first to start new sessions, and Claude
-discovers the same presets through four MCP tools: `ExternalSubagent`, `SendExternalSubagentMessage`, `StopExternalSubagent`, and `listExternalSubagentSessions`. A single
-`mcp__agentx__ExternalSubagent` call starts an independent Codex or Pi ExternalSubagent; `model`
-names a preset. No per-task registration is required. See [docs/subagents.md](docs/subagents.md).
-
-For example, ask Claude:
-
-> Use my codex-review and pi-review presets to review this change independently,
-> then compare their findings.
-
-These are AgentX MCP tools, with familiar task parameters and independent native
-backend sessions. There is no extra Claude inference call to relay a task or
-wrap its answer. Background completion uses AgentX channel notifications.
-
-Validated with interactive Claude Code 2.1.296 and locally authenticated Codex/Pi.
-The launcher opts in only to the named AgentX development channel; Claude asks
-users to acknowledge its local-development warning. First-party Claude access and
-host channel feature/org approval are required. In headless Claude tasks are
-foreground calls (`run_in_background:false`), as with native subagents.
-Execution is read-only unless a call requests write; Pi never writes and uses a
-tool allowlist, not an OS sandbox. `claude mcp remove agentx` stops new sessions
-from starting AgentX without cancelling accepted tasks. ExternalSubagents are
-session-scoped: a reconnect starts with none.
-
-See [ExternalSubagent integration](docs/subagents.md) for exact tool inputs and boundaries.
-The execution command reads stdin and streams the selected CLI's native JSONL:
-
-```bash
-ax agent exec codex --model <native-model-id> --cwd . < prompt.txt
-ax agent exec pi --model <provider/model> < prompt.txt
-ax agent exec gemini --resume <session-uuid> < follow-up.txt
-ax --json agent exec codex --dry-run
-```
-
-## Manage agents
-
-The resource-oriented commands cover setup and inspection without changing the daily launch path.
-
-```bash
-# Preview installed agents, authentication, and available models
-ax list
-ax --yaml list
-
-# Discover native agents already on PATH
-ax agent list
-
-# Preview installation, then install through the verified native package
-ax agent install codex --dry-run
-ax agent install codex
-
-# Inspect an agent: binary path, capabilities, available models
-ax agent show codex
-ax --json agent show dsh
-
-# Use native authentication
-ax auth login codex
-ax auth show codex
-ax auth list
-
-# Discover and inspect installed Agent Skills
-ax skill list
-ax skill show review
-
-# Inspect portable Hooks configured for Claude, Codex, Gemini, and Pi
-ax hook list
-ax --json hook list
-
-# Preview, then install a local skill or a skill inside a Git repository
-ax skill install ./skills/review --scope project --dry-run
-ax skill install https://github.com/example/agent-skills.git --path skills/review --scope user
-
-# Configure DSH credentials through its native Models page, then inspect status
-ax auth login dsh
-ax auth show dsh
-```
-
-`ax list` is a readiness view. Uninstalled, logged-out, and unknown agents stay on one line; only agents with verified authentication expand their accounts and currently available models. Terminal output uses color for readiness and status, while pipes, redirects, JSON, YAML, and `NO_COLOR` remain free of ANSI sequences.
-
-```text
-agents
-├── claude
-│   ├── account: claude (claude.ai, max)
-│   └── models (status unknown)
-├── codex (not logged in)
-├── gemini (status unknown)
-└── pi (not installed)
-```
-
-## Explicit session commands
-
-Bare `ax` is the normal resume flow. Use the session commands when you need exact filters, inspection, or a non-interactive target.
-
-```bash
-# Sessions default to the current workspace
-ax session list
-
-# Inspect a session from any supported native store
-ax session list --source codex --all --limit 20 --sort date
-ax session list --all --include-subagents
-ax session show <session-id> --source codex --peek
-
-# Continue its bounded context in another native agent
-ax session resume claude <session-id> --source codex
-```
-
-AgentX reads native session stores but never modifies them. Resume passes a bounded normalized transcript to the target agent's native interactive command.
-
-## Why agentx
-
-Coding agents are good native tools. The fragmented workflow around them is not.
-
-- **Make the first action cheap.** Start an agent or recover recent work without navigating a command hierarchy.
-- **Keep native ownership.** AgentX does not invent a profile format, copy credentials, or rewrite private session databases.
-- **Adopt one command at a time.** Use launching, recovery, discovery, installation, authentication, or model inspection independently.
-- **See the plan first.** Mutating operations support `--dry-run`; AgentX-owned results support JSON and YAML.
-- **Fail honestly.** If an agent exposes no verified model, authentication, or session source, AgentX says so instead of inventing data.
-
-The design is inspired by [uv](https://github.com/astral-sh/uv): preserve established standards, remove friction from the common path, and expand from immediately useful workflows.
+Prebuilt archives for macOS, Linux, and Windows are on the [releases page](https://github.com/ArcheMind/agentx/releases). See [installation](docs/installation.md) for version pinning, verification, Windows setup, and source builds.
 
 ## Supported agents
 
-| Agent | Install | Login | Auth status | Model list | Model select | Sessions | Skills |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| Claude Code | Yes | Yes | Yes | No verified source | Yes | Yes | Shared store via projection |
-| Codex CLI | Yes | Yes | Yes | Native cache | Yes | Yes | Shared store |
-| DeepSeek Harness | Yes | Web UI | Provider credential | Bundled catalog | Native profile config | Unsupported | Unsupported |
-| Gemini CLI | Yes | Interactive | Unsupported | No verified source | Yes | Yes | Shared store |
-| OpenCode | Yes | Yes | Provider list | Native command | Yes | Yes | Not actively integrated |
-| Pi | Yes | Provider selector | Provider list | Native command + auth filter | Yes | Yes | Shared store |
+| Agent | Sessions | Continue in it | Reads `~/.agents/skills` | Portable hooks |
+| --- | --- | --- | --- | --- |
+| Claude Code | yes | yes | yes, via `.claude/skills` | yes |
+| Codex CLI | yes | yes | yes | yes |
+| DeepSeek Harness | — | — | yes | — |
+| Gemini CLI | yes | yes | yes | yes |
+| OpenCode | yes | yes | yes | — |
+| Pi | yes | yes | yes | yes |
 
-The exact native versions and evidence behind this table live in the [lifecycle and protocol audit](docs/lifecycle-and-protocol-audit.md).
+DeepSeek Harness has no verified session source, so it is not a session or resume target. AgentX can still install, authenticate, and launch it. OpenCode and DeepSeek Harness are not part of the actively developed skill and hook integrations. Exact native versions and evidence: [lifecycle and protocol audit](docs/lifecycle-and-protocol-audit.md).
 
 ## Command reference
 
@@ -228,51 +183,46 @@ ax [--json|--yaml] convert <to|from> <provider>
 ax version
 ```
 
-Place `--json` or `--yaml` before the command for AgentX-owned results and dry-run plans. Actual install, authentication, launch, and resume commands retain native interactive output and reject structured mode rather than silently mixing protocols.
+`--json` and `--yaml` apply to AgentX-owned data and dry-run plans; native install, login, launch, and resume keep their own interactive output.
 
-Skills use the standard `SKILL.md` format. User skills live in `~/.agents/skills`; project skills live in `.agents/skills`. Codex, Gemini, and Pi discover that canonical store directly. AgentX creates a relative symbolic-link projection in the matching `.claude/skills` directory so Claude reads the same files rather than a copy. Install records source provenance in `.agentx-origins.yaml` beside the canonical store. Existing canonical or Claude destinations are treated as conflicts and are never overwritten.
-
-Hooks use the Claude/Codex `hooks.json` structure at `~/.agents/hooks.json` and `.agents/hooks.json`. The portable profile contains `SessionStart`, `SessionEnd`, `UserPromptSubmit`, and `Stop` command handlers. `ax hook list` reports only that canonical configuration; native-only events produce warnings and remain under their native agent's control. Launching Claude, Codex, Gemini, or Pi through `ax` creates or refreshes an isolated AgentX-owned bridge through that provider's public plugin, config, or extension surface. The bridge carries the projected command definitions so native trust review sees configuration changes; AgentX never merges them into user-owned provider config.
-
-Explicit smoke suites exercise native tooling outside the normal `make verify` path. `make smoke-clean` uses a no-cache Docker build and asks AgentX to install Claude, Codex, Gemini, and Pi from scratch. `make smoke-skills-clean` installs a fixture Skill through AgentX in a clean Docker filesystem and verifies its canonical copy, Claude projection, and structured metadata. `make smoke-hooks-live` and `make smoke-skills-live` reuse local native login state and launch all four agents with low-cost models. The Hook suite requires all four portable lifecycle events to reach a temporary recorder; the Skill suite requires each native agent to discover a Skill and return a token that is absent from its prompt. Missing CLIs are installed through AgentX; missing Claude, Codex, or Pi login state reports the corresponding `ax auth login` command. Gemini remains a real launch check and fails with its login instruction when authentication is unavailable. The controlled Codex Hook smoke invocation bypasses persisted Hook trust; normal `ax codex` launches do not. Live evidence is retained in the printed temporary results directory.
-
-```bash
-ax --json agent list
-ax --yaml list
-ax --yaml session show <session-id> --source codex
-ax --json codex --model gpt-5.4 --dry-run
+```console
+ax list                              # readiness, account, and available models per agent
+ax agent install codex --dry-run     # then without --dry-run to install
+ax auth login codex                  # native authentication
+ax agent show codex                  # binary path, capabilities, models
+ax skill list                        # skills by filesystem source and reader
+ax mcp list                          # MCP servers by filesystem source and reader
+ax agent exec codex --model <id> < prompt.txt
+ax --json session resume pi <session-id> --source claude --dry-run
 ```
 
-## Design boundaries
+## Boundaries
 
-AgentX owns workflow coordination, not the agents themselves. It deliberately does not:
+AgentX owns the workflow around agents, not the agents:
 
-- define a universal agent settings file beyond the documented Skills and Hooks profiles;
-- store or proxy account credentials;
-- replace native package managers or session databases;
-- normalize destructive session operations with incompatible semantics;
-- fabricate capabilities absent from a verified native source.
+- no universal agent settings file beyond the documented skills, hooks, presets, and roles;
+- no credential storage or proxying;
+- no replacement package managers or session databases;
+- no invented capabilities or fallbacks when a native source is missing.
 
-Read [architecture](docs/architecture.md) for the component model and [product principles](docs/product-principles.md) for the decisions behind these boundaries.
+Read [architecture](docs/architecture.md) and [product principles](docs/product-principles.md) for the reasoning.
 
 ## Development
 
-AgentX requires Go 1.25.
+Go 1.25.
 
 ```bash
 make verify
 ./bin/ax version
 ```
 
-`make verify` is the repository contract: formatting, static checks, tests, protocol audits, build, and smoke checks. See [CONTRIBUTING.md](CONTRIBUTING.md) before proposing a change.
-
-Regenerate the terminal demo with `vhs docs/demo.tape`.
+`make verify` is the repository contract: formatting, static checks, tests, protocol audits, build, and smoke checks. Read [CONTRIBUTING.md](CONTRIBUTING.md) before proposing a change. Regenerate the terminal demo with `vhs docs/demo.tape`.
 
 ## Security and support
 
-Do not report vulnerabilities in public issues; follow [SECURITY.md](SECURITY.md). For usage questions and confirmed bugs, see [SUPPORT.md](SUPPORT.md).
+Report vulnerabilities privately per [SECURITY.md](SECURITY.md). Usage questions and confirmed bugs go through [SUPPORT.md](SUPPORT.md).
 
-AgentX is an independent open-source project and is not affiliated with Anthropic, OpenAI, Google, OpenCode, or Pi's maintainers. Product names belong to their respective owners.
+AgentX is an independent open-source project, not affiliated with Anthropic, OpenAI, Google, OpenCode, or Pi's maintainers. Product names belong to their respective owners.
 
 ## License
 
