@@ -595,6 +595,124 @@ func TestToolMetadataFitsHostLimitInTheWorstCase(t *testing.T) {
 	}
 }
 
+func TestDelegationInjectedIntoCodexPlan(t *testing.T) {
+	r := &testRunner{}
+	s := testServer(t, r)
+	s.axBinary = "/usr/local/bin/ax"
+	callTest(t, s, "ExternalSubagent", map[string]any{"description": "x", "prompt": "x", "model": "review", "run_in_background": false})
+	r.mu.Lock()
+	args := strings.Join(r.plans[0].Args, " ")
+	r.mu.Unlock()
+	if !strings.Contains(args, `mcp_servers.agentx.command="/usr/local/bin/ax"`) {
+		t.Fatal("delegation not injected", args)
+	}
+	if !strings.Contains(args, `mcp_servers.agentx.args=["preset","serve"]`) {
+		t.Fatal("delegation args missing", args)
+	}
+	if !strings.Contains(args, `mcp_servers.agentx.env.AX_DELEGATION_DEPTH="1"`) {
+		t.Fatal("depth not propagated", args)
+	}
+}
+
+func TestDelegationStopsAtMaxDepth(t *testing.T) {
+	r := &testRunner{}
+	s := testServer(t, r)
+	s.axBinary = "/usr/local/bin/ax"
+	s.delegationDepth = MaxDelegationDepth
+	callTest(t, s, "ExternalSubagent", map[string]any{"description": "x", "prompt": "x", "model": "review", "run_in_background": false})
+	r.mu.Lock()
+	args := strings.Join(r.plans[0].Args, " ")
+	r.mu.Unlock()
+	if strings.Contains(args, "mcp_servers.agentx") {
+		t.Fatal("delegation injected beyond max depth", args)
+	}
+}
+
+func TestDelegationNotInjectedWithoutBinary(t *testing.T) {
+	r := &testRunner{}
+	s := testServer(t, r)
+	s.axBinary = ""
+	callTest(t, s, "ExternalSubagent", map[string]any{"description": "x", "prompt": "x", "model": "review", "run_in_background": false})
+	r.mu.Lock()
+	args := strings.Join(r.plans[0].Args, " ")
+	r.mu.Unlock()
+	if strings.Contains(args, "mcp_servers.agentx") {
+		t.Fatal("delegation injected without binary", args)
+	}
+}
+
+func TestNestedContextForceForeground(t *testing.T) {
+	r := &testRunner{started: make(chan int, 4), release: make(chan struct{})}
+	s := testServer(t, r)
+	s.delegationDepth = 1
+	done := make(chan string, 1)
+	go func() {
+		text := callTest(t, s, "ExternalSubagent", map[string]any{"description": "test", "prompt": "test", "model": "review", "run_in_background": true})
+		done <- text
+	}()
+	<-r.started
+	close(r.release)
+	text := <-done
+	if !strings.Contains(text, "completed") {
+		t.Fatal("nested call did not wait for completion despite run_in_background:true", text)
+	}
+}
+
+func TestNestedInitializationIncludesDepthInfo(t *testing.T) {
+	s := testServer(t, &testRunner{})
+	s.delegationDepth = 1
+	result, err := s.handle("initialize", []byte(`{}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	instructions := result.(map[string]any)["instructions"].(string)
+	if !strings.Contains(instructions, "Nested delegation depth 1 of 2") || !strings.Contains(instructions, "further delegation available") {
+		t.Fatal("nested context not mentioned in initialization", instructions)
+	}
+	s.delegationDepth = MaxDelegationDepth
+	result, err = s.handle("initialize", []byte(`{}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	instructions = result.(map[string]any)["instructions"].(string)
+	if !strings.Contains(instructions, "not available (maximum depth)") {
+		t.Fatal("max depth not indicated", instructions)
+	}
+}
+
+func TestDelegationPropagatesSubagentHome(t *testing.T) {
+	r := &testRunner{}
+	s := testServer(t, r)
+	s.axBinary = "/usr/local/bin/ax"
+	t.Setenv("AX_SUBAGENT_HOME", "/custom/home")
+	callTest(t, s, "ExternalSubagent", map[string]any{"description": "x", "prompt": "x", "model": "review", "run_in_background": false})
+	r.mu.Lock()
+	args := strings.Join(r.plans[0].Args, " ")
+	r.mu.Unlock()
+	if !strings.Contains(args, `mcp_servers.agentx.env.AX_SUBAGENT_HOME="/custom/home"`) {
+		t.Fatal("AX_SUBAGENT_HOME not propagated", args)
+	}
+}
+
+func TestDelegationNotInjectedForPi(t *testing.T) {
+	r := &testRunner{}
+	s := testServer(t, r)
+	s.axBinary = "/usr/local/bin/ax"
+	piPreset := presets.Preset{Name: "pi-test", Agent: "pi", Model: "provider/test-model", Description: "pi test"}
+	savePreset(t, s.Home, piPreset)
+	// Pi execution will fail (mock returns Codex-format output); we only care about the plan args.
+	s.call("ExternalSubagent", []byte(`{"description":"x","prompt":"x","model":"pi-test","run_in_background":false}`))
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if len(r.plans) == 0 {
+		t.Fatal("no execution plan recorded")
+	}
+	args := strings.Join(r.plans[0].Args, " ")
+	if strings.Contains(args, "mcp_servers.agentx") {
+		t.Fatal("delegation injected into Pi", args)
+	}
+}
+
 func TestToolMetadataFitsHostLimitAtRealisticScale(t *testing.T) {
 	s := testServer(t, &testRunner{})
 	installPi(t)

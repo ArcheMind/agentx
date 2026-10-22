@@ -456,6 +456,33 @@ Inspect each one before removing it. Then run `git -C <repo> worktree remove
 directory was deleted by hand, run `git -C <repo> worktree prune` to drop its
 stale metadata. The branch stays until you delete it.
 
+## Nested delegation
+
+A dispatched Codex ExternalSubagent automatically has AgentX available as an
+MCP server and can call `ExternalSubagent` itself. This gives dispatched agents
+the ability to delegate subtasks to other agents without user configuration.
+
+- **Codex only.** AgentX injects its own MCP server configuration into the
+  Codex `-c` flags alongside `--ignore-user-config`, so the only MCP server
+  available to the dispatched Codex is AgentX. Pi has no MCP server support.
+- **Depth limit.** Delegation depth is tracked via `AX_DELEGATION_DEPTH` and
+  capped at 2. A depth-0 server (the top-level connection from Claude Code)
+  injects depth 1; a depth-1 server injects depth 2; a depth-2 server does
+  not inject further. The initialization instructions report the current depth
+  and whether further delegation is available.
+- **Foreground only.** Nested hosts (Codex exec) have no channel delivery, so
+  `run_in_background` is forced to false regardless of the caller's request.
+  The dispatched agent waits for each sub-agent to complete before continuing.
+- **Independent write scope.** Each nested ExternalSubagent's write scope is
+  enforced by its own Codex OS sandbox at call time, the same as a top-level
+  call. A read-only parent does not prevent a writable nested call (same as
+  how Claude Code orchestrates top-level calls).
+- **Independent auth.** The nested AgentX discovers credentials per execution
+  through the same `CODEX_HOME` / `PI_CODING_AGENT_DIR` mechanism. Credential
+  environment variables are stripped as usual.
+- **`AX_SUBAGENT_HOME`.** If set in the parent process, it is propagated to
+  the nested MCP server so the same preset and role collections are used.
+
 ## Native execution and permission limits
 
 | Adapter | Boundary | Native continuation | Effort |
