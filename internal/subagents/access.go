@@ -134,9 +134,9 @@ func Limits(o presets.Preset) string {
 	text.WriteString(roleLimits(o.Agent))
 	text.WriteString(IsolationLimits(o.Agent))
 	if o.Agent == "pi" {
-		text.WriteString("Effort is fixed by the preset (--thinking low, medium, high, xhigh or max; off and minimal rejected). Each turn fails unless the Pi session's thinking level and every provider request's reasoning effort equal it, so a silent clamp or remap is a failure, not a downgrade; models whose requests carry no reasoning effort field fail explicit effort. Exact provider/model required. ")
+		text.WriteString("Effort is fixed by the preset (--thinking low, medium, high, xhigh or max; off and minimal rejected). Mismatches between the requested and observed effort are reported but do not reject the turn. Exact provider/model required. ")
 	} else {
-		text.WriteString("Effort is fixed by the preset; each turn fails unless every completed model response in Codex telemetry reports exactly that effort (for example gpt-5.6-luna silently runs ultra as max); native rejection of an unsupported level is returned as failure. ")
+		text.WriteString("Effort is fixed by the preset; mismatches between the preset effort and executed effort are reported but do not reject the turn (for example gpt-5.6-luna silently runs ultra as max); native rejection of an unsupported level is returned as failure. ")
 	}
 	text.WriteString("Model availability is verified only by execution.")
 	return text.String()

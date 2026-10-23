@@ -43,29 +43,36 @@ func withoutCodexTelemetry(stderr string) string {
 	return strings.Join(lines, "\n")
 }
 
-// verifyEffort requires every native model request of the turn to have run at the preset effort.
+// verifyEffort reports whether the native model requests of the turn ran at the preset effort.
 func verifyEffort(requested string, executed []string, source string) (string, error) {
 	if len(executed) == 0 {
 		if requested == "" {
 			return "", nil
 		}
-		return "", fmt.Errorf("effort %s could not be verified: %s recorded no executed effort for this turn; the turn is not accepted and is not retried", requested, source)
+		return fmt.Sprintf("effort could not be verified: %s recorded no executed effort for this turn", source), nil
 	}
 	seen := map[string]bool{}
 	var distinct []string
+	var mismatched []string
 	for _, effort := range executed {
 		if effort == "" {
 			effort = "none sent"
 		}
 		if requested != "" && effort != requested {
-			return "", fmt.Errorf("native effort mismatch: preset effort %s, but %s shows %s executed (silent clamp or remap); the turn is not accepted and is not retried", requested, source, effort)
+			if !seen[effort] {
+				mismatched = append(mismatched, effort)
+			}
 		}
 		if !seen[effort] {
 			seen[effort] = true
 			distinct = append(distinct, effort)
 		}
 	}
-	return fmt.Sprintf("executed effort %s (%d model request(s), from %s)", strings.Join(distinct, ", "), len(executed), source), nil
+	summary := fmt.Sprintf("executed effort %s (%d model request(s), from %s)", strings.Join(distinct, ", "), len(executed), source)
+	if len(mismatched) > 0 {
+		summary += fmt.Sprintf("; WARNING: preset requested %s but native executed %s", requested, strings.Join(mismatched, ", "))
+	}
+	return summary, nil
 }
 
 func codexRollout(codexHome, thread string) (string, error) {
@@ -76,15 +83,15 @@ func codexRollout(codexHome, thread string) (string, error) {
 	return matches[0], nil
 }
 
-// verifyCodexRole checks that the native session carries the role as a developer message.
-func verifyCodexRole(codexHome, thread, instructions string) error {
+// verifyCodexRole checks that the native session carries the role as a developer message; a missing role is a warning.
+func verifyCodexRole(codexHome, thread, instructions string) (string, error) {
 	path, err := codexRollout(codexHome, thread)
 	if err != nil {
-		return fmt.Errorf("role instructions could not be verified: %w", err)
+		return "", fmt.Errorf("role instructions could not be verified: %w", err)
 	}
 	file, err := os.Open(path)
 	if err != nil {
-		return fmt.Errorf("role instructions could not be verified: %w", err)
+		return "", fmt.Errorf("role instructions could not be verified: %w", err)
 	}
 	defer file.Close()
 	scan := bufio.NewScanner(file)
@@ -105,14 +112,14 @@ func verifyCodexRole(codexHome, thread, instructions string) error {
 		}
 		for _, part := range entry.Payload.Content {
 			if part.Text == instructions {
-				return nil
+				return "", nil
 			}
 		}
 	}
 	if err := scan.Err(); err != nil {
-		return fmt.Errorf("role instructions could not be verified: %w", err)
+		return "", fmt.Errorf("role instructions could not be verified: %w", err)
 	}
-	return fmt.Errorf("role instructions not found as a developer message in Codex rollout %s; the turn is not accepted", path)
+	return "WARNING: role instructions not found as developer message in rollout", nil
 }
 
 type piEvidence struct {
@@ -200,27 +207,30 @@ func verifyPi(a *ExternalSubagentState, offset int64) (string, error) {
 		return "", fmt.Errorf("Pi session evidence unreadable: %w", err)
 	}
 	if len(evidence.efforts) == 0 {
-		return "", fmt.Errorf("the AgentX observer recorded no Pi provider request for this turn, so role and effort could not be verified; the turn is not accepted")
+		return "WARNING: the AgentX observer recorded no Pi provider request for this turn, so role and effort could not be verified", nil
 	}
+	var warnings []string
 	if a.Option.Effort != "" && evidence.thinking != a.Option.Effort {
-		return "", fmt.Errorf("native effort mismatch: preset effort %s, but the Pi session records thinking level %q (Pi clamped it); the turn is not accepted and is not retried", a.Option.Effort, evidence.thinking)
+		warnings = append(warnings, fmt.Sprintf("WARNING: preset effort %s, but the Pi session records thinking level %q (Pi clamped it)", a.Option.Effort, evidence.thinking))
 	}
 	summary, err := verifyEffort(a.Option.Effort, evidence.efforts, "Pi provider requests recorded by the AgentX observer")
 	if err != nil {
 		return "", err
 	}
 	if a.Role.Instructions != "" {
-		if len(evidence.roles) != len(evidence.efforts) {
-			return "", fmt.Errorf("role inclusion not recorded for every Pi provider request; the turn is not accepted")
-		}
+		missing := len(evidence.roles) != len(evidence.efforts)
 		for _, included := range evidence.roles {
 			if !included {
-				return "", fmt.Errorf("role %s instructions were missing from a Pi provider request; the turn is not accepted", a.Role.Name)
+				missing = true
 			}
 		}
-		summary += fmt.Sprintf("; role instructions present in all %d provider request(s)", len(evidence.roles))
+		if missing {
+			warnings = append(warnings, fmt.Sprintf("WARNING: role %s instructions missing or not recorded for every Pi provider request", a.Role.Name))
+		} else {
+			summary += fmt.Sprintf("; role instructions present in all %d provider request(s)", len(evidence.roles))
+		}
 	}
-	return summary, nil
+	return strings.Join(append([]string{summary}, warnings...), "; "), nil
 }
 
 func verifyCodex(a *ExternalSubagentState, stderr string) (string, error) {
@@ -229,13 +239,18 @@ func verifyCodex(a *ExternalSubagentState, stderr string) (string, error) {
 		return "", err
 	}
 	if a.Role.Instructions != "" {
-		if err := verifyCodexRole(a.auth.Dir, a.Session, a.Role.Instructions); err != nil {
+		warning, err := verifyCodexRole(a.auth.Dir, a.Session, a.Role.Instructions)
+		if err != nil {
 			return "", err
 		}
 		if summary != "" {
 			summary += "; "
 		}
-		summary += "role instructions recorded as a Codex developer message"
+		if warning != "" {
+			summary += warning
+		} else {
+			summary += "role instructions recorded as a Codex developer message"
+		}
 	}
 	return summary, nil
 }
