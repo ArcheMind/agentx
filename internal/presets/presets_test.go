@@ -23,7 +23,7 @@ func TestRoundTripKeepsDescriptionInMarkdownBody(t *testing.T) {
 		t.Fatalf("PRESET.md = %q", text)
 	}
 	loaded, problems, err := Load(home)
-	if err != nil || len(problems) != 0 || len(loaded) != 1 || loaded[0] != preset {
+	if err != nil || len(problems) != 0 || len(loaded) != 1 || !loaded[0].Equal(preset) {
 		t.Fatalf("loaded = %#v problems = %#v err = %v", loaded, problems, err)
 	}
 }
@@ -50,7 +50,7 @@ func TestCreateRejectsDuplicateWithoutOverwriting(t *testing.T) {
 		t.Fatalf("err = %v", err)
 	}
 	loaded, err := Read(home, "daily")
-	if err != nil || loaded != original {
+	if err != nil || !loaded.Equal(original) {
 		t.Fatalf("loaded = %#v err = %v", loaded, err)
 	}
 	entries, _ := os.ReadDir(Dir(home))
@@ -163,14 +163,14 @@ func TestUpdateKeepsOriginalOnInvalidInput(t *testing.T) {
 	if err := Update(home, Preset{Name: "review", Description: " ", Agent: "codex", Model: "m"}); err == nil {
 		t.Fatal("accepted blank description")
 	}
-	if loaded, _ := Read(home, "review"); loaded != base {
+	if loaded, _ := Read(home, "review"); !loaded.Equal(base) {
 		t.Fatalf("loaded = %#v", loaded)
 	}
 	base.Effort = "high"
 	if err := Update(home, base); err != nil {
 		t.Fatal(err)
 	}
-	if loaded, _ := Read(home, "review"); loaded != base {
+	if loaded, _ := Read(home, "review"); !loaded.Equal(base) {
 		t.Fatalf("loaded = %#v", loaded)
 	}
 }
@@ -189,5 +189,22 @@ func TestLaunchArgsNeverInventEffort(t *testing.T) {
 		if args := (Preset{Agent: agent}).LaunchArgs(); len(args) != 0 {
 			t.Fatalf("%s native default args = %v", agent, args)
 		}
+	}
+}
+
+func TestParsePresetWithNewFields(t *testing.T) {
+	data := []byte("---\nagent: codex\nmodel: test\nsandbox: false\nuser_config: false\nflags:\n  - --custom\n  - value\n---\nA test preset\n")
+	p, err := Parse("test", data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Sandbox == nil || *p.Sandbox != false {
+		t.Fatal("sandbox not parsed")
+	}
+	if p.UserConfig == nil || *p.UserConfig != false {
+		t.Fatal("user_config not parsed")
+	}
+	if len(p.Flags) != 2 || p.Flags[0] != "--custom" || p.Flags[1] != "value" {
+		t.Fatal("flags not parsed", p.Flags)
 	}
 }

@@ -164,7 +164,7 @@ func TestCreateWithManualModelSavesWithoutInference(t *testing.T) {
 	}
 	saved, err := presets.Read(application.Hooks.Home, "deep-review")
 	want := presets.Preset{Name: "deep-review", Description: "Review complex changes", Agent: "claude", Model: "opus-4", Effort: "low"}
-	if err != nil || saved != want {
+	if err != nil || !saved.Equal(want) {
 		t.Fatalf("saved = %#v err = %v", saved, err)
 	}
 	if len(runner.plans) != 0 || runner.rpc != 0 {
@@ -225,7 +225,7 @@ func TestCreateCancelAndDuplicateNeverLeaveOrOverwrite(t *testing.T) {
 	if len(entries) != 1 {
 		t.Fatalf("entries = %v", entries)
 	}
-	if original, _ := presets.Read(application.Hooks.Home, "deep-review"); original != deepReview {
+	if original, _ := presets.Read(application.Hooks.Home, "deep-review"); !original.Equal(deepReview) {
 		t.Fatalf("original overwritten: %#v", original)
 	}
 	if !strings.Contains(stdout.String(), "Error: Name already exists. Choose another name.") || strings.Count(stdout.String(), "Cancelled; nothing was saved.") != 2 {
@@ -267,7 +267,7 @@ func TestManageRenameDuplicateDeleteAndView(t *testing.T) {
 	if _, err := presets.Read(home, "quick"); err == nil || !strings.Contains(output, "History, native agents, credentials and running work are kept") {
 		t.Fatalf("delete output = %q", output)
 	}
-	if original, err := presets.Read(home, "deep-review"); err != nil || original != deepReview {
+	if original, err := presets.Read(home, "deep-review"); err != nil || !original.Equal(deepReview) {
 		t.Fatal("copy/rename/delete changed another preset", original, err)
 	}
 }
@@ -313,7 +313,7 @@ func TestEditChangesOnlyConfirmedFieldsAndCancelKeepsOriginal(t *testing.T) {
 	home := application.Hooks.Home
 	mustCreate(t, home, deepReview)
 	application.Run(context.Background(), nil)
-	if current, _ := presets.Read(home, "deep-review"); current != deepReview || !strings.Contains(stdout.String(), "Cancelled; nothing was saved.") {
+	if current, _ := presets.Read(home, "deep-review"); !current.Equal(deepReview) || !strings.Contains(stdout.String(), "Cancelled; nothing was saved.") {
 		t.Fatalf("cancelled edit changed preset: %#v", current)
 	}
 	application.Stdin = strings.NewReader("m" + "j\r" + "j\r" + "jj\r" + "kkkkk\r" + "\r" + "q" + "q")
@@ -321,7 +321,7 @@ func TestEditChangesOnlyConfirmedFieldsAndCancelKeepsOriginal(t *testing.T) {
 	application.Run(context.Background(), nil)
 	want := deepReview
 	want.Effort = ""
-	if current, _ := presets.Read(home, "deep-review"); current != want {
+	if current, _ := presets.Read(home, "deep-review"); !current.Equal(want) {
 		t.Fatalf("edited = %#v output = %q", current, stdout.String())
 	}
 	if !strings.Contains(stdout.String(), "Effort       native default") {

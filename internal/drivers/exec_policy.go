@@ -9,10 +9,12 @@ import (
 )
 
 // CodexPolicyExecPlan maps write scope onto Codex's native OS sandbox; no writable roots means
-// read-only.
+// read-only. sandbox=false drops the network and tmpdir restrictions of the writable-roots mode.
+// userConfig=false skips user config.toml, exec rules and hooks, whose MCP servers, hooks and
+// notify programs run outside the sandbox. flags are appended verbatim as native CLI arguments.
 // Role instructions travel as developer_instructions, which Codex records in the rollout as a
 // developer message; they never change sandbox, approval, model or effort.
-func CodexPolicyExecPlan(cwd, model, resume string, writableRoots []string, effort, roleInstructions string) (runtime.CommandPlan, error) {
+func CodexPolicyExecPlan(cwd, model, resume string, writableRoots []string, effort, roleInstructions string, sandbox *bool, userConfig *bool, flags []string) (runtime.CommandPlan, error) {
 	args := []string{"exec"}
 	if resume != "" {
 		if !sessionID.MatchString(resume) {
@@ -21,6 +23,9 @@ func CodexPolicyExecPlan(cwd, model, resume string, writableRoots []string, effo
 		args = append(args, "resume")
 	}
 	args = append(args, "--json")
+	if userConfig != nil && !*userConfig {
+		args = append(args, "--ignore-user-config", "--ignore-rules", "--disable", "hooks")
+	}
 	if len(writableRoots) == 0 {
 		args = append(args, "-c", `sandbox_mode="read-only"`)
 	} else {
@@ -28,7 +33,10 @@ func CodexPolicyExecPlan(cwd, model, resume string, writableRoots []string, effo
 		if err != nil {
 			return runtime.CommandPlan{}, err
 		}
-		args = append(args, "-c", `sandbox_mode="workspace-write"`, "-c", "sandbox_workspace_write.writable_roots="+string(roots), "-c", "sandbox_workspace_write.network_access=false", "-c", "sandbox_workspace_write.exclude_tmpdir_env_var=true", "-c", "sandbox_workspace_write.exclude_slash_tmp=true")
+		args = append(args, "-c", `sandbox_mode="workspace-write"`, "-c", "sandbox_workspace_write.writable_roots="+string(roots))
+		if sandbox == nil || *sandbox {
+			args = append(args, "-c", "sandbox_workspace_write.network_access=false", "-c", "sandbox_workspace_write.exclude_tmpdir_env_var=true", "-c", "sandbox_workspace_write.exclude_slash_tmp=true")
+		}
 	}
 	args = append(args, "-c", `approval_policy="never"`)
 	if effort != "" {
@@ -47,6 +55,7 @@ func CodexPolicyExecPlan(cwd, model, resume string, writableRoots []string, effo
 	if resume != "" {
 		args = append(args, resume)
 	}
+	args = append(args, flags...)
 	args = append(args, "-")
 	return runtime.CommandPlan{Executable: "codex", Args: args, Cwd: cwd}, nil
 }

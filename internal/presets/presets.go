@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 
@@ -22,11 +23,26 @@ var NamePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$`)
 var ErrExists = errors.New("a preset with this name already exists")
 
 type Preset struct {
-	Name        string `json:"name" yaml:"-"`
-	Description string `json:"description" yaml:"-"`
-	Agent       string `json:"agent" yaml:"agent"`
-	Model       string `json:"model" yaml:"model"`
-	Effort      string `json:"effort,omitempty" yaml:"effort,omitempty"`
+	Name        string   `json:"name" yaml:"-"`
+	Description string   `json:"description" yaml:"-"`
+	Agent       string   `json:"agent" yaml:"agent"`
+	Model       string   `json:"model" yaml:"model"`
+	Effort      string   `json:"effort,omitempty" yaml:"effort,omitempty"`
+	Sandbox     *bool    `json:"sandbox,omitempty" yaml:"sandbox,omitempty"`
+	UserConfig  *bool    `json:"user_config,omitempty" yaml:"user_config,omitempty"`
+	Flags       []string `json:"flags,omitempty" yaml:"flags,omitempty"`
+}
+
+func (p Preset) Equal(o Preset) bool {
+	return p.Name == o.Name && p.Description == o.Description && p.Agent == o.Agent && p.Model == o.Model && p.Effort == o.Effort &&
+		boolEqual(p.Sandbox, o.Sandbox) && boolEqual(p.UserConfig, o.UserConfig) && slices.Equal(p.Flags, o.Flags)
+}
+
+func boolEqual(a, b *bool) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return *a == *b
 }
 
 type Problem struct {
@@ -180,12 +196,13 @@ func Parse(name string, data []byte) (Preset, error) {
 			if !ok {
 				return p, fmt.Errorf("%s field %q must be a string", FileName, key)
 			}
+		case "sandbox", "user_config", "flags":
 		case "name":
 			return p, fmt.Errorf("%s must not set name; the directory name is the preset name", FileName)
 		case "description":
 			return p, fmt.Errorf("%s must not set description in front matter; write it below the front matter", FileName)
 		default:
-			return p, fmt.Errorf("%s has unknown field %q; allowed: agent, model, effort", FileName, key)
+			return p, fmt.Errorf("%s has unknown field %q; allowed: agent, model, effort, sandbox, user_config, flags", FileName, key)
 		}
 		switch key {
 		case "agent":
@@ -194,6 +211,30 @@ func Parse(name string, data []byte) (Preset, error) {
 			p.Model = value
 		case "effort":
 			p.Effort = value
+		case "sandbox":
+			b, ok := fields[key].(bool)
+			if !ok {
+				return p, fmt.Errorf("%s field %q must be a boolean", FileName, key)
+			}
+			p.Sandbox = &b
+		case "user_config":
+			b, ok := fields[key].(bool)
+			if !ok {
+				return p, fmt.Errorf("%s field %q must be a boolean", FileName, key)
+			}
+			p.UserConfig = &b
+		case "flags":
+			raw, ok := fields[key].([]any)
+			if !ok {
+				return p, fmt.Errorf("%s field %q must be a list of strings", FileName, key)
+			}
+			for _, item := range raw {
+				s, ok := item.(string)
+				if !ok || s == "" {
+					return p, fmt.Errorf("%s field %q contains a non-string or empty entry", FileName, key)
+				}
+				p.Flags = append(p.Flags, s)
+			}
 		}
 	}
 	return p, p.Validate()

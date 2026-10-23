@@ -378,7 +378,7 @@ func (s *Server) call(name string, raw json.RawMessage) (string, error) {
 			s.mu.Unlock()
 			return "", err
 		}
-		if o != a.Option {
+		if !o.Equal(a.Option) {
 			s.mu.Unlock()
 			return "", fmt.Errorf("original preset %s changed; cannot resume this ExternalSubagent without changing its identity", a.Option.Name)
 		}
@@ -589,7 +589,7 @@ func (s *Server) completion(a *ExternalSubagentState, job *Job) {
 }
 
 func (s *Server) execute(ctx context.Context, a *ExternalSubagentState, prompt string) (string, any, error) {
-	if current, err := presets.Read(s.Home, a.Option.Name); err != nil || current != a.Option {
+	if current, err := presets.Read(s.Home, a.Option.Name); err != nil || !current.Equal(a.Option) {
 		return "", nil, fmt.Errorf("original preset %s changed or was removed before execution; no replacement selected", a.Option.Name)
 	}
 	if role, err := resolveRole(s.Home, a.Role.Name); err != nil || role != a.Role {
@@ -614,7 +614,7 @@ func (s *Server) execute(ctx context.Context, a *ExternalSubagentState, prompt s
 	a.auth = auth
 	var plan runtime.CommandPlan
 	if a.Option.Agent == "codex" {
-		plan, err = drivers.CodexPolicyExecPlan(a.Cwd, a.Option.Model, a.Session, roots, a.Option.Effort, a.Role.Instructions)
+		plan, err = drivers.CodexPolicyExecPlan(a.Cwd, a.Option.Model, a.Session, roots, a.Option.Effort, a.Role.Instructions, a.Option.Sandbox, a.Option.UserConfig, a.Option.Flags)
 		if err != nil {
 			return "", nil, err
 		}
@@ -634,7 +634,11 @@ func (s *Server) execute(ctx context.Context, a *ExternalSubagentState, prompt s
 			}
 			a.Session = filepath.Join(dir, "session.jsonl")
 		}
-		plan.Args = append(plan.Args, "--session", a.Session, "--no-skills", "--no-prompt-templates", "--no-approve")
+		plan.Args = append(plan.Args, "--session", a.Session, "--no-approve")
+		if a.Option.UserConfig != nil && !*a.Option.UserConfig {
+			plan.Args = append(plan.Args, "--no-skills", "--no-prompt-templates", "--no-extensions")
+		}
+		plan.Args = append(plan.Args, a.Option.Flags...)
 	}
 	plan.Env, plan.UnsetEnv = authEnvironment(auth)
 	observed := a.Option.Agent == "pi" && (a.Option.Effort != "" || a.Role.Instructions != "")
