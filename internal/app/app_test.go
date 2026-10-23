@@ -861,3 +861,144 @@ func TestConvertToOpenCodeErrors(t *testing.T) {
 		t.Fatalf("error = %v", err)
 	}
 }
+
+func TestSessionExportStreamsUnifiedJSON(t *testing.T) {
+	home := t.TempDir()
+	workspace := t.TempDir()
+	path := filepath.Join(home, ".claude", "projects", "fixture", "session.jsonl")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	fixture := `{"type":"user","sessionId":"session-id","cwd":"` + workspace + `","timestamp":"2026-09-01T10:00:00Z","message":{"content":"continue work"}}`
+	if err := os.WriteFile(path, []byte(fixture), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var stdout bytes.Buffer
+	application := New(false, strings.NewReader(""), &stdout, &bytes.Buffer{})
+	application.Sessions = sessions.Service{HomeDir: home}
+	if err := application.Run(context.Background(), []string{"session", "export", "session-id", "--source", "claude"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, expected := range []string{`"id": "session-id"`, `"provider": "claude"`, `"text": "continue work"`} {
+		if !strings.Contains(stdout.String(), expected) {
+			t.Fatalf("export output %q does not contain %q", stdout.String(), expected)
+		}
+	}
+}
+
+func TestSessionImportWritesNativeStore(t *testing.T) {
+	home := t.TempDir()
+	workspace := t.TempDir()
+	input := `{"id":"s1","provider":"codex","workspace":"` + workspace + `","messageCount":1,"messages":[{"id":"m1","role":"user","content":[{"type":"text","text":"hello"}]}]}`
+	var stdout bytes.Buffer
+	application := New(false, strings.NewReader(input), &stdout, &bytes.Buffer{})
+	application.Sessions = sessions.Service{HomeDir: home}
+	if err := application.Run(context.Background(), []string{"session", "import", "claude"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, expected := range []string{"Imported transcript into claude: ", "Resume: ax session resume claude "} {
+		if !strings.Contains(stdout.String(), expected) {
+			t.Fatalf("import output %q does not contain %q", stdout.String(), expected)
+		}
+	}
+	encoded := strings.ReplaceAll(workspace, "/", "-")
+	matches, err := filepath.Glob(filepath.Join(home, ".claude", "projects", encoded, "*.jsonl"))
+	if err != nil || len(matches) != 1 {
+		t.Fatalf("imported session files = %v, err = %v", matches, err)
+	}
+	data, err := os.ReadFile(matches[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "hello") {
+		t.Fatalf("imported session %q lacks the message", string(data))
+	}
+}
+
+func TestSessionImportUsage(t *testing.T) {
+	application := New(false, strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{})
+	err := application.Run(context.Background(), []string{"session", "import"})
+	if err == nil || !strings.Contains(err.Error(), "usage: ax [--json|--yaml] session import") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestResumeFlagValidation(t *testing.T) {
+	application := New(false, strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{})
+	if err := application.Run(context.Background(), []string{"--resume"}); err == nil || !strings.Contains(err.Error(), "usage: ax --resume") {
+		t.Fatalf("missing file error = %v", err)
+	}
+	if err := application.Run(context.Background(), []string{"--json", "--resume", "x.json"}); err == nil || !strings.Contains(err.Error(), "not supported") {
+		t.Fatalf("structured error = %v", err)
+	}
+	missing := filepath.Join(t.TempDir(), "missing.json")
+	if err := application.Run(context.Background(), []string{"--resume", missing}); err == nil || !strings.Contains(err.Error(), "read transcript file") {
+		t.Fatalf("read error = %v", err)
+	}
+}
+
+func TestTranscriptFileName(t *testing.T) {
+	name := transcriptFileName(sessions.Detail{ID: "abcdef1234567890", Provider: "claude", Title: "Fix Login Bug!"})
+	if name != "claude-fix-login-bug-abcdef12.json" {
+		t.Fatalf("name = %q", name)
+	}
+	name = transcriptFileName(sessions.Detail{ID: "x1", Provider: "codex", Title: "修复 登录"})
+	if name != "codex-修复-登录-x1.json" {
+		t.Fatalf("unicode name = %q", name)
+	}
+	if name = transcriptFileName(sessions.Detail{Provider: "pi"}); name != "pi.json" {
+		t.Fatalf("bare name = %q", name)
+	}
+}
+
+func TestHomeSelectorExportsSession(t *testing.T) {
+	var stdout bytes.Buffer
+	application := newHomeApp(t, "je", &stdout)
+	groups := []sessionGroup{{Heading: "Current workspace", Items: []sessions.Summary{{ID: "current", Provider: "codex", Title: "Current work"}}}}
+	item, action, _, err := application.chooseHome(bufio.NewReader(application.Stdin), application.Hooks.Home, groups, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if action != selectionExport || item.kind != homeSession {
+		t.Fatalf("action = %v, kind = %v", action, item.kind)
+	}
+	if !strings.Contains(stdout.String(), "e export session") {
+		t.Fatalf("home help %q lacks export hint", stdout.String())
+	}
+}
+
+func TestExportChosenSessionWritesMeaningfulFile(t *testing.T) {
+	home := t.TempDir()
+	workspace := t.TempDir()
+	t.Chdir(t.TempDir())
+	path := filepath.Join(home, ".codex", "sessions", "2026", "09", "11", "work.jsonl")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	fixture := fmt.Sprintf("{\"type\":\"session_meta\",\"timestamp\":\"2026-09-11T10:00:00Z\",\"payload\":{\"id\":\"cx1\",\"cwd\":%q}}\n{\"type\":\"response_item\",\"timestamp\":\"2026-09-11T10:01:00Z\",\"payload\":{\"type\":\"message\",\"role\":\"user\",\"content\":\"hello work\"}}", workspace)
+	if err := os.WriteFile(path, []byte(fixture), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var stdout bytes.Buffer
+	application := New(false, strings.NewReader(""), &stdout, &bytes.Buffer{})
+	application.Sessions = sessions.Service{HomeDir: home}
+	if err := application.exportChosenSession(sessions.Summary{ID: "cx1", Provider: "codex"}); err != nil {
+		t.Fatal(err)
+	}
+	matches, err := filepath.Glob("codex-*.json")
+	if err != nil || len(matches) != 1 {
+		t.Fatalf("exported files = %v, err = %v", matches, err)
+	}
+	if !strings.Contains(stdout.String(), "Exported transcript to "+matches[0]) {
+		t.Fatalf("export output = %q", stdout.String())
+	}
+	data, err := os.ReadFile(matches[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, expected := range []string{`"id": "cx1"`, `"provider": "codex"`, `"text": "hello work"`} {
+		if !strings.Contains(string(data), expected) {
+			t.Fatalf("exported transcript %q does not contain %q", string(data), expected)
+		}
+	}
+}

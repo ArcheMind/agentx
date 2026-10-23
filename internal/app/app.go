@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/ArcheMind/agentx/internal/drivers"
 	"github.com/ArcheMind/agentx/internal/hooks"
@@ -77,6 +78,15 @@ func (a App) Run(ctx context.Context, args []string) error {
 	}
 	if includeSubagents {
 		return fmt.Errorf("--include-subagents is only supported by interactive session resume or session list")
+	}
+	if args[0] == "--resume" {
+		if len(args) != 2 || args[1] == "-" {
+			return fmt.Errorf("usage: ax --resume <transcript-file>")
+		}
+		if err := a.rejectStructured("resume from transcript file"); err != nil {
+			return err
+		}
+		return a.resumeTranscriptFile(ctx, args[1])
 	}
 	switch args[0] {
 	case "help", "-h", "--help":
@@ -602,6 +612,10 @@ func (a App) sessions(ctx context.Context, args []string) error {
 		return a.sessionInfo(args[1:])
 	case "resume":
 		return a.sessionResume(ctx, args[1:])
+	case "export":
+		return a.sessionExport(args[1:])
+	case "import":
+		return a.sessionImport(args[1:])
 	default:
 		return sessionUsageError()
 	}
@@ -759,6 +773,124 @@ func (a App) sessionResume(ctx context.Context, args []string) error {
 	return a.resumeSession(ctx, agent, detail, workspace, "", dryRun)
 }
 
+func (a App) sessionExport(args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("usage: ax [--json|--yaml] session export <session-id> [--source <provider>]")
+	}
+	id := args[0]
+	var source string
+	for index := 1; index < len(args); index++ {
+		switch args[index] {
+		case "--source":
+			index++
+			if index >= len(args) {
+				return fmt.Errorf("--source requires a value")
+			}
+			source = args[index]
+		default:
+			return fmt.Errorf("unknown session export option %q", args[index])
+		}
+	}
+	detail, err := a.Sessions.Info(id, source)
+	if err != nil {
+		return err
+	}
+	return writeStructured(a.Stdout, detail, a.structuredDefault())
+}
+
+func (a App) sessionImport(args []string) error {
+	if len(args) == 0 || len(args) > 2 {
+		return fmt.Errorf("usage: ax [--json|--yaml] session import <target-agent> [file]")
+	}
+	agent, err := a.Registry.Get(args[0])
+	if err != nil {
+		return err
+	}
+	path := ""
+	if len(args) == 2 {
+		path = args[1]
+	}
+	detail, err := a.readTranscript(path)
+	if err != nil {
+		return err
+	}
+	stateDir := filepath.Join(a.Sessions.HomeDir, ".local", "state", "agentx", "resume")
+	token, err := sessions.WriteSessionFile(detail, agent.ID, stateDir, a.Sessions.HomeDir)
+	if err != nil {
+		return err
+	}
+	if a.Output != OutputText {
+		return writeStructured(a.Stdout, map[string]string{"agent": agent.ID, "session": token}, a.Output)
+	}
+	fmt.Fprintf(a.Stdout, "Imported transcript into %s: %s\n", agent.ID, token)
+	if agent.ID == "claude" || agent.ID == "codex" {
+		fmt.Fprintf(a.Stdout, "Resume: ax session resume %s %s\n", agent.ID, token)
+	}
+	return nil
+}
+
+func (a App) readTranscript(path string) (sessions.Detail, error) {
+	var data []byte
+	var err error
+	if path == "" || path == "-" {
+		data, err = io.ReadAll(a.Stdin)
+		if err != nil {
+			return sessions.Detail{}, fmt.Errorf("read stdin: %w", err)
+		}
+	} else {
+		data, err = os.ReadFile(path)
+		if err != nil {
+			return sessions.Detail{}, fmt.Errorf("read transcript file: %w", err)
+		}
+	}
+	var detail sessions.Detail
+	if err := json.Unmarshal(data, &detail); err != nil {
+		return sessions.Detail{}, fmt.Errorf("parse unified transcript JSON: %w", err)
+	}
+	return detail, nil
+}
+
+func (a App) resumeTranscriptFile(ctx context.Context, path string) error {
+	detail, err := a.readTranscript(path)
+	if err != nil {
+		return err
+	}
+	// Exported transcripts may come from another machine; an inaccessible
+	// workspace must not block resume, so fall back to the current directory.
+	if detail.Workspace != "" {
+		if info, err := os.Stat(detail.Workspace); err != nil || !info.IsDir() {
+			detail.Workspace = ""
+		}
+	}
+	reader := bufio.NewReader(a.Stdin)
+	return a.resumeDetailInteractive(ctx, reader, detail)
+}
+
+func transcriptFileName(detail sessions.Detail) string {
+	mapped := strings.Map(func(r rune) rune {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			return unicode.ToLower(r)
+		}
+		return '-'
+	}, detail.Title)
+	mapped = strings.Trim(strings.Join(strings.FieldsFunc(mapped, func(r rune) bool { return r == '-' }), "-"), "-")
+	if runes := []rune(mapped); len(runes) > 40 {
+		mapped = string(runes[:40])
+	}
+	id := detail.ID
+	if runes := []rune(id); len(runes) > 8 {
+		id = string(runes[:8])
+	}
+	parts := []string{detail.Provider}
+	if mapped != "" {
+		parts = append(parts, mapped)
+	}
+	if id != "" {
+		parts = append(parts, id)
+	}
+	return strings.Join(parts, "-") + ".json"
+}
+
 func (a App) resumeSession(ctx context.Context, agent runtime.Agent, detail sessions.Detail, workspace, model string, dryRun bool) error {
 	var err error
 	if workspace == "" {
@@ -862,7 +994,7 @@ func (a App) prompt(reader *bufio.Reader, label string, allowBlank bool) (string
 }
 
 func sessionUsageError() error {
-	return fmt.Errorf("usage: ax [--json|--yaml] session <list|show|resume> [args...]")
+	return fmt.Errorf("usage: ax [--json|--yaml] session <list|show|resume|export|import> [args...]")
 }
 
 func singleLine(value string, max int) string {
@@ -879,12 +1011,13 @@ func (a App) printHelp() {
 
 Usage:
   ax [--include-subagents]
+  ax --resume <transcript-file>
   ax <agent> [--model <model>] [--cwd <path>] [--dry-run] [-- <native args...>]
   ax [--json|--yaml] list
 
   ax [--json|--yaml] agent <list|show|install|run|exec> [args...]
   ax [--json|--yaml] auth <list|show|login|logout> [args...]
-  ax [--json|--yaml] session <list|show|resume> [args...]
+  ax [--json|--yaml] session <list|show|resume|export|import> [args...]
   ax [--json|--yaml] skill <list|show|install> [args...]
   ax [--json|--yaml] hook list
   ax [--json|--yaml] mcp <list|show> [args...]
@@ -898,7 +1031,9 @@ Usage:
   ax version
 
 Running ax without arguments opens the interactive home: start a new session
-with a preset, create or manage presets (m), or continue a recent session.
+with a preset, create or manage presets (m), continue a recent session, or
+export one as a unified transcript file (e). ax --resume <transcript-file>
+resumes an exported transcript interactively.
 Presets live in ~/.agentx/presets/<name>/PRESET.md and are shared with MCP
 ExternalSubagents. The ax <agent> shortcut launches an installed agent directly.
 

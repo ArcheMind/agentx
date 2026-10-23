@@ -40,7 +40,7 @@ Recent sessions · Global
   gemini    Sep 10 09:40 (2h 30m)   ../mobile-app         Prepare the mobile release checkli…
   pi        Sep 10 06:15 (55m)      ../infrastructure     Add a preflight check before the p…
 
-↑/↓ or j/k select · Enter open · m manage presets · q/Esc cancel
+↑/↓ or j/k select · Enter open · e export session · m manage presets · q/Esc cancel
 ```
 
 Non-interactive and filtered:
@@ -75,6 +75,16 @@ ax session resume codex <claude-session-id> --source claude
 ```
 
 AgentX converts the session into the target agent's native transcript format and starts its native resume (`claude --resume`, `codex resume`, `pi --session`, …). Source sessions are only read, never modified.
+
+## Move it to another machine
+
+Press e on a session in the interactive home to export it as a unified transcript file (`<provider>-<title>-<id>.json`), or stream it:
+
+```console
+ax session export <session-id> --source claude > work.json
+ax session import codex work.json      # write into codex's native store, print the new session id
+ax --resume work.json                  # import and resume interactively in one step
+```
 
 ## Call another agent's preset from inside yours
 
@@ -167,12 +177,13 @@ DeepSeek Harness has no verified session source, so it is not a session or resum
 
 ```text
 ax
+ax --resume <transcript-file>
 ax <agent> [--model <model>] [--cwd <path>] [--dry-run] [-- <native args...>]
 ax [--json|--yaml] list
 
 ax [--json|--yaml] agent <list|show|install|run|exec> [args...]
 ax [--json|--yaml] auth <list|show|login|logout> [args...]
-ax [--json|--yaml] session <list|show|resume> [args...]
+ax [--json|--yaml] session <list|show|resume|export|import> [args...]
 ax [--json|--yaml] skill <list|show|install> [args...]
 ax [--json|--yaml] hook list
 ax [--json|--yaml] mcp <list|show> [args...]

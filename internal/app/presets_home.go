@@ -24,7 +24,7 @@ const (
 	presetLineWidth  = 96
 	presetMinDesc    = 20
 	presetModelWidth = 24
-	homeHelp         = "↑/↓ or j/k select · Enter open · m manage presets · q/Esc cancel"
+	homeHelp         = "↑/↓ or j/k select · Enter open · e export session · m manage presets · q/Esc cancel"
 	emptyPresetsHint = "Save an agent, model and effort for reuse."
 )
 
@@ -122,20 +122,20 @@ func homeEffort(effort string) string {
 	return effort
 }
 
-func (a App) chooseHome(reader *bufio.Reader, home string, groups []sessionGroup, selected int) (homeItem, bool, int, error) {
+func (a App) chooseHome(reader *bufio.Reader, home string, groups []sessionGroup, selected int) (homeItem, selectionKey, int, error) {
 	list, problems, loadErr := presets.Load(home)
 	rows, items := buildHomeRows(list, problems, loadErr, groups, time.Now())
 	if selected >= len(items) {
 		selected = 0
 	}
-	index, manage, err := a.runSelector(reader, selector{help: homeHelp, footer: true, marker: "› ", manage: true, selected: selected}, rows, len(items), nil)
+	index, action, err := a.runSelector(reader, selector{help: homeHelp, footer: true, marker: "› ", manage: true, selected: selected}, rows, len(items), nil)
 	if errors.Is(err, errSelectionCancelled) {
-		return homeItem{}, false, 0, errHomeCancelled
+		return homeItem{}, selectionConfirm, 0, errHomeCancelled
 	}
 	if err != nil {
-		return homeItem{}, false, 0, err
+		return homeItem{}, selectionConfirm, 0, err
 	}
-	return items[index], manage, index, nil
+	return items[index], action, index, nil
 }
 
 func (a App) interactiveResume(ctx context.Context, includeSubagents bool) error {
@@ -149,18 +149,22 @@ func (a App) interactiveResume(ctx context.Context, includeSubagents bool) error
 	home := a.presetHome()
 	selected := 0
 	for {
-		item, manage, index, err := a.chooseHome(reader, home, groups, selected)
+		item, action, index, err := a.chooseHome(reader, home, groups, selected)
 		if err != nil {
 			return err
 		}
 		selected = index
 		launched := false
 		switch {
-		case manage && item.kind == homePreset:
+		case action == selectionExport:
+			if item.kind == homeSession {
+				err = a.exportChosenSession(item.session)
+			}
+		case action == selectionManage && item.kind == homePreset:
 			launched, err = a.managePreset(ctx, reader, home, item.preset)
-		case manage && item.kind == homeProblem:
+		case action == selectionManage && item.kind == homeProblem:
 			err = a.manageProblem(ctx, reader, home, item.problem)
-		case manage:
+		case action == selectionManage:
 			launched, err = a.chooseManagedPreset(ctx, reader, home)
 		case item.kind == homeSession:
 			return a.resumeChosenSession(ctx, reader, item.session)
@@ -186,6 +190,28 @@ func (a App) resumeChosenSession(ctx context.Context, reader *bufio.Reader, sele
 	if err != nil {
 		return err
 	}
+	return a.resumeDetailInteractive(ctx, reader, detail)
+}
+
+func (a App) exportChosenSession(selected sessions.Summary) error {
+	detail, err := a.Sessions.Info(selected.ID, selected.Provider)
+	if err != nil {
+		return err
+	}
+	name := transcriptFileName(detail)
+	file, err := os.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+	if err != nil {
+		return fmt.Errorf("create transcript file: %w", err)
+	}
+	defer file.Close()
+	if err := writeStructured(file, detail, OutputJSON); err != nil {
+		return err
+	}
+	fmt.Fprintf(a.Stdout, "Exported transcript to %s\n", name)
+	return nil
+}
+
+func (a App) resumeDetailInteractive(ctx context.Context, reader *bufio.Reader, detail sessions.Detail) error {
 	agents := make([]runtime.Agent, 0)
 	for _, agent := range a.Registry.All() {
 		if _, err := exec.LookPath(agent.Binary); err == nil {

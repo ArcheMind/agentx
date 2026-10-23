@@ -169,8 +169,8 @@ func (a App) chooseInteractive(reader *bufio.Reader, title string, rows []conten
 	return index, err
 }
 
-// runSelector reports manage=true when the user pressed m on the given item.
-func (a App) runSelector(reader *bufio.Reader, options selector, allRows []contentRow, itemCount int, emptyErr error) (int, bool, error) {
+// runSelector reports the key that ended the loop: selectionConfirm, or selectionManage/selectionExport when enabled.
+func (a App) runSelector(reader *bufio.Reader, options selector, allRows []contentRow, itemCount int, emptyErr error) (int, selectionKey, error) {
 	selected := options.selected
 	viewStart := 0
 	lineCount := 0
@@ -269,19 +269,19 @@ func (a App) runSelector(reader *bufio.Reader, options selector, allRows []conte
 
 	render(false)
 	if itemCount == 0 {
-		return 0, false, emptyErr
+		return 0, selectionConfirm, emptyErr
 	}
 
 	restore, err := makeRaw(a.Stdin)
 	if err != nil {
-		return 0, false, err
+		return 0, selectionConfirm, err
 	}
 	defer restore()
 
 	for {
 		key, err := readSelectionKey(reader)
 		if err != nil {
-			return 0, false, err
+			return 0, selectionConfirm, err
 		}
 		switch key {
 		case selectionUp:
@@ -296,15 +296,20 @@ func (a App) runSelector(reader *bufio.Reader, options selector, allRows []conte
 			}
 		case selectionConfirm:
 			fmt.Fprint(a.Stdout, "\r\n")
-			return selected, false, nil
+			return selected, selectionConfirm, nil
 		case selectionManage:
 			if options.manage {
 				fmt.Fprint(a.Stdout, "\r\n")
-				return selected, true, nil
+				return selected, selectionManage, nil
+			}
+		case selectionExport:
+			if options.manage {
+				fmt.Fprint(a.Stdout, "\r\n")
+				return selected, selectionExport, nil
 			}
 		case selectionCancel:
 			fmt.Fprint(a.Stdout, "\r\n")
-			return 0, false, errSelectionCancelled
+			return 0, selectionConfirm, errSelectionCancelled
 		}
 	}
 }
@@ -382,6 +387,7 @@ const (
 	selectionConfirm
 	selectionCancel
 	selectionManage
+	selectionExport
 )
 
 func readSelectionKey(reader *bufio.Reader) (selectionKey, error) {
@@ -403,6 +409,8 @@ func readSelectionKey(reader *bufio.Reader) (selectionKey, error) {
 		return selectionCancel, nil
 	case 'm', 'M':
 		return selectionManage, nil
+	case 'e', 'E':
+		return selectionExport, nil
 	case 27:
 		if reader.Buffered() < 2 {
 			return selectionCancel, nil
