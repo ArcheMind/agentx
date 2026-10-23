@@ -47,17 +47,10 @@ func presetUsageError() error {
 
 func presetEntry(o presets.Preset) map[string]any {
 	reason := "static requirements satisfied; login and model access verified per execution"
-	if presets.Agents[o.Agent].Subagent {
-		if err := subagents.Ready(o); err != nil {
-			reason = err.Error()
-		}
-	} else {
-		reason = "interactive launch only; not callable as ExternalSubagent"
+	if err := subagents.Ready(o); err != nil {
+		reason = err.Error()
 	}
-	entry := map[string]any{"name": o.Name, "agent": o.Agent, "model": o.Model, "effort": presets.EffortLabel(o.Effort), "description": o.Description, "status": reason}
-	if presets.Agents[o.Agent].Subagent {
-		entry["limits"] = subagents.Limits(o)
-	}
+	entry := map[string]any{"name": o.Name, "agent": o.Agent, "model": o.Model, "effort": presets.EffortLabel(o.Effort), "description": o.Description, "status": reason, "limits": subagents.Limits(o)}
 	return entry
 }
 

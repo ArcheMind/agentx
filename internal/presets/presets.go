@@ -56,16 +56,15 @@ type AgentRule struct {
 	// Efforts are the explicit levels the native CLI accepts; per-model support may still differ.
 	Efforts      []string
 	EffortNote   string
-	Subagent     bool
 	WriteCapable bool
 }
 
 var Agents = map[string]AgentRule{
-	"claude":   {Name: "Claude", Efforts: []string{"low", "medium", "high", "xhigh", "max"}, EffortNote: "Claude Code --effort levels; per-model support is not verified locally"},
-	"codex":    {Name: "Codex", Efforts: []string{"none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"}, EffortNote: "Codex reports supported levels per model", Subagent: true, WriteCapable: true},
+	"claude":   {Name: "Claude", Efforts: []string{"low", "medium", "high", "xhigh", "max"}, EffortNote: "Claude Code --effort levels; per-model support is not verified locally", WriteCapable: true},
+	"codex":    {Name: "Codex", Efforts: []string{"none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"}, EffortNote: "Codex reports supported levels per model", WriteCapable: true},
 	"gemini":   {Name: "Gemini", EffortNote: "Gemini CLI exposes no verified effort control"},
 	"opencode": {Name: "OpenCode", EffortNote: "OpenCode exposes no verified effort control"},
-	"pi":       {Name: "Pi", Efforts: []string{"low", "medium", "high", "xhigh", "max"}, EffortNote: "Pi --thinking levels; ExternalSubagent execution fails unless Pi's provider request carries exactly this level (Pi silently clamps or remaps unsupported levels). off and minimal are not offered: for Codex-backed models Pi sends no effort for off (the server default applies) and sends low for minimal", Subagent: true},
+	"pi":       {Name: "Pi", Efforts: []string{"low", "medium", "high", "xhigh", "max"}, EffortNote: "Pi --thinking levels; ExternalSubagent execution fails unless Pi's provider request carries exactly this level (Pi silently clamps or remaps unsupported levels). off and minimal are not offered: for Codex-backed models Pi sends no effort for off (the server default applies) and sends low for minimal"},
 }
 
 var AgentOrder = []string{"claude", "codex", "gemini", "opencode", "pi"}

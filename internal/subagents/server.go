@@ -613,13 +613,19 @@ func (s *Server) execute(ctx context.Context, a *ExternalSubagentState, prompt s
 	}
 	a.auth = auth
 	var plan runtime.CommandPlan
-	if a.Option.Agent == "codex" {
+	switch a.Option.Agent {
+	case "claude":
+		plan, err = drivers.ClaudePolicyExecPlan(a.Cwd, a.Option.Model, a.Session, a.Option.Effort, a.Role.Instructions, a.Option.Flags)
+		if err != nil {
+			return "", nil, err
+		}
+	case "codex":
 		plan, err = drivers.CodexPolicyExecPlan(a.Cwd, a.Option.Model, a.Session, roots, a.Option.Effort, a.Role.Instructions, a.Option.Sandbox, a.Option.UserConfig, a.Option.Flags)
 		if err != nil {
 			return "", nil, err
 		}
 		s.injectDelegation(&plan)
-	} else {
+	default:
 		if len(roots) != 0 {
 			return "", nil, fmt.Errorf("Pi cannot write: it has no runtime write boundary")
 		}
@@ -711,10 +717,14 @@ func parseOutput(a *ExternalSubagentState, output string) (string, any, error) {
 			continue
 		}
 		var event struct {
-			Type   string `json:"type"`
-			Thread string `json:"thread_id"`
-			ID     string `json:"id"`
-			Item   struct {
+			Type    string `json:"type"`
+			Subtype string `json:"subtype"`
+			Thread  string `json:"thread_id"`
+			ID      string `json:"id"`
+			Session string `json:"session_id"`
+			Result  string `json:"result"`
+			IsError bool   `json:"is_error"`
+			Item    struct {
 				Type string `json:"type"`
 				Text string `json:"text"`
 			} `json:"item"`
@@ -725,7 +735,34 @@ func parseOutput(a *ExternalSubagentState, output string) (string, any, error) {
 		if err := json.Unmarshal(scan.Bytes(), &event); err != nil {
 			return "", nil, fmt.Errorf("invalid %s event: %w", a.Option.Agent, err)
 		}
-		if a.Option.Agent == "codex" {
+		switch {
+		case a.Option.Agent == "claude":
+			switch event.Type {
+			case "system":
+				if event.Subtype == "init" && event.Session != "" {
+					if a.Session != "" && a.Session != event.Session {
+						return "", nil, fmt.Errorf("unexpected Claude session; no continuation accepted")
+					}
+					a.Session = event.Session
+					sessionSeen = true
+				}
+			case "result":
+				if event.Session != "" && !sessionSeen {
+					a.Session = event.Session
+					sessionSeen = true
+				}
+				usage = event.Usage
+				if event.IsError {
+					failure = event.Result
+					if failure == "" {
+						failure = event.Subtype
+					}
+				} else {
+					text = event.Result
+					completed = true
+				}
+			}
+		case a.Option.Agent == "codex":
 			switch event.Type {
 			case "thread.started":
 				if event.Thread == "" || (a.Session != "" && a.Session != event.Thread) {
@@ -746,7 +783,7 @@ func parseOutput(a *ExternalSubagentState, output string) (string, any, error) {
 					failure = string(event.Message)
 				}
 			}
-		} else {
+		default:
 			switch event.Type {
 			case "session":
 				if event.ID == "" || (a.NativeID != "" && a.NativeID != event.ID) {

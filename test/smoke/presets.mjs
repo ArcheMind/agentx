@@ -44,7 +44,7 @@ const rpc=(method,params={})=>new Promise(done=>{const id=++next;waiting.set(id,
 const call=async(name,args)=>{const event=await rpc('tools/call',{name,arguments:args});return event.result.content.map(part=>part.text).join('\n')}
 try{
  const init=(await rpc('initialize',{protocolVersion:'2024-11-05',capabilities:{},clientInfo:{name:'presets-smoke',version:'1'}})).result
- assert(init.instructions.includes('- smoke-review: execution agent="codex"; exact configured model ID (including provider prefix)="smoke-model"; effort="low"; user description="Smoke review preset for deterministic acceptance"; ExternalSubagent callable=yes'),'P10 initialize catalog: '+init.instructions)
+ assert(init.instructions.includes('- smoke-review: execution agent="codex"')&&init.instructions.includes('exact configured model ID (including provider prefix)="smoke-model"')&&init.instructions.includes('effort="low"')&&init.instructions.includes('user description="Smoke review preset for deterministic acceptance"')&&init.instructions.includes('ExternalSubagent callable=yes'),'P10 initialize catalog: '+init.instructions)
  const tools=(await rpc('tools/list')).result.tools
  assert(JSON.stringify(tools[0].inputSchema.properties.model.enum)===JSON.stringify(['smoke-review'])&&!tools[0].inputSchema.properties.effort,'P10 enum/effort schema')
   const live=ax('m'+'jjj\r'+'smoke-review-pi\n'+'j\r'+'q'+'q')

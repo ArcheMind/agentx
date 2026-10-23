@@ -60,6 +60,29 @@ func CodexPolicyExecPlan(cwd, model, resume string, writableRoots []string, effo
 	return runtime.CommandPlan{Executable: "codex", Args: args, Cwd: cwd}, nil
 }
 
+// ClaudePolicyExecPlan builds a non-interactive Claude Code invocation. Claude manages its own
+// permissions and authentication; AgentX passes effort, model, role instructions and flags through.
+func ClaudePolicyExecPlan(cwd, model, resume string, effort, roleInstructions string, flags []string) (runtime.CommandPlan, error) {
+	args := []string{"-p", "--output-format", "stream-json", "--verbose"}
+	if resume != "" {
+		if !sessionID.MatchString(resume) {
+			return runtime.CommandPlan{}, fmt.Errorf("--resume requires a Claude session UUID")
+		}
+		args = append(args, "--resume", resume)
+	}
+	if effort != "" {
+		args = append(args, "--effort", effort)
+	}
+	if roleInstructions != "" {
+		args = append(args, "--append-system-prompt", roleInstructions)
+	}
+	if model != "" {
+		args = append(args, "--model", model)
+	}
+	args = append(args, flags...)
+	return runtime.CommandPlan{Executable: "claude", Args: args, Cwd: cwd}, nil
+}
+
 // tomlString encodes text as a TOML basic string; JSON string escapes without \/ are valid TOML.
 func tomlString(text string) (string, error) {
 	var out bytes.Buffer
