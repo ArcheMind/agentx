@@ -32,7 +32,7 @@ func TestSubagentLaunchDryRun(t *testing.T) {
 	if err := json.Unmarshal(output.Bytes(), &plan); err != nil {
 		t.Fatal(err)
 	}
-	if len(plan.Args) != 4 || plan.Args[0] != "--mcp-config" || plan.Args[2] != "--dangerously-load-development-channels" || plan.Args[3] != "server:agentx" {
+	if len(plan.Args) != 7 || plan.Args[0] != "--mcp-config" || plan.Args[2] != "--allowedTools" || plan.Args[3] != "mcp__agentx__ExternalSubagent" {
 		t.Fatalf("plan = %#v", plan)
 	}
 	if err := app.Run(context.Background(), []string{"codex", "--subagents", "--dry-run"}); err == nil {

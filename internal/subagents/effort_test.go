@@ -1,0 +1,230 @@
+package subagents
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/ArcheMind/agentx/internal/presets"
+	"github.com/ArcheMind/agentx/internal/runtime"
+)
+
+// codexTelemetry imitates Codex's trace-safe response.completed event; executed overrides the
+// level the fake backend reports, otherwise the configured level (or the model default) is echoed.
+func codexTelemetry(p runtime.CommandPlan, executed string) string {
+	if p.Env["RUST_LOG"] != codexTelemetryFilter {
+		return ""
+	}
+	if executed == "" {
+		executed = "medium"
+		for _, arg := range p.Args {
+			if value, ok := strings.CutPrefix(arg, "model_reasoning_effort="); ok {
+				executed = strings.Trim(value, `"`)
+			}
+		}
+	}
+	return fmt.Sprintf("2026-10-21T12:09:12Z  INFO codex_otel.trace_safe: event.name=\"codex.sse_event\" event.kind=response.completed input_token_count=1 model_reasoning_effort=%q model=test-model\n", executed)
+}
+
+func argValue(args []string, prefix string) string {
+	for _, arg := range args {
+		if value, ok := strings.CutPrefix(arg, prefix); ok {
+			return value
+		}
+	}
+	return ""
+}
+
+// codexEffortRunner writes the rollout Codex would write and reports a configurable executed effort.
+type codexEffortRunner struct {
+	testRunner
+	executed string
+}
+
+func (r *codexEffortRunner) Execute(ctx context.Context, p runtime.CommandPlan, o runtime.ExecuteOptions) (runtime.CommandResult, error) {
+	if result, ok := authCheck(p); ok {
+		return result, nil
+	}
+	data, _ := io.ReadAll(o.Stdin)
+	r.mu.Lock()
+	r.plans = append(r.plans, p)
+	r.mu.Unlock()
+	r.mu.Lock()
+	thread := fmt.Sprintf("12345678-1234-1234-1234-%012d", len(r.plans))
+	r.mu.Unlock()
+	if presets.Contains(p.Args, "resume") {
+		thread = p.Args[len(p.Args)-2]
+	}
+	dir := filepath.Join(p.Env["CODEX_HOME"], "sessions", "2026", "10", "21")
+	os.MkdirAll(dir, 0o700)
+	rollout := filepath.Join(dir, "rollout-2026-10-21T00-00-00-"+thread+".jsonl")
+	if _, err := os.Stat(rollout); err != nil {
+		entry, _ := json.Marshal(map[string]any{"type": "response_item", "payload": map[string]any{"type": "message", "role": "developer", "content": []any{map[string]any{"type": "input_text", "text": ""}}}})
+		os.WriteFile(rollout, append(entry, '\n'), 0o600)
+	}
+	return runtime.CommandResult{Stderr: codexTelemetry(p, r.executed), Stdout: fmt.Sprintf("{\"type\":\"thread.started\",\"thread_id\":%q}\n{\"type\":\"item.completed\",\"item\":{\"type\":\"agent_message\",\"text\":%q}}\n{\"type\":\"turn.completed\"}\n", thread, string(data))}, nil
+}
+
+func TestCodexSilentEffortClampIsReported(t *testing.T) {
+	r := &codexEffortRunner{executed: "max"}
+	s := testServer(t, r)
+	ultra := reviewPreset
+	ultra.Effort = "ultra"
+	savePreset(t, s.Home, ultra)
+	clamped := callTest(t, s, "ExternalSubagent", map[string]any{"description": "x", "prompt": "x", "model": "review", "run_in_background": false})
+	if !strings.Contains(clamped, "WARNING") || !strings.Contains(clamped, "ultra") || !strings.Contains(clamped, "max") {
+		t.Fatal(clamped)
+	}
+	if env := r.plans[0].Env["RUST_LOG"]; env != codexTelemetryFilter {
+		t.Fatal(env)
+	}
+	native := reviewPreset
+	native.Effort = ""
+	savePreset(t, s.Home, native)
+	text := callTest(t, s, "ExternalSubagent", map[string]any{"description": "x", "prompt": "x", "model": "review", "run_in_background": false})
+	if !strings.Contains(text, "effort=native default") || !strings.Contains(text, "Native evidence: executed effort max") {
+		t.Fatal(text)
+	}
+}
+
+func TestCodexEffortWithoutTelemetryIsUnverified(t *testing.T) {
+	if summary, err := verifyEffort("high", nil, "Codex response.completed telemetry"); err != nil || !strings.Contains(summary, "could not be verified") {
+		t.Fatal(summary, err)
+	}
+	if summary, err := verifyEffort("", nil, "x"); err != nil || summary != "" {
+		t.Fatal(summary, err)
+	}
+	stderr := "x INFO codex_otel.trace_safe: event.name=\"codex.sse_event\" event.kind=response.created model_reasoning_effort=\"low\"\n" +
+		"x INFO codex_otel.trace_safe: event.name=\"codex.sse_event\" event.kind=response.completed input_token_count=1 model_reasoning_effort=\"high\" slug=m\n"
+	if got := codexExecutedEfforts(stderr); strings.Join(got, ",") != "high" {
+		t.Fatal(got)
+	}
+	if got := withoutCodexTelemetry(stderr + "real error\n"); strings.Contains(got, "codex_otel") || !strings.Contains(got, "real error") {
+		t.Fatal(got)
+	}
+}
+
+// piRunner appends what Pi plus the AgentX observer would write to the session file.
+type piRunner struct {
+	testRunner
+	thinking string
+	effort   *string
+	observer bool
+}
+
+func (r *piRunner) Execute(ctx context.Context, p runtime.CommandPlan, o runtime.ExecuteOptions) (runtime.CommandResult, error) {
+	if result, ok := authCheck(p); ok {
+		return result, nil
+	}
+	io.ReadAll(o.Stdin)
+	r.mu.Lock()
+	r.plans = append(r.plans, p)
+	r.mu.Unlock()
+	session := ""
+	for i, arg := range p.Args {
+		if arg == "--session" {
+			session = p.Args[i+1]
+		}
+	}
+	file, _ := os.OpenFile(session, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	defer file.Close()
+	if r.thinking != "" {
+		fmt.Fprintf(file, "{\"type\":\"thinking_level_change\",\"thinkingLevel\":%q}\n", r.thinking)
+	}
+	if r.observer {
+		data := map[string]any{"reasoning_effort": r.effort}
+		entry, _ := json.Marshal(map[string]any{"type": "custom", "customType": piObserverEntry, "data": data})
+		file.Write(append(entry, '\n'))
+	}
+	return runtime.CommandResult{Stdout: "{\"type\":\"session\",\"id\":\"pi-native\"}\n{\"type\":\"message_end\",\"message\":{\"role\":\"assistant\",\"provider\":\"provider\",\"model\":\"model\",\"content\":[{\"type\":\"text\",\"text\":\"report\"}]}}\n{\"type\":\"agent_end\"}\n"}, nil
+}
+
+func piServer(t *testing.T, r runtime.Runner, effort string) *Server {
+	s := testServer(t, r)
+	bin := t.TempDir()
+	os.WriteFile(filepath.Join(bin, "pi"), []byte("#!/bin/sh\nexit 0\n"), 0o700)
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	savePreset(t, s.Home, presets.Preset{Name: "pi-review", Agent: "pi", Model: "provider/model", Description: "Pi", Effort: effort})
+	return s
+}
+
+func ptr[T any](value T) *T { return &value }
+
+func TestPiEffortVerifiedFromObserverRecords(t *testing.T) {
+	r := &piRunner{thinking: "high", effort: ptr("high"), observer: true}
+	s := piServer(t, r, "high")
+	text := callTest(t, s, "ExternalSubagent", map[string]any{"description": "x", "prompt": "x", "name": "pi", "model": "pi-review", "run_in_background": false})
+	if !strings.Contains(text, "effort=high") || !strings.Contains(text, "executed effort high (1 model request(s)") {
+		t.Fatal(text)
+	}
+	args := strings.Join(r.plans[0].Args, " ")
+	for _, want := range []string{"--thinking high", "--extension ", "agentx-observer.js", "--tools read,grep,find,ls", "--no-extensions"} {
+		if !strings.Contains(args, want) {
+			t.Fatal(want, args)
+		}
+	}
+	if strings.Contains(args, "--append-system-prompt") {
+		t.Fatal("append-system-prompt should not be present", args)
+	}
+	r.thinking = ""
+	callTest(t, s, "SendExternalSubagentMessage", map[string]any{"to": "pi", "message": "again"})
+	waitAgent(t, s, "pi")
+	s.mu.Lock()
+	a, _ := s.target("pi")
+	last := a.Jobs[len(a.Jobs)-1]
+	s.mu.Unlock()
+	if last.Status != "completed" || !strings.Contains(last.Evidence, "1 model request(s)") {
+		t.Fatal("continuation evidence must count only the new turn", last.Status, last.Failure, last.Evidence)
+	}
+}
+
+func TestPiClampAndMissingObserverReported(t *testing.T) {
+	cases := []struct {
+		name   string
+		runner *piRunner
+		want   string
+	}{
+		{"session clamp", &piRunner{thinking: "medium", effort: ptr("medium"), observer: true}, "thinking level \"medium\""},
+		{"provider remap", &piRunner{thinking: "high", effort: ptr("low"), observer: true}, "WARNING: preset requested high but native executed low"},
+		{"no effort field", &piRunner{thinking: "high", observer: true}, "WARNING: preset requested high but native executed none sent"},
+		{"observer absent", &piRunner{thinking: "high"}, "could not be verified"},
+	}
+	for _, c := range cases {
+		s := piServer(t, c.runner, "high")
+		text := callTest(t, s, "ExternalSubagent", map[string]any{"description": "x", "prompt": "x", "model": "pi-review", "run_in_background": false})
+		if !strings.Contains(text, c.want) {
+			t.Fatal(c.name, text)
+		}
+	}
+}
+
+func TestPiWithoutEffortKeepsPlainPlan(t *testing.T) {
+	r := &piRunner{}
+	s := piServer(t, r, "")
+	text := callTest(t, s, "ExternalSubagent", map[string]any{"description": "x", "prompt": "x", "model": "pi-review", "run_in_background": false})
+	args := strings.Join(r.plans[0].Args, " ")
+	if strings.Contains(args, "--extension") || strings.Contains(args, "--thinking") || strings.Contains(args, "--append-system-prompt") || strings.Contains(text, "Native evidence") {
+		t.Fatal(args, text)
+	}
+}
+
+type rejectedEffortRunner struct{}
+
+func (rejectedEffortRunner) Execute(_ context.Context, p runtime.CommandPlan, _ runtime.ExecuteOptions) (runtime.CommandResult, error) {
+	if result, ok := authCheck(p); ok {
+		return result, nil
+	}
+	return runtime.CommandResult{ExitCode: 1, Stdout: "{\"type\":\"thread.started\",\"thread_id\":\"12345678-1234-1234-1234-123456789abc\"}\n{\"type\":\"turn.failed\",\"error\":{\"message\":\"Unsupported value: 'minimal' is not supported with the 'test-model' model.\"}}\n"}, fmt.Errorf("exit status 1")
+}
+
+func TestNativeEffortRejectionReasonIsReturned(t *testing.T) {
+	s := testServer(t, rejectedEffortRunner{})
+	if _, err := s.call("ExternalSubagent", []byte(`{"description":"x","prompt":"x","model":"review","run_in_background":false}`)); err == nil || !strings.Contains(err.Error(), "native error: {\"message\":\"Unsupported value: 'minimal'") {
+		t.Fatal(err)
+	}
+}

@@ -28,7 +28,7 @@ assert(unregistered.status!==0&&unregistered.stderr.includes(`claude mcp add --s
 claude('add','--scope','user','agentx','--',executable,'preset','serve')
 
 const plan=launch()
-assert(plan.status===0&&JSON.parse(plan.stdout).args.join(' ').includes('--dangerously-load-development-channels server:agentx'),'ax claude did not supply the AgentX MCP connection: '+plan.stdout+plan.stderr)
+assert(plan.status===0&&JSON.parse(plan.stdout).args.join(' ').includes('--allowedTools mcp__agentx__ExternalSubagent'),'ax claude did not supply the AgentX MCP connection: '+plan.stdout+plan.stderr)
 claude('remove','--scope','user','agentx')
 const unregisteredPlan=launch()
 assert(unregisteredPlan.status!==0&&unregisteredPlan.stderr.includes('preset serve'),'native removal not recognized: '+unregisteredPlan.stdout+unregisteredPlan.stderr)

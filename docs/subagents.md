@@ -59,57 +59,6 @@ Read-only research and code review. Not for large refactors.
 configuration/state in isolated environments; it does not change native
 credentials.
 
-## Roles: `subagent_type`
-
-A role is a named set of task instructions that the native agent actually
-follows. Roles are independent of presets: `model` picks the preset (agent,
-model, effort), `subagent_type` picks the role, and neither changes the
-other or the call's write scope. Without any role files only the implicit `general-purpose` role exists,
-which adds no instructions.
-
-```text
-~/.agentx/roles/
-  security-reviewer/
-    ROLE.md
-```
-
-The directory name is the role name (same rules as preset names; `general-purpose`
-is reserved, and the name must match the directory exactly, including case).
-`ROLE.md` holds exactly one front matter key and the instructions:
-
-```markdown
----
-description: Security review of changed code
----
-
-You are a security reviewer. Focus on injection, authentication and secrets.
-Report findings by severity.
-```
-
-Any other front matter key (for example `model`, `effort` or `policy`) makes
-the role invalid, so a role can never carry agent, model, effort, permission or
-credential settings. The instructions are at most 32 KiB. Invalid role files are
-listed with their error and location and are not selectable; they never hide
-other roles.
-
-How each runtime carries a role, and how AgentX checks it took effect:
-
-| Runtime | Carriage | Check |
-| --- | --- | --- |
-| Codex | `-c developer_instructions=<instructions>` (honoured under `--ignore-user-config`) | After each turn, the session's rollout (`$CODEX_HOME/sessions/**/rollout-*-<thread>.jsonl`) must contain a `developer` message equal to the instructions. A resumed turn appends to the same rollout, so this confirms the session carries the role; it does not prove that the resumed turn re-sent it |
-| Pi | `--append-system-prompt <file>` with a locked copy of the instructions | The AgentX observer extension records, for every provider request, whether the request contains the instructions; all must |
-
-A failed check fails the turn; the text is never silently dropped. With a role,
-Pi's own `APPEND_SYSTEM.md` from its agent directory is not loaded for
-that run, because the role takes its place in Pi's append slot.
-
-An ExternalSubagent locks the role it was created with, like its preset,
-isolation and write scope. Editing, renaming or deleting the role file rejects continuation and
-queued work (`original role <name> changed or was removed`) instead of
-switching an existing native session to different instructions. An unknown or
-invalid `subagent_type` is rejected before any work starts and no other role
-is substituted.
-
 ### Create and manage from `ax`
 
 Running `ax` with no arguments shows **New session · Presets** first, with
@@ -140,8 +89,7 @@ Native rejection of a model or effort is the native agent's error.
 
 ### Register with Claude
 
-The presets collection (`~/.agentx/presets/`) and the roles collection
-(`~/.agentx/roles/`) are the whole configuration. There is no AgentX switch or
+The presets collection (`~/.agentx/presets/`) is the whole configuration. There is no AgentX switch or
 permission file. Registering the MCP server belongs to Claude, through its own
 commands (use the absolute path of `ax`; Claude starts it as given):
 
@@ -169,8 +117,8 @@ ax claude
   Static checks do not verify login or model access; those are established per
   execution. No native-default model or automatic fallback is used.
 
-New work reads the current collections. Existing ExternalSubagents retain their
-original combination: an edited, renamed or deleted preset or role rejects
+New work reads the current collection. Existing ExternalSubagents retain their
+original combination: an edited, renamed or deleted preset rejects
 continuation and queued work instead of rebinding it, and running work is never
 stopped or switched by a change.
 
@@ -277,20 +225,15 @@ MCP initialization includes a preset DATA catalog read from the collection:
 names, execution agents, exact models, effort, the user's descriptions, whether
 each preset is callable as ExternalSubagent, its write and auth behavior with
 the enforcing layer, static prerequisites, and invalid entries with their
-location. A role DATA block follows: `general-purpose`, each
-declared role with its description and full instructions, and invalid role
-files. The `subagent_type` enum lists `general-purpose` plus the valid declared
-roles. The same collections supply the selectable `model` values (callable
-presets only) and the `subagent_type` enum. `ExternalSubagent` tool metadata
-carries only a compact index (one line per preset and role: agent, model,
+location. The same collection supplies the selectable `model` values (callable
+presets only). `ExternalSubagent` tool metadata
+carries only a compact index (one line per preset: agent, model,
 effort, callability, description) because hosts truncate tool descriptions
-(Claude Code keeps 4096 characters); limits and role instructions are only in
+(Claude Code keeps 4096 characters); limits are only in
 the initialization data. With no presets the catalog says so and that the user
 creates them in `ax`; none are generated. Static checks do not verify login or
-model access. `model` selects a preset independently of the
-`subagent_type` role; session listing reports created objects, not presets.
-Role file changes are part of the snapshot: a call result notes when presets
-or roles changed since initialization.
+model access. Session listing reports created objects, not presets.
+A call result notes when presets changed since initialization.
 Initialization instructions are a connection snapshot. After saving, renaming or
 deleting a preset, `ax` says whether running AgentX MCP connections still show
 the old list and to reconnect (`/mcp`) or restart Claude, or that AgentX is not
@@ -298,10 +241,11 @@ registered with Claude. New calls always use the saved preset; a call
 result notes when the collection changed since the connection initialized. A
 fresh `tools/list` reads the current collection.
 
-After registering, restart or reconnect the host for tool discovery. `ax claude` automatically adds
-the MCP connection and opts in to **only** `server:agentx` using Claude's
-`--dangerously-load-development-channels` flag. Claude asks for acknowledgement
-of its local-development channel warning. Direct Claude invocation needs:
+After registering, restart or reconnect the host for tool discovery. `ax claude`
+adds the MCP connection and allows exactly the four AgentX tools for that session
+with `--allowedTools`; Claude's persistent `settings.json` is not modified.
+Background delivery additionally needs Claude's channel opt-in, which AgentX does
+not add. That opt-in alone is:
 
 ```sh
 claude --dangerously-load-development-channels server:agentx
@@ -337,13 +281,11 @@ StopExternalSubagent({"task_id":"reviewer"})
 listExternalSubagentSessions({})
 ```
 
-`description` and `prompt` are required strings. `subagent_type` is optional:
-`general-purpose` (the default) or a declared role (see [Roles](#roles-subagent_type));
-it never selects the execution agent, model, effort or write scope. `model`
+`description` and `prompt` are required strings. `model`
 is required and names one callable preset; there is no default preset. The preset
 fixes agent, model and effort; there is no `effort` parameter and no per-call
-override. Reports name the preset, agent, actual model, effort and role, and a
-`Native evidence:` line states the executed effort and role carriage that the
+override. Reports name the preset, agent, actual model and effort, and a
+`Native evidence:` line states the executed effort that the
 native records show for that turn. `isolation` accepts only `worktree` (see
 below); any other value is rejected before any work starts. `write` (boolean, default false) and `writable_roots`
 (absolute directories) request write access for this ExternalSubagent; see
@@ -481,14 +423,14 @@ the ability to delegate subtasks to other agents without user configuration.
   through the same `CODEX_HOME` / `PI_CODING_AGENT_DIR` mechanism. Credential
   environment variables are stripped as usual.
 - **`AX_SUBAGENT_HOME`.** If set in the parent process, it is propagated to
-  the nested MCP server so the same preset and role collections are used.
+  the nested MCP server so the same preset collection is used.
 
 ## Native execution and permission limits
 
 | Adapter | Boundary | Native continuation | Effort |
 | --- | --- | --- | --- |
 | Codex | Call-time write scope as native OS sandbox (`read-only`, or `workspace-write` + roots), `approval_policy="never"`, user config/rules/hooks not loaded, discovered `CODEX_HOME` | Exact thread UUID | Preset effort via `model_reasoning_effort`, or native default; each turn checked against `response.completed` telemetry; native errors remain errors |
-| Pi | Read-only only: `--tools read,grep,find,ls --no-extensions --no-skills --no-prompt-templates --no-approve`, discovered `PI_CODING_AGENT_DIR`; with a role or explicit effort, only AgentX's observer extension is added (`--extension`) | Dedicated exact session path and pinned native ID | Preset effort via `--thinking` (`low`..`max`), or native default; each turn checked against the session thinking level and every provider request |
+| Pi | Read-only only: `--tools read,grep,find,ls --no-extensions --no-skills --no-prompt-templates --no-approve`, discovered `PI_CODING_AGENT_DIR`; with an explicit effort, only AgentX's observer extension is added (`--extension`) | Dedicated exact session path and pinned native ID | Preset effort via `--thinking` (`low`..`max`), or native default; each turn checked against the session thinking level and every provider request |
 
 ### Effort verification
 
@@ -518,7 +460,7 @@ untrusted, and the ExternalSubagent cannot be continued; nothing is retried.
   no reasoning effort field therefore fail explicit effort.
 
 Verified per level on 2026-10-21 (Codex 0.163.0, Pi 0.84.4, see
-[acceptance evidence](subagents-acceptance.md#roles-and-effort-backlog-004-g04-g09)):
+[acceptance evidence](subagents-acceptance.md)):
 
 | Combination | Runs as | Rejected |
 | --- | --- | --- |
@@ -559,7 +501,7 @@ make smoke-mcp-live
 make smoke-mcp-channel
 make smoke-mcp-host-live
 make smoke-mcp-policy-live
-make smoke-mcp-roles-effort-live
+make smoke-mcp-effort-live
 make smoke-mcp-isolation-live
 ```
 
@@ -586,11 +528,7 @@ filesystem state. Override `AX_MCP_CODEX_HOME` and `AX_MCP_PI_AGENT_DIR` to
 select the credential directories the live smokes pass to the server as
 `CODEX_HOME`/`PI_CODING_AGENT_DIR` (defaults: `~/.codex`, `~/.pi/agent`).
 
-`smoke-mcp-roles-effort-live` runs two declared roles and `general-purpose` on
-the same Codex and Pi presets and asserts different role behavior from the
-reports plus the rollout developer message or Pi observer records, identical
-native argv apart from role carriage, role kept across a resume, and
-continuation rejected after a role edit. It then runs every Codex level and Pi
+`smoke-mcp-effort-live` runs every Codex level and Pi
 `low`..`max` on gpt-5.6-luna, a Pi preset that Pi clamps
 (`AX_MCP_PI_CLAMP_MODEL`, default `deepseek/deepseek-flash`, whose credential
 must be in the same Pi agent directory), and direct Pi `off`/`minimal` runs with the observer to show why those

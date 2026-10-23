@@ -4,6 +4,26 @@ All notable changes to AgentX are documented here. The format follows [Keep a Ch
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-10-23
+
+### Added
+
+- Presets for every supported agent, including Claude: `ax claude` and other non-Codex/Pi presets now run as ExternalSubagents through their own native driver.
+- `sandbox`, `user_config`, and `flags` preset fields, shown and edited in the interactive preset editor. `sandbox` and `user_config` translate to native flags; `flags` appends raw native arguments.
+- AgentX MCP injection for interactive Codex launches and for dispatched Codex ExternalSubagents, so nested delegation works without extra setup.
+
+### Changed
+
+- Security is expressed through preset fields and enforced by the native runtime. AgentX no longer hardcodes per-agent sandbox, approval, or permission reasoning.
+- Preset `Limits` and the tool descriptions describe only AgentX's own parameters: write, isolation, writable_roots, sandbox, user_config, flags, and effort.
+- Effort and model evidence mismatches are reported as warnings instead of failing the turn.
+- `ax claude` injects `--allowedTools` with exactly the four AgentX tools and no longer adds `--dangerously-load-development-channels`; background delivery is the host's own opt-in.
+- Every preset appears in the MCP catalog; the `subagent` gate and the `general-purpose` filter are gone.
+
+### Removed
+
+- Declared roles: `~/.agentx/roles/`, `ROLE.md`, and the `subagent_type` tool parameter.
+
 ## [0.4.1] - 2026-10-21
 
 ### Fixed
@@ -16,7 +36,6 @@ All notable changes to AgentX are documented here. The format follows [Keep a Ch
 
 - ExternalSubagent MCP tools (`ExternalSubagent`, `SendExternalSubagentMessage`, `StopExternalSubagent`, `listExternalSubagentSessions`) served by `ax preset serve`. Codex and Pi execute the subagent natively, with no relay inference call.
 - A single preset collection at `~/.agentx/presets/` shared by the bare `ax` home screen and the MCP catalog, with create, edit, rename, duplicate, and delete flows, plus `ax preset list` and `ax preset show`.
-- Declared roles at `~/.agentx/roles/` (`ROLE.md`) selected by `subagent_type`, carried by each runtime natively and verified per turn.
 - Per-turn effort verification against native evidence for Codex and Pi; a mismatch fails the turn instead of being silently accepted.
 - Call-time write scope: `write` with `writable_roots`, or `isolation: "worktree"` to run the subagent in a new git worktree that is the only writable root.
 - `ax skill list|show` and `ax mcp list|show` inventory by filesystem source, scope, applicable readers, and known projections.
@@ -26,7 +45,7 @@ All notable changes to AgentX are documented here. The format follows [Keep a Ch
 ### Changed
 
 - MCP tools and reports are named around ExternalSubagent sessions.
-- Registration with Claude is delegated to `claude mcp`; the preset and role collections are the only AgentX configuration.
+- Registration with Claude is delegated to `claude mcp`; the preset collection is the only AgentX configuration.
 - The tool metadata index is bounded, and reports state when entries are omitted.
 - Writable roots are resolved by directory identity, symlinks included, and the working directory stays always writable in non-isolated write mode as documented native Codex behavior.
 - Interactive selectors keep a stable layout without redraw drift, with a narrower preset combination column.
@@ -116,7 +135,8 @@ All notable changes to AgentX are documented here. The format follows [Keep a Ch
 - Structured errors and opt-in raw external-call debug logging.
 - Consistency audit covering CLI grammar, documentation, capabilities, and drivers.
 
-[Unreleased]: https://github.com/ArcheMind/agentx/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/ArcheMind/agentx/compare/v0.4.2...HEAD
+[0.4.2]: https://github.com/ArcheMind/agentx/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/ArcheMind/agentx/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/ArcheMind/agentx/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/ArcheMind/agentx/compare/v0.3.0...v0.3.1

@@ -21,7 +21,7 @@ try{
  const {tools}=await rpc('tools/list')
  const expected=['ExternalSubagent','SendExternalSubagentMessage','StopExternalSubagent','listExternalSubagentSessions']
  assert(JSON.stringify(tools.map(tool=>tool.name))===JSON.stringify(expected),'tools/list did not expose exactly four renamed tools')
- assert(JSON.stringify(Object.keys(tools[0].inputSchema.properties).sort())===JSON.stringify(['description','prompt','model','subagent_type','run_in_background','name','isolation','write','writable_roots','team_name','mode'].sort()),'ExternalSubagent input keys changed')
+ assert(JSON.stringify(Object.keys(tools[0].inputSchema.properties).sort())===JSON.stringify(['description','prompt','model','run_in_background','name','isolation','write','writable_roots','team_name','mode'].sort()),'ExternalSubagent input keys changed')
  const props=tools[0].inputSchema.properties
  assert(props.write.type==='boolean'&&props.write.default===false&&props.writable_roots.type==='array'&&props.writable_roots.items.type==='string'&&!tools[0].inputSchema.required.includes('write')&&props.writable_roots.description.startsWith('Absolute existing directories passed to the agent'),'write parameters changed')
  for(const old of ['Agent','SendMessage','TaskStop','ListAgents']){

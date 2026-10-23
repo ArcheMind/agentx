@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/ArcheMind/agentx/internal/presets"
-	"github.com/ArcheMind/agentx/internal/roles"
 	"github.com/ArcheMind/agentx/internal/runtime"
 )
 
@@ -195,7 +194,7 @@ func TestCancelTargetsOnlyOneNativeExecution(t *testing.T) {
 
 func TestAgentContractRejectsUnsupportedAndUnknownInputs(t *testing.T) {
 	s := testServer(t, &testRunner{})
-	for _, raw := range []string{`{}`, `{"prompt":"x"}`, `{"description":"x","prompt":"x","agent":"pi"}`, `{"description":"x","prompt":"x","name":"_bad"}`, `{"description":"x","prompt":"x","effort":"max"}`, `{"description":"x","prompt":"x","subagent_type":"pi"}`, `{"description":"x","prompt":"x","isolation":"remote"}`, `{"description":"x","prompt":"x","model":"unknown"}`, `{"description":"x","prompt":"x","mode":"root"}`, `{"description":"x","prompt":"x","run_in_background":null}`, `{"description":"x","prompt":"x","run_in_background":"false"}`} {
+	for _, raw := range []string{`{}`, `{"prompt":"x"}`, `{"description":"x","prompt":"x","agent":"pi"}`, `{"description":"x","prompt":"x","name":"_bad"}`, `{"description":"x","prompt":"x","effort":"max"}`, `{"description":"x","prompt":"x","isolation":"remote"}`, `{"description":"x","prompt":"x","model":"unknown"}`, `{"description":"x","prompt":"x","mode":"root"}`, `{"description":"x","prompt":"x","run_in_background":null}`, `{"description":"x","prompt":"x","run_in_background":"false"}`} {
 		if _, err := s.call("ExternalSubagent", []byte(raw)); err == nil {
 			t.Fatalf("accepted %s", raw)
 		}
@@ -290,7 +289,7 @@ func TestExternalFailureIsToolErrorAndCannotResume(t *testing.T) {
 
 func TestMissingPiSessionAndNativeIdentityChangeFail(t *testing.T) {
 	s := testServer(t, &testRunner{})
-	a := &ExternalSubagentState{ID: "pi", Role: roles.Role{Name: roles.GeneralPurpose}, Session: filepath.Join(t.TempDir(), "missing.jsonl"), Option: presets.Preset{Name: "review", Agent: "pi", Model: "provider/model", Description: "test"}}
+	a := &ExternalSubagentState{ID: "pi", Session: filepath.Join(t.TempDir(), "missing.jsonl"), Option: presets.Preset{Name: "review", Agent: "pi", Model: "provider/model", Description: "test"}}
 	savePreset(t, s.Home, a.Option)
 	if _, _, err := s.execute(context.Background(), a, "continue"); err == nil || !strings.Contains(err.Error(), "original Pi session unavailable") {
 		t.Fatal(err)
@@ -450,7 +449,7 @@ func TestExternalSubagentToolNamesAndUnchangedContract(t *testing.T) {
 	}
 	create := tools[0].(map[string]any)["inputSchema"].(map[string]any)
 	props := create["properties"].(map[string]any)
-	for _, key := range []string{"description", "prompt", "model", "subagent_type", "run_in_background", "name", "isolation", "write", "writable_roots", "team_name", "mode"} {
+	for _, key := range []string{"description", "prompt", "model", "run_in_background", "name", "isolation", "write", "writable_roots", "team_name", "mode"} {
 		if props[key] == nil {
 			t.Fatal("changed parameter", key)
 		}
@@ -458,7 +457,7 @@ func TestExternalSubagentToolNamesAndUnchangedContract(t *testing.T) {
 	if !strings.HasPrefix(props["writable_roots"].(map[string]any)["description"].(string), "Absolute existing directories passed to the agent") {
 		t.Fatal("writable_roots description changed")
 	}
-	if len(props) != 11 || props["effort"] != nil || !presets.Contains(props["model"].(map[string]any)["enum"].([]string), "review") {
+	if len(props) != 10 || props["effort"] != nil || props["subagent_type"] != nil || !presets.Contains(props["model"].(map[string]any)["enum"].([]string), "review") {
 		t.Fatal("changed model selection contract")
 	}
 	for _, old := range []string{"Agent", "SendMessage", "TaskStop", "ListAgents"} {
@@ -509,7 +508,7 @@ func TestPresetCatalogSharedDataAndRefresh(t *testing.T) {
 	instructions := initial.(map[string]any)["instructions"].(string)
 	tools := s.tools().(map[string]any)["tools"].([]any)
 	description := tools[0].(map[string]any)["description"].(string)
-	if !strings.Contains(instructions, catalog) || !strings.Contains(description, "Preset and role index") || strings.Contains(description, "access/limits") {
+	if !strings.Contains(instructions, catalog) || !strings.Contains(description, "Preset index") || strings.Contains(description, "access/limits") {
 		t.Fatal("initialization carries the full catalog and metadata only the index")
 	}
 	enum := tools[0].(map[string]any)["inputSchema"].(map[string]any)["properties"].(map[string]any)["model"].(map[string]any)["enum"].([]string)
@@ -567,7 +566,6 @@ func TestToolMetadataFitsHostLimitInTheWorstCase(t *testing.T) {
 	long := strings.Repeat("Read-only research and code review across the repository; good for tracing call paths. ", 2)
 	for i := 0; i < 60; i++ {
 		savePreset(t, s.Home, presets.Preset{Name: fmt.Sprintf("review-%02d", i), Agent: "codex", Model: "gpt-5.6-luna", Effort: "high", Description: long})
-		writeRole(t, s.Home, fmt.Sprintf("role-%02d", i), long, strings.Repeat("Check every changed function carefully. ", 200))
 	}
 	tools := s.tools().(map[string]any)["tools"].([]any)
 	create := tools[0].(map[string]any)
@@ -590,7 +588,7 @@ func TestToolMetadataFitsHostLimitInTheWorstCase(t *testing.T) {
 	if strings.Contains(strings.ToLower(string(schema)), "remote") || strings.Contains(strings.ToLower(instructions), "remote") {
 		t.Fatal("remote still appears in tool schema or initialization data")
 	}
-	if !strings.Contains(instructions, "- review-59:") || !strings.Contains(instructions, "- role-59:") {
+	if !strings.Contains(instructions, "- review-59:") {
 		t.Fatal("initialization data lost entries the index omitted")
 	}
 }
@@ -719,13 +717,10 @@ func TestToolMetadataFitsHostLimitAtRealisticScale(t *testing.T) {
 	description := "Read-only research and code review across the repository; good for tracing call paths and reviewing diffs, not for large refactors or long-running builds."
 	savePreset(t, s.Home, presets.Preset{Name: "review", Agent: "codex", Model: "gpt-5.6-luna", Effort: "high", Description: description})
 	savePreset(t, s.Home, presets.Preset{Name: "pi-review", Agent: "pi", Model: "openai-codex/gpt-5.6-luna", Description: description})
-	for _, name := range []string{"security-reviewer", "docs-editor"} {
-		writeRole(t, s.Home, name, "Reviews changes from the "+name+" perspective and reports findings by severity", strings.Repeat("Check every changed function carefully and explain each finding with file and line. ", 30))
-	}
 	tools := s.tools().(map[string]any)["tools"].([]any)
 	create := tools[0].(map[string]any)
 	n := len(create["description"].(string))
-	if strings.Contains(create["description"].(string), "omitted") || !strings.Contains(create["description"].(string), "- role docs-editor:") {
+	if strings.Contains(create["description"].(string), "omitted") {
 		t.Fatal("index truncated at realistic scale")
 	}
 	if n >= HostToolDescriptionLimit {
@@ -736,8 +731,5 @@ func TestToolMetadataFitsHostLimitAtRealisticScale(t *testing.T) {
 	init, _ := s.handle("initialize", []byte(`{}`))
 	if strings.Contains(strings.ToLower(string(schema)), "remote") || strings.Contains(strings.ToLower(init.(map[string]any)["instructions"].(string)), "remote") {
 		t.Fatal("remote still appears in tool schema or initialization data")
-	}
-	if !strings.Contains(init.(map[string]any)["instructions"].(string), "Check every changed function carefully") {
-		t.Fatal("role instructions missing from initialization data")
 	}
 }

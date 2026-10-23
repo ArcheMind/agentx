@@ -65,20 +65,7 @@ try{
  const scopedArgv=JSON.parse(await readFile(join(home,(await argvFiles()).at(-1)),'utf8')).argv.join(' ')
  assert(scoped.includes('Write scope: working directory')&&scoped.includes('In write mode the MCP working directory is always writable as well (native Codex behavior)')&&scopedArgv.includes('sandbox_mode="workspace-write"')&&scopedArgv.includes(`writable_roots=${JSON.stringify([await realpath(workspace)])}`),'call-time write scope: '+scoped+scopedArgv)
  evidence.W01='write is per call: no write is read-only, write without roots is rejected before any native run, write with writable_roots reaches the Codex sandbox resolved'
- const roleDir=join(home,'.agentx','roles','strict-reviewer');await mkdir(roleDir,{recursive:true})
- await writeFile(join(roleDir,'ROLE.md'),'---\ndescription: Strict reviewer\n---\n\nEnd every reply with ROLE-SMOKE.\n')
- const roleTools=(await rpc('tools/list')).result.tools[0]
- assert(JSON.stringify(roleTools.inputSchema.properties.subagent_type.enum)===JSON.stringify(['general-purpose','strict-reviewer'])&&roleTools.description.includes('- role strict-reviewer: "Strict reviewer"')&&!roleTools.description.includes('ROLE-SMOKE'),'R01 role metadata: '+JSON.stringify(roleTools.inputSchema.properties.subagent_type))
- const roled=await call('ExternalSubagent',{description:'smoke',prompt:'check',model:'smoke-review',subagent_type:'strict-reviewer',run_in_background:false})
- assert(roled.includes('effort=low; role=strict-reviewer')&&roled.includes('Native evidence: executed effort low')&&roled.includes('role instructions recorded as a Codex developer message'),'R02 role call: '+roled)
- const execs=[];for(const file of await argvFiles()){const record=JSON.parse(await readFile(join(home,file),'utf8'));if(record.argv[0]==='exec')execs.push(record.argv.join(' '))}
- const roleArgv=execs.find(argv=>argv.includes('developer_instructions='))??''
- assert(execs.filter(argv=>argv.includes('developer_instructions=')).length===1,'R02 role reached other executions: '+execs.join('\n'))
- assert(roleArgv.includes('developer_instructions="End every reply with ROLE-SMOKE."')&&roleArgv.includes('model_reasoning_effort="low"')&&roleArgv.includes('--model smoke-model'),'R02 role argv: '+roleArgv)
- const unknownRole=await call('ExternalSubagent',{description:'smoke',prompt:'check',model:'smoke-review',subagent_type:'absent-role',run_in_background:false})
- assert(unknownRole.includes('subagent_type "absent-role" rejected')&&unknownRole.includes('no other role was substituted'),'R03 unknown role: '+unknownRole)
  evidence.P10='initialize, tools/list enum and ExternalSubagent use ~/.agentx/presets; report names preset, agent, model, effort'
- evidence.R01='declared role appears in subagent_type enum and role data';evidence.R02='role call keeps preset model/effort, sends developer_instructions, reports native evidence';evidence.R03='unknown role rejected without substitution'
  evidence.P15='TUI reports live MCP connection must reconnect; call result notes stale snapshot'
 }finally{mcp.stdin.end();await new Promise(done=>mcp.once('close',done))}
 

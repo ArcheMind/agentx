@@ -1,7 +1,6 @@
 package drivers
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 
@@ -12,9 +11,7 @@ import (
 // read-only. sandbox=false drops the network and tmpdir restrictions of the writable-roots mode.
 // userConfig=false skips user config.toml, exec rules and hooks, whose MCP servers, hooks and
 // notify programs run outside the sandbox. flags are appended verbatim as native CLI arguments.
-// Role instructions travel as developer_instructions, which Codex records in the rollout as a
-// developer message; they never change sandbox, approval, model or effort.
-func CodexPolicyExecPlan(cwd, model, resume string, writableRoots []string, effort, roleInstructions string, sandbox *bool, userConfig *bool, flags []string) (runtime.CommandPlan, error) {
+func CodexPolicyExecPlan(cwd, model, resume string, writableRoots []string, effort string, sandbox *bool, userConfig *bool, flags []string) (runtime.CommandPlan, error) {
 	args := []string{"exec"}
 	if resume != "" {
 		if !sessionID.MatchString(resume) {
@@ -22,7 +19,7 @@ func CodexPolicyExecPlan(cwd, model, resume string, writableRoots []string, effo
 		}
 		args = append(args, "resume")
 	}
-	args = append(args, "--json")
+	args = append(args, "--json", "--skip-git-repo-check")
 	if userConfig != nil && !*userConfig {
 		args = append(args, "--ignore-user-config", "--ignore-rules", "--disable", "hooks")
 	}
@@ -41,13 +38,6 @@ func CodexPolicyExecPlan(cwd, model, resume string, writableRoots []string, effo
 	args = append(args, "-c", `approval_policy="never"`)
 	if effort != "" {
 		args = append(args, "-c", fmt.Sprintf("model_reasoning_effort=%q", effort))
-	}
-	if roleInstructions != "" {
-		value, err := tomlString(roleInstructions)
-		if err != nil {
-			return runtime.CommandPlan{}, err
-		}
-		args = append(args, "-c", "developer_instructions="+value)
 	}
 	if model != "" {
 		args = append(args, "--model", model)
@@ -81,15 +71,4 @@ func ClaudePolicyExecPlan(cwd, model, resume string, effort, roleInstructions st
 	}
 	args = append(args, flags...)
 	return runtime.CommandPlan{Executable: "claude", Args: args, Cwd: cwd}, nil
-}
-
-// tomlString encodes text as a TOML basic string; JSON string escapes without \/ are valid TOML.
-func tomlString(text string) (string, error) {
-	var out bytes.Buffer
-	encoder := json.NewEncoder(&out)
-	encoder.SetEscapeHTML(false)
-	if err := encoder.Encode(text); err != nil {
-		return "", err
-	}
-	return string(bytes.TrimSuffix(out.Bytes(), []byte("\n"))), nil
 }

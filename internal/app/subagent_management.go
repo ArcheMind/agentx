@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"strings"
 
 	"github.com/ArcheMind/agentx/internal/presets"
 	"github.com/ArcheMind/agentx/internal/runtime"
@@ -179,12 +178,10 @@ func (a App) injectClaudeAgentX(request *runtime.RunRequest, explicit bool) erro
 		return err
 	}
 	entry, _ := json.Marshal(map[string]any{"mcpServers": map[string]any{"agentx": map[string]any{"type": "stdio", "command": executable, "args": []string{"preset", "serve"}}}})
-	for _, arg := range request.PassthroughArgs {
-		if strings.HasPrefix(arg, "--dangerously-load-development-channels") {
-			return fmt.Errorf("AgentX adds its own named channel opt-in; remove duplicate channel flag")
-		}
-	}
-	request.PassthroughArgs = append([]string{"--mcp-config", string(entry), "--dangerously-load-development-channels", "server:agentx"}, request.PassthroughArgs...)
+	request.PassthroughArgs = append([]string{
+		"--mcp-config", string(entry),
+		"--allowedTools", "mcp__agentx__ExternalSubagent", "mcp__agentx__SendExternalSubagentMessage", "mcp__agentx__StopExternalSubagent", "mcp__agentx__listExternalSubagentSessions",
+	}, request.PassthroughArgs...)
 	return nil
 }
 

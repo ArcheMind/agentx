@@ -75,57 +75,9 @@ func verifyEffort(requested string, executed []string, source string) (string, e
 	return summary, nil
 }
 
-func codexRollout(codexHome, thread string) (string, error) {
-	matches, err := filepath.Glob(filepath.Join(codexHome, "sessions", "*", "*", "*", "rollout-*-"+thread+".jsonl"))
-	if err != nil || len(matches) != 1 {
-		return "", fmt.Errorf("Codex rollout for thread %s not found exactly once under %s/sessions (found %d)", thread, codexHome, len(matches))
-	}
-	return matches[0], nil
-}
-
-// verifyCodexRole checks that the native session carries the role as a developer message; a missing role is a warning.
-func verifyCodexRole(codexHome, thread, instructions string) (string, error) {
-	path, err := codexRollout(codexHome, thread)
-	if err != nil {
-		return "", fmt.Errorf("role instructions could not be verified: %w", err)
-	}
-	file, err := os.Open(path)
-	if err != nil {
-		return "", fmt.Errorf("role instructions could not be verified: %w", err)
-	}
-	defer file.Close()
-	scan := bufio.NewScanner(file)
-	scan.Buffer(make([]byte, 65536), 64*1024*1024)
-	for scan.Scan() {
-		var entry struct {
-			Type    string `json:"type"`
-			Payload struct {
-				Type    string `json:"type"`
-				Role    string `json:"role"`
-				Content []struct {
-					Text string `json:"text"`
-				} `json:"content"`
-			} `json:"payload"`
-		}
-		if json.Unmarshal(scan.Bytes(), &entry) != nil || entry.Type != "response_item" || entry.Payload.Type != "message" || entry.Payload.Role != "developer" {
-			continue
-		}
-		for _, part := range entry.Payload.Content {
-			if part.Text == instructions {
-				return "", nil
-			}
-		}
-	}
-	if err := scan.Err(); err != nil {
-		return "", fmt.Errorf("role instructions could not be verified: %w", err)
-	}
-	return "WARNING: role instructions not found as developer message in rollout", nil
-}
-
 type piEvidence struct {
 	thinking string
 	efforts  []string
-	roles    []bool
 }
 
 // readPiEvidence reads the thinking level in force and the observer records appended after offset.
@@ -149,7 +101,6 @@ func readPiEvidence(session string, offset int64) (piEvidence, error) {
 				CustomType    string `json:"customType"`
 				Data          struct {
 					Effort *string `json:"reasoning_effort"`
-					Role   *bool   `json:"role_included"`
 				} `json:"data"`
 			}
 			if jsonErr := json.Unmarshal(line, &entry); jsonErr != nil {
@@ -164,9 +115,6 @@ func readPiEvidence(session string, offset int64) (piEvidence, error) {
 					effort = *entry.Data.Effort
 				}
 				evidence.efforts = append(evidence.efforts, effort)
-				if entry.Data.Role != nil {
-					evidence.roles = append(evidence.roles, *entry.Data.Role)
-				}
 			}
 		}
 		if err == io.EOF {
@@ -178,7 +126,7 @@ func readPiEvidence(session string, offset int64) (piEvidence, error) {
 	}
 }
 
-// preparePiObserver writes the observer and the locked role snapshot next to the Pi session.
+// preparePiObserver writes the observer extension next to the Pi session.
 func preparePiObserver(a *ExternalSubagentState) ([]string, map[string]string, error) {
 	dir := filepath.Dir(a.Session)
 	observer := filepath.Join(dir, "agentx-observer.js")
@@ -187,14 +135,6 @@ func preparePiObserver(a *ExternalSubagentState) ([]string, map[string]string, e
 	}
 	args := []string{"--extension", observer}
 	env := map[string]string{}
-	if a.Role.Instructions != "" {
-		role := filepath.Join(dir, "role.md")
-		if err := os.WriteFile(role, []byte(a.Role.Instructions), 0o600); err != nil {
-			return nil, nil, err
-		}
-		args = append(args, "--append-system-prompt", role)
-		env["AGENTX_PI_ROLE_FILE"] = role
-	}
 	if a.Option.Effort != "" {
 		args = append(args, "--thinking", a.Option.Effort)
 	}
@@ -207,7 +147,7 @@ func verifyPi(a *ExternalSubagentState, offset int64) (string, error) {
 		return "", fmt.Errorf("Pi session evidence unreadable: %w", err)
 	}
 	if len(evidence.efforts) == 0 {
-		return "WARNING: the AgentX observer recorded no Pi provider request for this turn, so role and effort could not be verified", nil
+		return "WARNING: the AgentX observer recorded no Pi provider request for this turn, so effort could not be verified", nil
 	}
 	var warnings []string
 	if a.Option.Effort != "" && evidence.thinking != a.Option.Effort {
@@ -217,42 +157,11 @@ func verifyPi(a *ExternalSubagentState, offset int64) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if a.Role.Instructions != "" {
-		missing := len(evidence.roles) != len(evidence.efforts)
-		for _, included := range evidence.roles {
-			if !included {
-				missing = true
-			}
-		}
-		if missing {
-			warnings = append(warnings, fmt.Sprintf("WARNING: role %s instructions missing or not recorded for every Pi provider request", a.Role.Name))
-		} else {
-			summary += fmt.Sprintf("; role instructions present in all %d provider request(s)", len(evidence.roles))
-		}
-	}
 	return strings.Join(append([]string{summary}, warnings...), "; "), nil
 }
 
 func verifyCodex(a *ExternalSubagentState, stderr string) (string, error) {
-	summary, err := verifyEffort(a.Option.Effort, codexExecutedEfforts(stderr), "Codex response.completed telemetry")
-	if err != nil {
-		return "", err
-	}
-	if a.Role.Instructions != "" {
-		warning, err := verifyCodexRole(a.auth.Dir, a.Session, a.Role.Instructions)
-		if err != nil {
-			return "", err
-		}
-		if summary != "" {
-			summary += "; "
-		}
-		if warning != "" {
-			summary += warning
-		} else {
-			summary += "role instructions recorded as a Codex developer message"
-		}
-	}
-	return summary, nil
+	return verifyEffort(a.Option.Effort, codexExecutedEfforts(stderr), "Codex response.completed telemetry")
 }
 
 // nativeFailure surfaces a failure the agent reported in its event stream (Codex puts a rejected

@@ -107,7 +107,6 @@ Exact inputs, limits, and acceptance evidence: [docs/subagents.md](docs/subagent
 ~/.agents/skills/<name>/SKILL.md      codex · dsh · gemini · opencode · pi, Claude via .claude/skills
 ~/.agents/hooks.json                  claude · codex · gemini · pi
 ~/.agentx/presets/<name>/PRESET.md    ax · the ExternalSubagent tools above
-~/.agentx/roles/<name>/ROLE.md        subagent_type for the ExternalSubagent tools
 ```
 
 ```console
@@ -200,7 +199,7 @@ ax --json session resume pi <session-id> --source claude --dry-run
 
 AgentX owns the workflow around agents, not the agents:
 
-- no universal agent settings file beyond the documented skills, hooks, presets, and roles;
+- no universal agent settings file beyond the documented skills, hooks, and presets;
 - no credential storage or proxying;
 - no replacement package managers or session databases;
 - no invented capabilities or fallbacks when a native source is missing.
