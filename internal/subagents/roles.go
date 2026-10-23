@@ -20,13 +20,6 @@ func resolveRole(home, name string) (roles.Role, error) {
 	return role, nil
 }
 
-func roleLimits(agent string) string {
-	if agent == "pi" {
-		return "Roles: general-purpose or a declared role; role instructions are appended to Pi's system prompt (--append-system-prompt), which replaces Pi's own APPEND_SYSTEM.md for that run, and every provider request is checked to contain them. "
-	}
-	return "Roles: general-purpose or a declared role; role instructions are sent as Codex developer_instructions and checked in the rollout as a developer message. "
-}
-
 // RoleCatalog renders the declared roles for MCP; names are the selectable subagent_type values.
 func RoleCatalog(home string) (string, []string) {
 	names := []string{roles.GeneralPurpose}

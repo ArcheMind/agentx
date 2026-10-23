@@ -331,7 +331,7 @@ func TestRoleCatalogAndSchemaShowDeclaredRoles(t *testing.T) {
 		t.Fatal(enum)
 	}
 	description := create["description"].(string)
-	for _, want := range []string{"- role general-purpose: implicit", `- role alpha: "Alpha reviewer"`, "- role broken: invalid", "never changes agent, model, effort, write scope or permissions", "Full preset and role data, including limits and role instructions, is in the AgentX MCP initialization instructions"} {
+	for _, want := range []string{"- role general-purpose: implicit", `- role alpha: "Alpha reviewer"`, "- role broken: invalid", "never changes agent, model, effort, write scope or permissions", "Full preset and role data is in the AgentX MCP initialization instructions"} {
 		if !strings.Contains(description, want) {
 			t.Fatal(want, description)
 		}
@@ -341,7 +341,7 @@ func TestRoleCatalogAndSchemaShowDeclaredRoles(t *testing.T) {
 	}
 	result, _ := s.handle("initialize", []byte(`{}`))
 	instructions := result.(map[string]any)["instructions"].(string)
-	for _, want := range []string{"--- begin role data ---", `- alpha: user description="Alpha reviewer"; instructions="End every reply with ROLE-ALPHA."`, "- broken: invalid role at", "never changes the preset's agent, model, effort, write scope", "role instructions are sent as Codex developer_instructions"} {
+	for _, want := range []string{"--- begin role data ---", `- alpha: user description="Alpha reviewer"; instructions="End every reply with ROLE-ALPHA."`, "- broken: invalid role at", "never changes the preset's agent, model, effort, write scope"} {
 		if !strings.Contains(instructions, want) {
 			t.Fatal("initialization lacks role data", want)
 		}

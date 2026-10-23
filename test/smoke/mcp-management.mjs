@@ -22,7 +22,7 @@ await mkdir(join(home,'.config','agentx'),{recursive:true});await writeFile(lega
 for(const removed of ['enable','disable','status']){const r=exec(executable,['preset',removed]);assert(r.status!==0&&r.stderr.includes('usage: ax [--json|--yaml] preset <list|show>'),`${removed} still exists: ${r.stdout}${r.stderr}`)}
 const initial=listPresets()
 const review=initial.presets.find(p=>p.name==='review'),daily=initial.presets.find(p=>p.name==='daily')
-assert(initial.enabled===undefined&&initial.grant_problems===undefined&&initial.presets.length===2&&review.execution===undefined&&review.auth===undefined&&review.limits.includes('read-only')&&daily.limits!==undefined&&daily.limits.includes('Claude Code manages'),'initial state: '+JSON.stringify(initial))
+assert(initial.enabled===undefined&&initial.grant_problems===undefined&&initial.presets.length===2&&review.execution===undefined&&review.auth===undefined&&review.limits.includes('read-only')&&daily.limits!==undefined&&daily.limits.includes('read-only'),'initial state: '+JSON.stringify(initial))
 const unregistered=launch()
 assert(unregistered.status!==0&&unregistered.stderr.includes(`claude mcp add --scope user agentx -- ${executable} preset serve`),'ax claude --subagents without registration: '+unregistered.stderr)
 claude('add','--scope','user','agentx','--',executable,'preset','serve')

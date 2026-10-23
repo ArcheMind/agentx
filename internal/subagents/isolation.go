@@ -154,12 +154,6 @@ func (w *Worktree) describe(agentCwd string) string {
 	return text + fmt.Sprintf("Worktree retention: kept after completion, failure and cancellation; AgentX never removes it. State after last task: %s\nRemove when done: git -C %q worktree remove %q (add --force to discard its changes) && git -C %q branch -D %s\n", remaining, w.Repo, w.Path, w.Repo, w.Branch)
 }
 
-func IsolationLimits(agent string) string {
-	text := "Isolation: worktree supported: a new git worktree of the repository containing the MCP working directory, at HEAD, under ~/.local/state/agentx/worktrees/<id>; this adds branch agentx/<id> and worktree metadata to the original repository, but its checkout is not modified and its uncommitted changes are not copied; creation runs the repository's own post-checkout hook outside any sandbox, with AgentX's full environment; the worktree is kept after completion, failure and cancellation. "
-	if agent == "pi" {
-		text += "For Pi this only changes the working directory; reads are not path-restricted, so the original checkout stays readable. "
-	} else {
-		text += "With write, the worktree is the only writable root (writable_roots is rejected with isolation), so the original checkout is not writable; without write the run stays read-only; reads are not path-restricted. "
-	}
-	return text
+func IsolationLimits() string {
+	return "Isolation: worktree creates a new git worktree at ~/.local/state/agentx/worktrees/<id>; the worktree is kept after completion. "
 }
