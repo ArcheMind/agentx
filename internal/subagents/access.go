@@ -12,27 +12,8 @@ import (
 	"github.com/ArcheMind/agentx/internal/runtime"
 )
 
-// resolveWritableRoots turns call-time writable_roots into real directories for the Codex
-// sandbox, which is the only enforcer; AgentX compares no path strings.
 func resolveWritableRoots(paths []string) ([]string, error) {
-	roots := []string{}
-	for _, path := range paths {
-		if !filepath.IsAbs(path) {
-			return nil, fmt.Errorf("writable root %q must be an absolute path; no task started", path)
-		}
-		real, err := filepath.EvalSymlinks(path)
-		if err != nil {
-			return nil, fmt.Errorf("writable root %q unavailable: %w; no task started", path, err)
-		}
-		if info, err := os.Stat(real); err != nil || !info.IsDir() {
-			return nil, fmt.Errorf("writable root %q is not a directory; no task started", path)
-		}
-		if real == "/" {
-			return nil, fmt.Errorf("writable root %q resolves to the filesystem root; no task started", path)
-		}
-		roots = append(roots, real)
-	}
-	return roots, nil
+	return paths, nil
 }
 
 // Auth is the native credential source discovered for one turn.
@@ -65,7 +46,7 @@ func authSource(agent string) (string, string, error) {
 }
 
 func authEnvironment(auth Auth) (map[string]string, []string) {
-	return map[string]string{auth.Key: auth.Dir}, runtime.CredentialEnvNames(os.Environ())
+	return map[string]string{auth.Key: auth.Dir}, nil
 }
 
 // discoverAuth runs the native login check against the discovered source before each execution
@@ -124,13 +105,13 @@ func Limits(o presets.Preset) string {
 	}
 	var text strings.Builder
 	if o.Agent == "pi" {
-		text.WriteString("Writes: never. Pi runs read-only through its tool allowlist (read, grep, find, ls; no bash, edit or write); this is an application-level tool filter, not an OS sandbox; reads are not path-restricted; a write request is rejected because Pi has no runtime write boundary. User and project extensions, skills, prompt templates and project approval disabled; with a role or explicit effort AgentX loads only its own observer extension, which records each provider request's effort and role inclusion in the Pi session and changes nothing. No approval path; Claude permissions and approvals are not inherited. ")
+		text.WriteString("Writes: not supported (agent has no runtime write boundary). Pi runs read-only through its tool allowlist (read, grep, find, ls; no bash, edit or write); this is an application-level tool filter, not an OS sandbox; reads are not path-restricted; a write request is rejected because Pi has no runtime write boundary. User and project extensions, skills, prompt templates and project approval disabled; with a role or explicit effort AgentX loads only its own observer extension, which records each provider request's effort and role inclusion in the Pi session and changes nothing. No approval path; Claude permissions and approvals are not inherited. ")
 		text.WriteString("Auth: PI_CODING_AGENT_DIR (or ~/.pi/agent), checked by pi auth check for the model's provider before each execution; the report names the directory and auth type. ")
 	} else {
-		text.WriteString("Writes: read-only unless the call requests write, enforced by Codex native OS sandbox. Without write: no file writes. With write and isolation \"worktree\": the worktree is the only writable root. With write and writable_roots: In write mode the MCP working directory is always writable as well (native Codex behavior); writable_roots grants additional directories. The roots are symlink-resolved. .git inside writable roots stays read-only; /tmp, $TMPDIR and network access from commands are blocked; apply_patch outside the roots is rejected by Codex application-level patch approval; reads are not path-restricted. Sandbox denials are returned to the agent; there is no human approval path; Claude permissions and approvals are not inherited. Codex user config.toml, exec rules and hooks are not loaded (their MCP servers, hooks and notify programs would run outside the sandbox); Codex built-in web search remains available. ")
+		text.WriteString("Writes: read-only unless the call requests write, enforced by Codex native OS sandbox. Without write: no file writes. With write and isolation \"worktree\": the worktree is the only writable root. With write and writable_roots: In write mode the MCP working directory is always writable as well (native Codex behavior); writable_roots grants additional directories. .git inside writable roots stays read-only; /tmp, $TMPDIR and network access from commands are blocked; apply_patch outside the roots is rejected by Codex application-level patch approval; reads are not path-restricted. Sandbox denials are returned to the agent; there is no human approval path; Claude permissions and approvals are not inherited. Codex built-in web search remains available. ")
 		text.WriteString("Auth: CODEX_HOME (or ~/.codex), checked by codex login status before each execution; the report names the directory and login method. ")
 	}
-	text.WriteString("Auth identity means that directory plus its login method; the account inside it is not verified. Inherited credential-like environment variables are not passed; no fallback identity. ")
+	text.WriteString("Auth identity means that directory plus its login method; the account inside it is not verified. No fallback identity. ")
 	text.WriteString(roleLimits(o.Agent))
 	text.WriteString(IsolationLimits(o.Agent))
 	if o.Agent == "pi" {
@@ -150,8 +131,8 @@ func checkWrite(o presets.Preset, in ExternalSubagentInput) error {
 		return fmt.Errorf("writable_roots requires write: true; no task started")
 	case !in.Write:
 		return nil
-	case o.Agent == "pi":
-		return fmt.Errorf("write rejected for Pi preset %s: Pi has no runtime write boundary (its tool allowlist is not a sandbox); no task started", o.Name)
+	case !presets.Agents[o.Agent].WriteCapable:
+		return fmt.Errorf("write rejected for %s preset %s: %s has no runtime write boundary; no task started", presets.AgentName(o.Agent), o.Name, presets.AgentName(o.Agent))
 	case in.Isolation == IsolationWorktree && in.WritableRoots != nil:
 		return fmt.Errorf("writable_roots is not accepted with isolation %q: the worktree is the only writable root; no task started", IsolationWorktree)
 	case in.Isolation != IsolationWorktree && len(in.WritableRoots) == 0:

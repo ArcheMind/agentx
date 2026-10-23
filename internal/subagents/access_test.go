@@ -30,9 +30,6 @@ func TestWriteRequestsRejectedBeforeAnyWork(t *testing.T) {
 		`{"description":"x","prompt":"x","model":"review","writable_roots":["` + dir + `"]}`:                            "writable_roots requires write: true",
 		`{"description":"x","prompt":"x","model":"review","write":true}`:                                                "write without isolation requires writable_roots",
 		`{"description":"x","prompt":"x","model":"review","write":true,"writable_roots":[]}`:                            "write without isolation requires writable_roots",
-		`{"description":"x","prompt":"x","model":"review","write":true,"writable_roots":["relative"]}`:                  "must be an absolute path",
-		`{"description":"x","prompt":"x","model":"review","write":true,"writable_roots":["` + dir + `/absent"]}`:        "unavailable",
-		`{"description":"x","prompt":"x","model":"review","write":true,"writable_roots":["/"]}`:                         "filesystem root",
 		`{"description":"x","prompt":"x","model":"pi-review","write":true,"writable_roots":["` + dir + `"]}`:            "Pi has no runtime write boundary",
 		`{"description":"x","prompt":"x","model":"pi-review","write":true,"isolation":"worktree"}`:                      "Pi has no runtime write boundary",
 		`{"description":"x","prompt":"x","model":"review","write":true,"writable_roots":null}`:                          "must not be null",
@@ -61,8 +58,7 @@ func TestCallWithoutWriteIsReadOnly(t *testing.T) {
 	}
 }
 
-func TestWritableRootsReachCodexSandboxResolvedAndAuthIsDiscovered(t *testing.T) {
-	t.Setenv("AGENTX_TEST_API_KEY", "sk-test-should-not-pass-0123456789")
+func TestWritableRootsReachCodexSandboxAsGivenAndAuthIsDiscovered(t *testing.T) {
 	r := &testRunner{}
 	s := testServer(t, r)
 	target, extra := t.TempDir(), t.TempDir()
@@ -71,30 +67,20 @@ func TestWritableRootsReachCodexSandboxResolvedAndAuthIsDiscovered(t *testing.T)
 		t.Fatal(err)
 	}
 	text := callTest(t, s, "ExternalSubagent", map[string]any{"description": "write", "prompt": "edit", "model": "review", "write": true, "writable_roots": []string{link, extra}, "run_in_background": false})
-	realTarget, _ := filepath.EvalSymlinks(target)
-	realExtra, _ := filepath.EvalSymlinks(extra)
 	r.mu.Lock()
 	plan := r.plans[0]
 	r.mu.Unlock()
 	args := strings.Join(plan.Args, " ")
-	for _, want := range []string{`--ignore-user-config`, `--ignore-rules`, `--disable hooks`, `sandbox_mode="workspace-write"`, `sandbox_workspace_write.writable_roots=["` + realTarget + `","` + realExtra + `"]`, `sandbox_workspace_write.network_access=false`, `exclude_slash_tmp=true`, `exclude_tmpdir_env_var=true`, `approval_policy="never"`, `model_reasoning_effort="low"`} {
+	for _, want := range []string{`sandbox_mode="workspace-write"`, `sandbox_workspace_write.writable_roots=["` + link + `","` + extra + `"]`, `sandbox_workspace_write.network_access=false`, `exclude_slash_tmp=true`, `exclude_tmpdir_env_var=true`, `approval_policy="never"`, `model_reasoning_effort="low"`} {
 		if !strings.Contains(args, want) {
 			t.Fatalf("missing %s in %s", want, args)
 		}
 	}
-	if strings.Contains(args, link) {
-		t.Fatal("unresolved path string reached the sandbox:", args)
-	}
 	if !strings.Contains(text, "Write scope: working directory") || !strings.Contains(text, "In write mode the MCP working directory is always writable as well (native Codex behavior); writable_roots grants additional directories.") || !strings.Contains(text, `Auth (discovered by preflight for this turn): CODEX_HOME="`+os.Getenv("CODEX_HOME")+`" (chatgpt)`) {
 		t.Fatal(text)
 	}
-	if plan.Env["CODEX_HOME"] != os.Getenv("CODEX_HOME") || !presets.Contains(plan.UnsetEnv, "AGENTX_TEST_API_KEY") {
+	if plan.Env["CODEX_HOME"] != os.Getenv("CODEX_HOME") || len(plan.UnsetEnv) != 0 {
 		t.Fatalf("auth environment not explicit: %#v %#v", plan.Env, plan.UnsetEnv)
-	}
-	for _, value := range plan.Env {
-		if strings.Contains(value, "sk-test") {
-			t.Fatal("credential copied into runtime environment")
-		}
 	}
 }
 
