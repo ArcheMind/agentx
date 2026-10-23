@@ -155,22 +155,23 @@ func TestUnknownInvalidAndChangedRolesAreRejected(t *testing.T) {
 	}
 }
 
-func TestCodexRoleMissingFromRolloutFails(t *testing.T) {
+func TestCodexRoleMissingFromRolloutIsReported(t *testing.T) {
 	s := roleServer(t, &codexRoleRunner{dropDeveloper: true})
-	if _, err := s.call("ExternalSubagent", []byte(`{"description":"x","prompt":"x","model":"review","subagent_type":"alpha","run_in_background":false}`)); err == nil || !strings.Contains(err.Error(), "role instructions not found as a developer message") {
-		t.Fatal(err)
+	text := callTest(t, s, "ExternalSubagent", map[string]any{"description": "x", "prompt": "x", "model": "review", "subagent_type": "alpha", "run_in_background": false})
+	if !strings.Contains(text, "WARNING") || !strings.Contains(text, "role instructions not found") {
+		t.Fatal(text)
 	}
 }
 
-func TestCodexSilentEffortClampFailsLoudly(t *testing.T) {
+func TestCodexSilentEffortClampIsReported(t *testing.T) {
 	r := &codexRoleRunner{executed: "max"}
 	s := roleServer(t, r)
 	ultra := reviewPreset
 	ultra.Effort = "ultra"
 	savePreset(t, s.Home, ultra)
-	_, err := s.call("ExternalSubagent", []byte(`{"description":"x","prompt":"x","model":"review","run_in_background":false}`))
-	if err == nil || !strings.Contains(err.Error(), "native effort mismatch: preset effort ultra") || !strings.Contains(err.Error(), "max executed") {
-		t.Fatal(err)
+	clamped := callTest(t, s, "ExternalSubagent", map[string]any{"description": "x", "prompt": "x", "model": "review", "run_in_background": false})
+	if !strings.Contains(clamped, "WARNING") || !strings.Contains(clamped, "ultra") || !strings.Contains(clamped, "max") {
+		t.Fatal(clamped)
 	}
 	if env := r.plans[0].Env["RUST_LOG"]; env != codexTelemetryFilter {
 		t.Fatal(env)
@@ -185,8 +186,8 @@ func TestCodexSilentEffortClampFailsLoudly(t *testing.T) {
 }
 
 func TestCodexEffortWithoutTelemetryIsUnverified(t *testing.T) {
-	if _, err := verifyEffort("high", nil, "Codex response.completed telemetry"); err == nil || !strings.Contains(err.Error(), "could not be verified") {
-		t.Fatal(err)
+	if summary, err := verifyEffort("high", nil, "Codex response.completed telemetry"); err != nil || !strings.Contains(summary, "could not be verified") {
+		t.Fatal(summary, err)
 	}
 	if summary, err := verifyEffort("", nil, "x"); err != nil || summary != "" {
 		t.Fatal(summary, err)
@@ -280,18 +281,18 @@ func TestPiEffortAndRoleVerifiedFromObserverRecords(t *testing.T) {
 	}
 }
 
-func TestPiClampRemapMissingRoleAndMissingObserverFail(t *testing.T) {
+func TestPiClampRemapMissingRoleAndMissingObserverReported(t *testing.T) {
 	cases := []struct {
 		name   string
 		runner *piRunner
 		role   string
 		want   string
 	}{
-		{"session clamp", &piRunner{thinking: "medium", effort: ptr("medium"), observer: true}, "", "Pi session records thinking level \"medium\""},
-		{"provider remap", &piRunner{thinking: "high", effort: ptr("low"), observer: true}, "", "low executed"},
-		{"no effort field", &piRunner{thinking: "high", observer: true}, "", "none sent executed"},
-		{"role dropped", &piRunner{thinking: "high", effort: ptr("high"), role: ptr(false), observer: true}, "alpha", "instructions were missing"},
-		{"observer absent", &piRunner{thinking: "high"}, "", "recorded no Pi provider request"},
+		{"session clamp", &piRunner{thinking: "medium", effort: ptr("medium"), observer: true}, "", "thinking level \"medium\""},
+		{"provider remap", &piRunner{thinking: "high", effort: ptr("low"), observer: true}, "", "WARNING: preset requested high but native executed low"},
+		{"no effort field", &piRunner{thinking: "high", observer: true}, "", "WARNING: preset requested high but native executed none sent"},
+		{"role dropped", &piRunner{thinking: "high", effort: ptr("high"), role: ptr(false), observer: true}, "alpha", "WARNING: role alpha instructions missing"},
+		{"observer absent", &piRunner{thinking: "high"}, "", "could not be verified"},
 	}
 	for _, c := range cases {
 		s := piServer(t, c.runner, "high")
@@ -299,8 +300,12 @@ func TestPiClampRemapMissingRoleAndMissingObserverFail(t *testing.T) {
 		if c.role != "" {
 			input += `,"subagent_type":"` + c.role + `"`
 		}
-		if _, err := s.call("ExternalSubagent", []byte(input+"}")); err == nil || !strings.Contains(err.Error(), c.want) {
-			t.Fatal(c.name, err)
+		var args map[string]any
+		if err := json.Unmarshal([]byte(input+"}"), &args); err != nil {
+			t.Fatal(err)
+		}
+		if text := callTest(t, s, "ExternalSubagent", args); !strings.Contains(text, c.want) {
+			t.Fatal(c.name, text)
 		}
 	}
 }
