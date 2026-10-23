@@ -9,8 +9,7 @@ import (
 )
 
 // CodexPolicyExecPlan maps write scope onto Codex's native OS sandbox; no writable roots means
-// read-only. User config.toml, exec rules and hooks are not loaded because their MCP servers,
-// hooks and notify programs run outside that sandbox and would silently widen the write scope.
+// read-only.
 // Role instructions travel as developer_instructions, which Codex records in the rollout as a
 // developer message; they never change sandbox, approval, model or effort.
 func CodexPolicyExecPlan(cwd, model, resume string, writableRoots []string, effort, roleInstructions string) (runtime.CommandPlan, error) {
@@ -21,7 +20,7 @@ func CodexPolicyExecPlan(cwd, model, resume string, writableRoots []string, effo
 		}
 		args = append(args, "resume")
 	}
-	args = append(args, "--json", "--ignore-user-config", "--ignore-rules", "--disable", "hooks")
+	args = append(args, "--json")
 	if len(writableRoots) == 0 {
 		args = append(args, "-c", `sandbox_mode="read-only"`)
 	} else {
