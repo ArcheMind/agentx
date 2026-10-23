@@ -4,6 +4,15 @@ All notable changes to AgentX are documented here. The format follows [Keep a Ch
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-23
+
+### Added
+
+- `ax session export <session-id> [--source <provider>]` streams a session as a unified transcript.
+- `ax session import <target-agent> [file]` writes a transcript into the target agent's native store and prints the new session id, without launching the agent.
+- `ax --resume <transcript-file>` imports a transcript and resumes it interactively in one step.
+- `e` in the interactive home exports the selected session to `<provider>-<title>-<id8>.json` in the current directory.
+
 ## [0.4.2] - 2026-10-23
 
 ### Added
@@ -135,7 +144,8 @@ All notable changes to AgentX are documented here. The format follows [Keep a Ch
 - Structured errors and opt-in raw external-call debug logging.
 - Consistency audit covering CLI grammar, documentation, capabilities, and drivers.
 
-[Unreleased]: https://github.com/ArcheMind/agentx/compare/v0.4.2...HEAD
+[Unreleased]: https://github.com/ArcheMind/agentx/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/ArcheMind/agentx/compare/v0.4.2...v0.5.0
 [0.4.2]: https://github.com/ArcheMind/agentx/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/ArcheMind/agentx/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/ArcheMind/agentx/compare/v0.3.1...v0.4.0
