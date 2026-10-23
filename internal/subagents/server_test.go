@@ -455,8 +455,8 @@ func TestExternalSubagentToolNamesAndUnchangedContract(t *testing.T) {
 			t.Fatal("changed parameter", key)
 		}
 	}
-	if !strings.HasPrefix(props["writable_roots"].(map[string]any)["description"].(string), "In write mode the MCP working directory is always writable as well (native Codex behavior); writable_roots grants additional directories.") {
-		t.Fatal("working-directory disclosure is not the first sentence of writable_roots")
+	if !strings.HasPrefix(props["writable_roots"].(map[string]any)["description"].(string), "Absolute existing directories passed to the agent") {
+		t.Fatal("writable_roots description changed")
 	}
 	if len(props) != 11 || props["effort"] != nil || !presets.Contains(props["model"].(map[string]any)["enum"].([]string), "review") {
 		t.Fatal("changed model selection contract")
@@ -494,7 +494,7 @@ func TestPresetCatalogSharedDataAndRefresh(t *testing.T) {
 	if !strings.Contains(catalog, "interactive-only") || !strings.Contains(CatalogIndex(s.Home, HostToolDescriptionLimit), "interactive-only") {
 		t.Fatal("claude preset missing from MCP data", catalog)
 	}
-	for _, want := range []string{presets.Dir(s.Home), "also used for interactive ax launch", "No default preset", "no per-call effort override", `execution agent="codex"`, `execution agent="claude"`, `exact configured model ID (including provider prefix)="test-model"`, `effort="low"`, `user description="code review"`, `ExternalSubagent callable=yes`, `Writes: every call is read-only unless it sets write`, `Writes: read-only unless the call requests write, enforced by Codex native OS sandbox`, `Writes: not supported (agent has no runtime write boundary). Pi runs read-only through its tool allowlist`, `not an OS sandbox`, `Auth: CODEX_HOME (or ~/.codex), checked by codex login status`, `Isolation: worktree supported`, `login and model access are verified per execution`} {
+	for _, want := range []string{presets.Dir(s.Home), "also used for interactive ax launch", "No default preset", "no per-call effort override", `execution agent="codex"`, `execution agent="claude"`, `exact configured model ID (including provider prefix)="test-model"`, `effort="low"`, `user description="code review"`, `ExternalSubagent callable=yes`, `Write: read-only unless the call sets write`, `write scope is passed to the agent`, `Isolation: worktree creates a new git worktree`, `login and model access are verified per execution`} {
 		if !strings.Contains(catalog, want) {
 			t.Fatal("missing preset data", want, catalog)
 		}
@@ -576,7 +576,7 @@ func TestToolMetadataFitsHostLimitInTheWorstCase(t *testing.T) {
 	if len(description) >= HostToolDescriptionLimit {
 		t.Fatalf("ExternalSubagent description is %d bytes; Claude Code truncates at %d", len(description), HostToolDescriptionLimit)
 	}
-	for _, want := range []string{"Every call is read-only unless it sets write", "In write mode the MCP working directory is always writable as well (native Codex behavior); writable_roots grants additional directories.", "Pi presets never write", "more entries omitted; full catalog in initialization data."} {
+	for _, want := range []string{"read-only unless it sets write", "write scope is passed to the agent", "more entries omitted; full catalog in initialization data."} {
 		if !strings.Contains(description, want) {
 			t.Fatalf("description lost %q:\n%s", want, description)
 		}

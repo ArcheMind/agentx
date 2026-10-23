@@ -110,31 +110,12 @@ func (s *Server) discoverAuth(ctx context.Context, o presets.Preset) (Auth, erro
 
 func Limits(o presets.Preset) string {
 	var text strings.Builder
-	switch o.Agent {
-	case "claude":
-		text.WriteString("Writes: Claude Code manages its own permission system; write scope is not enforced by AgentX. flags (preset) are appended as raw CLI arguments. ")
-		text.WriteString("Auth: Claude Code manages its own authentication; no external credential directory. ")
-	case "pi":
-		text.WriteString("Writes: not supported (agent has no runtime write boundary). Pi runs read-only through its tool allowlist (read, grep, find, ls; no bash, edit or write); this is an application-level tool filter, not an OS sandbox; reads are not path-restricted. Project approval disabled; user_config (preset, default true) controls whether Pi extensions, skills and prompt templates are loaded; flags (preset) are appended as raw CLI arguments. With a role or explicit effort AgentX loads only its own observer extension, which records each provider request's effort and role inclusion in the Pi session and changes nothing. No approval path; Claude permissions and approvals are not inherited. ")
-		text.WriteString("Auth: PI_CODING_AGENT_DIR (or ~/.pi/agent), checked by pi auth check for the model's provider before each execution; the report names the directory and auth type. ")
-	default:
-		text.WriteString("Writes: read-only unless the call requests write, enforced by Codex native OS sandbox. Without write: no file writes. With write and isolation \"worktree\": the worktree is the only writable root. With write and writable_roots: In write mode the MCP working directory is always writable as well (native Codex behavior); writable_roots grants additional directories. .git inside writable roots stays read-only; /tmp, $TMPDIR and network access from commands are blocked; apply_patch outside the roots is rejected by Codex application-level patch approval; reads are not path-restricted. Sandbox denials are returned to the agent; there is no human approval path; Claude permissions and approvals are not inherited. Codex built-in web search remains available. sandbox (preset, default true) controls network and tmpdir restrictions; user_config (preset, default true) controls whether Codex user config, rules and hooks are loaded; flags (preset) are appended as raw CLI arguments. ")
-		text.WriteString("Auth: CODEX_HOME (or ~/.codex), checked by codex login status before each execution; the report names the directory and login method. ")
-	}
-	if o.Agent != "claude" {
-		text.WriteString("Auth identity means that directory plus its login method; the account inside it is not verified. No fallback identity. ")
-	}
-	text.WriteString(roleLimits(o.Agent))
-	text.WriteString(IsolationLimits(o.Agent))
-	switch o.Agent {
-	case "claude":
-		text.WriteString("Effort is fixed by the preset (--effort low, medium, high, xhigh or max). ")
-	case "pi":
-		text.WriteString("Effort is fixed by the preset (--thinking low, medium, high, xhigh or max; off and minimal rejected). Mismatches between the requested and observed effort are reported but do not reject the turn. Exact provider/model required. ")
-	default:
-		text.WriteString("Effort is fixed by the preset; mismatches between the preset effort and executed effort are reported but do not reject the turn (for example gpt-5.6-luna silently runs ultra as max); native rejection of an unsupported level is returned as failure. ")
-	}
-	text.WriteString("Model availability is verified only by execution.")
+	text.WriteString("Write: read-only unless the call sets write; write scope is passed to the agent's native sandbox. ")
+	text.WriteString("With isolation \"worktree\": writable_roots is not accepted. Without isolation: write requires writable_roots. ")
+	text.WriteString("Preset sandbox, user_config and flags are passed through to the agent. ")
+	text.WriteString("Auth is discovered before each execution; the report names the source. ")
+	text.WriteString(IsolationLimits())
+	text.WriteString("Effort is fixed by the preset. Model availability is verified only by execution.")
 	return text.String()
 }
 
