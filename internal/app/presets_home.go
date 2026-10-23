@@ -378,7 +378,7 @@ func (a App) changeField(ctx context.Context, reader *bufio.Reader, home string,
 	if mode == wizardCreate || mode == wizardCopy {
 		fields = append(fields, "Name")
 	}
-	fields = append(fields, "Description", "Return to summary")
+	fields = append(fields, "Sandbox", "User config", "Flags", "Description", "Return to summary")
 	choice, err := a.pick(reader, "Change which entry?", fields)
 	if err != nil {
 		return err
@@ -402,6 +402,12 @@ func (a App) changeField(ctx context.Context, reader *bufio.Reader, home string,
 		err = a.askEffort(ctx, reader, draft)
 	case "Name":
 		err = a.askName(reader, home, draft)
+	case "Sandbox":
+		err = a.askSandbox(reader, draft)
+	case "User config":
+		err = a.askUserConfig(reader, draft)
+	case "Flags":
+		err = a.askFlags(reader, draft)
 	case "Description":
 		err = a.askDescription(reader, draft, true)
 	}
@@ -662,6 +668,93 @@ func (a App) askDescription(reader *bufio.Reader, draft *presetDraft, keep bool)
 	}
 }
 
+func (a App) askSandbox(reader *bufio.Reader, draft *presetDraft) error {
+	labels := []string{
+		"Enabled — restrict network and tmpdir in Codex sandbox",
+		"Disabled — use native sandbox defaults",
+		"Default — enabled (same as omitting from preset file)",
+	}
+	selected := 2
+	if draft.preset.Sandbox != nil {
+		if *draft.preset.Sandbox {
+			selected = 0
+		} else {
+			selected = 1
+		}
+	}
+	rows := make([]contentRow, len(labels))
+	for i, label := range labels {
+		rows[i] = contentRow{text: label, itemIndex: i}
+	}
+	index, _, err := a.runSelector(reader, selector{title: "Sandbox restrictions:", help: selectorHelp, marker: "> ", selected: selected}, rows, len(rows), nil)
+	if err != nil {
+		return err
+	}
+	switch index {
+	case 0:
+		t := true
+		draft.preset.Sandbox = &t
+	case 1:
+		f := false
+		draft.preset.Sandbox = &f
+	case 2:
+		draft.preset.Sandbox = nil
+	}
+	return nil
+}
+
+func (a App) askUserConfig(reader *bufio.Reader, draft *presetDraft) error {
+	labels := []string{
+		"Loaded — native agent loads user config, extensions, skills",
+		"Isolated — skip user config, extensions, skills, rules, hooks",
+		"Default — loaded (same as omitting from preset file)",
+	}
+	selected := 2
+	if draft.preset.UserConfig != nil {
+		if *draft.preset.UserConfig {
+			selected = 0
+		} else {
+			selected = 1
+		}
+	}
+	rows := make([]contentRow, len(labels))
+	for i, label := range labels {
+		rows[i] = contentRow{text: label, itemIndex: i}
+	}
+	index, _, err := a.runSelector(reader, selector{title: "User config:", help: selectorHelp, marker: "> ", selected: selected}, rows, len(rows), nil)
+	if err != nil {
+		return err
+	}
+	switch index {
+	case 0:
+		t := true
+		draft.preset.UserConfig = &t
+	case 1:
+		f := false
+		draft.preset.UserConfig = &f
+	case 2:
+		draft.preset.UserConfig = nil
+	}
+	return nil
+}
+
+func (a App) askFlags(reader *bufio.Reader, draft *presetDraft) error {
+	current := ""
+	if len(draft.preset.Flags) > 0 {
+		current = " (current: " + strings.Join(draft.preset.Flags, " ") + ")"
+	}
+	value, err := a.readLine(reader, "Native CLI flags, space-separated (empty clears)"+current+": ")
+	if err != nil {
+		return err
+	}
+	if value == "" {
+		draft.preset.Flags = nil
+		return nil
+	}
+	draft.preset.Flags = strings.Fields(value)
+	return nil
+}
+
 func (a App) readLine(reader *bufio.Reader, label string) (string, error) {
 	fmt.Fprint(a.Stdout, label)
 	value, err := reader.ReadString('\n')
@@ -701,6 +794,27 @@ func (a App) printPresetFields(p presets.Preset, effort string) {
 	field("Agent", colorize(a.Color, agentColor(p.Agent), presets.AgentName(p.Agent)))
 	field("Model", p.Model)
 	field("Effort", effort)
+	if p.Sandbox != nil {
+		if *p.Sandbox {
+			field("Sandbox", "enabled (network and tmpdir restricted)")
+		} else {
+			field("Sandbox", "disabled (native defaults)")
+		}
+	} else {
+		field("Sandbox", "default (enabled)")
+	}
+	if p.UserConfig != nil {
+		if *p.UserConfig {
+			field("User config", "loaded")
+		} else {
+			field("User config", "isolated")
+		}
+	} else {
+		field("User config", "default (loaded)")
+	}
+	if len(p.Flags) > 0 {
+		field("Flags", strings.Join(p.Flags, " "))
+	}
 }
 
 func (a App) printAvailability(p presets.Preset) {
