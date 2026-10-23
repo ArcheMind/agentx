@@ -77,7 +77,7 @@ func TestWritableRootsReachCodexSandboxResolvedAndAuthIsDiscovered(t *testing.T)
 	plan := r.plans[0]
 	r.mu.Unlock()
 	args := strings.Join(plan.Args, " ")
-	for _, want := range []string{`--ignore-user-config`, `--ignore-rules`, `--disable hooks`, `sandbox_mode="workspace-write"`, `sandbox_workspace_write.writable_roots=["` + realTarget + `","` + realExtra + `"]`, `sandbox_workspace_write.network_access=false`, `exclude_slash_tmp=true`, `exclude_tmpdir_env_var=true`, `approval_policy="never"`, `model_reasoning_effort="low"`} {
+	for _, want := range []string{`sandbox_mode="workspace-write"`, `sandbox_workspace_write.writable_roots=["` + realTarget + `","` + realExtra + `"]`, `sandbox_workspace_write.network_access=false`, `exclude_slash_tmp=true`, `exclude_tmpdir_env_var=true`, `approval_policy="never"`, `model_reasoning_effort="low"`} {
 		if !strings.Contains(args, want) {
 			t.Fatalf("missing %s in %s", want, args)
 		}
@@ -219,5 +219,57 @@ func TestNativeFailureReturnedToClaudeIsRedacted(t *testing.T) {
 	a := &ExternalSubagentState{Option: presets.Preset{Agent: "codex"}}
 	if _, _, err := parseOutput(a, `{"type":"turn.failed","error":{"message":"bad key sk-proj-abcdefghijklmnopqrstuvwxyz"}}`); err == nil || strings.Contains(err.Error(), "abcdefghijklmnop") {
 		t.Fatal(err)
+	}
+}
+
+func TestSandboxFalseOmitsRestrictions(t *testing.T) {
+	r := &testRunner{}
+	s := testServer(t, r)
+	f := false
+	p := reviewPreset
+	p.Sandbox = &f
+	savePreset(t, s.Home, p)
+	callTest(t, s, "ExternalSubagent", map[string]any{"description": "x", "prompt": "x", "model": "review", "write": true, "writable_roots": []string{t.TempDir()}, "run_in_background": false})
+	r.mu.Lock()
+	args := strings.Join(r.plans[0].Args, " ")
+	r.mu.Unlock()
+	if strings.Contains(args, "network_access") || strings.Contains(args, "exclude_tmpdir") || strings.Contains(args, "exclude_slash_tmp") {
+		t.Fatal("sandbox:false still has restrictions", args)
+	}
+	if !strings.Contains(args, "workspace-write") {
+		t.Fatal("sandbox mode missing", args)
+	}
+}
+
+func TestUserConfigFalseAddsIsolationFlags(t *testing.T) {
+	r := &testRunner{}
+	s := testServer(t, r)
+	f := false
+	p := reviewPreset
+	p.UserConfig = &f
+	savePreset(t, s.Home, p)
+	callTest(t, s, "ExternalSubagent", map[string]any{"description": "x", "prompt": "x", "model": "review", "run_in_background": false})
+	r.mu.Lock()
+	args := strings.Join(r.plans[0].Args, " ")
+	r.mu.Unlock()
+	for _, want := range []string{"--ignore-user-config", "--ignore-rules", "--disable", "hooks"} {
+		if !strings.Contains(args, want) {
+			t.Fatal("missing", want, args)
+		}
+	}
+}
+
+func TestPresetFlagsAppendedToNativeArgs(t *testing.T) {
+	r := &testRunner{}
+	s := testServer(t, r)
+	p := reviewPreset
+	p.Flags = []string{"-c", "custom_setting=true"}
+	savePreset(t, s.Home, p)
+	callTest(t, s, "ExternalSubagent", map[string]any{"description": "x", "prompt": "x", "model": "review", "run_in_background": false})
+	r.mu.Lock()
+	args := strings.Join(r.plans[0].Args, " ")
+	r.mu.Unlock()
+	if !strings.Contains(args, "-c custom_setting=true") {
+		t.Fatal("preset flags not appended", args)
 	}
 }
