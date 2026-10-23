@@ -235,19 +235,7 @@ func (a App) startPreset(ctx context.Context, reader *bufio.Reader, home string,
 	if problem != "" {
 		return a.startFailure(ctx, reader, home, p, problem, true)
 	}
-	if agent.ID == "codex" {
-		if bin, err := os.Executable(); err == nil {
-			request.PassthroughArgs = append(request.PassthroughArgs,
-				"-c", fmt.Sprintf("mcp_servers.agentx.command=%q", bin),
-				"-c", `mcp_servers.agentx.args=["preset","serve"]`,
-			)
-			if subHome := os.Getenv("AX_SUBAGENT_HOME"); subHome != "" {
-				request.PassthroughArgs = append(request.PassthroughArgs,
-					"-c", fmt.Sprintf("mcp_servers.agentx.env.AX_SUBAGENT_HOME=%q", subHome),
-				)
-			}
-		}
-	}
+	injectAgentXMCP(&request, agent.ID)
 	if agent.ID == "claude" {
 		if err := a.prepareMCPSubagents(&request, false); err != nil {
 			return a.startFailure(ctx, reader, home, p, err.Error(), false)
@@ -1016,6 +1004,25 @@ func (a App) manageProblem(ctx context.Context, reader *bufio.Reader, home strin
 		return err
 	}
 	return nil
+}
+
+func injectAgentXMCP(request *runtime.RunRequest, agentID string) {
+	if agentID != "codex" {
+		return
+	}
+	bin, err := os.Executable()
+	if err != nil {
+		return
+	}
+	request.PassthroughArgs = append(request.PassthroughArgs,
+		"-c", fmt.Sprintf("mcp_servers.agentx.command=%q", bin),
+		"-c", `mcp_servers.agentx.args=["preset","serve"]`,
+	)
+	if subHome := os.Getenv("AX_SUBAGENT_HOME"); subHome != "" {
+		request.PassthroughArgs = append(request.PassthroughArgs,
+			"-c", fmt.Sprintf("mcp_servers.agentx.env.AX_SUBAGENT_HOME=%q", subHome),
+		)
+	}
 }
 
 func padRight(value string, width int) string {

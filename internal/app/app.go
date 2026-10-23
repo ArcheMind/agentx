@@ -378,6 +378,7 @@ func (a App) runAgent(ctx context.Context, args []string) error {
 			return fmt.Errorf("--subagents is only supported by Claude Code")
 		}
 	}
+	injectAgentXMCP(&request, agent.ID)
 	if agent.ID == "claude" {
 		if err := a.prepareMCPSubagents(&request, withSubagents); err != nil {
 			return err
@@ -786,6 +787,7 @@ func (a App) resumeSession(ctx context.Context, agent runtime.Agent, detail sess
 		}
 	}
 	request := runtime.RunRequest{Cwd: workspace, Model: model, PassthroughArgs: sessions.ResumeArgs(agent.ID, resumeToken)}
+	injectAgentXMCP(&request, agent.ID)
 	if err := a.prepareHooks(&request, agent.ID, !dryRun); err != nil {
 		return err
 	}
