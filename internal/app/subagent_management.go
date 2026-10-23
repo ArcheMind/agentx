@@ -170,7 +170,7 @@ func (a App) presetHome() string {
 	return a.Hooks.Home
 }
 
-func (a App) prepareMCPSubagents(request *runtime.RunRequest, explicit bool) error {
+func (a App) injectClaudeAgentX(request *runtime.RunRequest, explicit bool) error {
 	registered, err := mcpRegistration(a.presetHome())
 	if err != nil {
 		return err
@@ -193,6 +193,22 @@ func (a App) prepareMCPSubagents(request *runtime.RunRequest, explicit bool) err
 	}
 	request.PassthroughArgs = append([]string{"--mcp-config", string(entry), "--dangerously-load-development-channels", "server:agentx"}, request.PassthroughArgs...)
 	return nil
+}
+
+func injectCodexAgentX(request *runtime.RunRequest) {
+	bin, err := os.Executable()
+	if err != nil {
+		return
+	}
+	request.PassthroughArgs = append(request.PassthroughArgs,
+		"-c", fmt.Sprintf("mcp_servers.agentx.command=%q", bin),
+		"-c", `mcp_servers.agentx.args=["preset","serve"]`,
+	)
+	if subHome := os.Getenv("AX_SUBAGENT_HOME"); subHome != "" {
+		request.PassthroughArgs = append(request.PassthroughArgs,
+			"-c", fmt.Sprintf("mcp_servers.agentx.env.AX_SUBAGENT_HOME=%q", subHome),
+		)
+	}
 }
 
 func executableOrAx() string {
