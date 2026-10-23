@@ -79,7 +79,7 @@ func (r *testRunner) Execute(ctx context.Context, p runtime.CommandPlan, o runti
 func testServer(t *testing.T, r runtime.Runner) *Server {
 	t.Helper()
 	bin := t.TempDir()
-	for _, agent := range []string{"codex", "pi"} {
+	for _, agent := range []string{"claude", "codex", "pi"} {
 		if err := os.WriteFile(filepath.Join(bin, agent), []byte("#!/bin/sh\nexit 0\n"), 0700); err != nil {
 			t.Fatal(err)
 		}
@@ -207,10 +207,13 @@ func TestAgentContractRejectsUnsupportedAndUnknownInputs(t *testing.T) {
 	if _, err := s.call("ExternalSubagent", []byte(`{"description":"x","prompt":"x","model":"review","effort":"high"}`)); err == nil {
 		t.Fatal("per-call effort override accepted")
 	}
-	savePreset(t, s.Home, presets.Preset{Name: "interactive", Agent: "gemini", Model: "gemini-pro", Description: "Interactive only"})
-	if _, err := s.call("ExternalSubagent", []byte(`{"description":"x","prompt":"x","model":"interactive"}`)); err == nil || !strings.Contains(err.Error(), "interactive launch only") {
-		t.Fatal("interactive-only preset accepted", err)
+	savePreset(t, s.Home, presets.Preset{Name: "noagent", Agent: "gemini", Model: "test", Description: "No binary"})
+	origPath := os.Getenv("PATH")
+	t.Setenv("PATH", filepath.Dir(filepath.Join(s.Cwd, "dummy")))
+	if _, err := s.call("ExternalSubagent", []byte(`{"description":"x","prompt":"x","model":"noagent"}`)); err == nil || !strings.Contains(err.Error(), "executable unavailable") {
+		t.Fatal("preset accepted without binary", err)
 	}
+	t.Setenv("PATH", origPath)
 	if err := presets.Delete(s.Home, "review"); err != nil {
 		t.Fatal(err)
 	}
@@ -488,18 +491,15 @@ func TestPresetCatalogSharedDataAndRefresh(t *testing.T) {
 	savePreset(t, s.Home, presets.Preset{Name: "interactive-only", Agent: "claude", Model: "opus", Description: "Interactive pairing"})
 	savePreset(t, s.Home, presets.Preset{Name: "pi-choice", Agent: "pi", Model: "provider/model", Description: "Independent analysis"})
 	catalog, models := PresetCatalog(s.Home)
-	if strings.Contains(catalog, "interactive-only") || strings.Contains(CatalogIndex(s.Home, HostToolDescriptionLimit), "interactive-only") {
-		t.Fatal("interactive-launch-only preset listed in MCP data", catalog)
+	if !strings.Contains(catalog, "interactive-only") || !strings.Contains(CatalogIndex(s.Home, HostToolDescriptionLimit), "interactive-only") {
+		t.Fatal("claude preset missing from MCP data", catalog)
 	}
-	if _, err := s.call("ExternalSubagent", []byte(`{"description":"x","prompt":"x","model":"interactive-only"}`)); err == nil || !strings.Contains(err.Error(), "interactive launch only") {
-		t.Fatal("interactive-only preset accepted or rejected without its reason", err)
-	}
-	for _, want := range []string{presets.Dir(s.Home), "also used for interactive ax launch", "No default preset", "no per-call effort override", `execution agent="codex"`, `exact configured model ID (including provider prefix)="test-model"`, `effort="low"`, `user description="code review"`, `ExternalSubagent callable=yes`, `Writes: every call is read-only unless it sets write`, `Writes: read-only unless the call requests write, enforced by Codex native OS sandbox`, `Writes: not supported (agent has no runtime write boundary). Pi runs read-only through its tool allowlist`, `not an OS sandbox`, `Auth: CODEX_HOME (or ~/.codex), checked by codex login status`, `Isolation: worktree supported`, `login and model access are verified per execution`, `presets whose agent AgentX can run as an ExternalSubagent (codex, pi) are listed`} {
+	for _, want := range []string{presets.Dir(s.Home), "also used for interactive ax launch", "No default preset", "no per-call effort override", `execution agent="codex"`, `execution agent="claude"`, `exact configured model ID (including provider prefix)="test-model"`, `effort="low"`, `user description="code review"`, `ExternalSubagent callable=yes`, `Writes: every call is read-only unless it sets write`, `Writes: read-only unless the call requests write, enforced by Codex native OS sandbox`, `Writes: not supported (agent has no runtime write boundary). Pi runs read-only through its tool allowlist`, `not an OS sandbox`, `Auth: CODEX_HOME (or ~/.codex), checked by codex login status`, `Isolation: worktree supported`, `login and model access are verified per execution`} {
 		if !strings.Contains(catalog, want) {
 			t.Fatal("missing preset data", want, catalog)
 		}
 	}
-	if strings.Join(models, ",") != "pi-choice,review" {
+	if strings.Join(models, ",") != "interactive-only,pi-choice,review" {
 		t.Fatal(models)
 	}
 	initial, err := s.handle("initialize", []byte(`{"clientInfo":{"name":"test","version":"1"}}`))
@@ -556,7 +556,7 @@ func TestPresetCatalogIgnoresLegacyConfigAndReportsInvalidAndEmpty(t *testing.T)
 	}
 	os.RemoveAll(presets.Dir(s.Home))
 	text, models = PresetCatalog(s.Home)
-	if len(models) != 0 || !strings.Contains(text, "No MCP-callable presets.") || !strings.Contains(text, "+ Create preset") {
+	if len(models) != 0 || !strings.Contains(text, "No presets configured.") || !strings.Contains(text, "+ Create preset") {
 		t.Fatal(text, models)
 	}
 }

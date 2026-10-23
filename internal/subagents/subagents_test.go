@@ -40,7 +40,7 @@ func TestExternalPlansUseNativeReadOnlyAndExactResume(t *testing.T) {
 			}
 		}
 	}
-	for _, unsupported := range []string{"claude", "dsh", "opencode", "unknown"} {
+	for _, unsupported := range []string{"dsh", "opencode", "unknown"} {
 		if _, err := drivers.ExecPlan(unsupported, "/child", "", ""); err == nil {
 			t.Fatalf("accepted unsupported %s", unsupported)
 		}

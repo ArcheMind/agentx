@@ -830,8 +830,8 @@ func (a App) printAvailability(p presets.Preset) {
 	}
 	fmt.Fprintf(a.Stdout, "%s %s\n", label("Availability"), execution)
 	mcp := "Callable as MCP ExternalSubagent"
-	if !presets.Agents[p.Agent].Subagent {
-		mcp = "Interactive launch only; not callable as MCP ExternalSubagent"
+	if err := subagents.Ready(p); err != nil {
+		mcp = fmt.Sprintf("Not callable as MCP ExternalSubagent: %s", err)
 	}
 	fmt.Fprintf(a.Stdout, "%s %s\n", label("MCP"), mcp)
 }

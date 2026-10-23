@@ -18,6 +18,11 @@ func ExecPlan(agent, cwd, model, resume string) (runtime.CommandPlan, error) {
 	}
 	var args []string
 	switch agent {
+	case "claude":
+		args = []string{"-p", "--output-format", "stream-json", "--verbose"}
+		if resume != "" {
+			args = append(args, "--resume", resume)
+		}
 	case "pi":
 		args = []string{"--print", "--mode", "json", "--tools", "read,grep,find,ls", "--no-extensions"}
 		if resume != "" {

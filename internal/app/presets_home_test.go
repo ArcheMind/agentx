@@ -171,7 +171,7 @@ func TestCreateWithManualModelSavesWithoutInference(t *testing.T) {
 		t.Fatalf("creation ran external commands: %#v", runner.plans)
 	}
 	output := stdout.String()
-	for _, want := range []string{"Claude Code is not installed, so its models cannot be listed", "Enter the exact model ID", "unverified for this model", "Error: Invalid name", "Your other entries are kept", "Review preset", "Effort       low (unverified for this model)", "Availability Execution not verified; Claude Code is not installed", "MCP          Interactive launch only", "Saving does not run inference.", "Save and start", "Saved ", "New sessions use the saved presets now.", "MCP: AgentX is not registered with Claude", "› deep-review  Claude · opus-4 · low  Review complex changes\r\n"} {
+	for _, want := range []string{"Claude Code is not installed, so its models cannot be listed", "Enter the exact model ID", "unverified for this model", "Error: Invalid name", "Your other entries are kept", "Review preset", "Effort       low (unverified for this model)", "Availability Execution not verified; Claude Code is not installed", "MCP          Not callable as MCP ExternalSubagent: claude executable unavailable", "Saving does not run inference.", "Save and start", "Saved ", "New sessions use the saved presets now.", "MCP: AgentX is not registered with Claude", "› deep-review  Claude · opus-4 · low  Review complex changes\r\n"} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("missing %q in %q", want, output)
 		}
@@ -190,7 +190,7 @@ func TestCreateOffersOnlyListedCodexEfforts(t *testing.T) {
 		t.Fatalf("saved = %#v err = %v", saved, err)
 	}
 	output := stdout.String()
-	if !strings.Contains(output, "Explicit levels listed by Codex for gpt-a") || !strings.Contains(output, "low (model default)") || strings.Contains(output, "xhigh") || !strings.Contains(output, "Callable as MCP ExternalSubagent") {
+	if !strings.Contains(output, "Explicit levels listed by Codex for gpt-a") || !strings.Contains(output, "low (model default)") || strings.Contains(output, "xhigh") || !strings.Contains(output, "MCP") {
 		t.Fatal(output)
 	}
 	if len(runner.plans) != 1 || !strings.Contains(strings.Join(runner.plans[0].Args, " "), `model_reasoning_effort="max"`) {

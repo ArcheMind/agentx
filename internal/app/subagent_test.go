@@ -90,8 +90,8 @@ func TestPresetListIgnoresLegacyConfigAndShowsAllPresets(t *testing.T) {
 	if review == nil || daily == nil || review["execution"] != nil || review["auth"] != nil || review["limits"] == nil {
 		t.Fatalf("list = %v", listed)
 	}
-	if !strings.Contains(daily["status"].(string), "interactive launch only") || daily["limits"] != nil {
-		t.Fatalf("interactive preset entry = %v", daily)
+	if daily["limits"] == nil {
+		t.Fatalf("claude preset missing limits: %v", daily)
 	}
 	for _, removed := range []string{"enable", "disable", "status"} {
 		if err := app.Run(context.Background(), []string{"preset", removed}); err == nil {
