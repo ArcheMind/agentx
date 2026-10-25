@@ -4,6 +4,22 @@ All notable changes to AgentX are documented here. The format follows [Keep a Ch
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-10-25
+
+### Added
+
+- Lossless transcript round-trip: adopt agentx-protocol/go v0.4.0 with image blocks, structured tool results, system role, and tool result materialization rules.
+- `recordedAt` field preserves Pi's record-level write timestamp (distinct from message event time) across round-trips.
+- Codex `input_image` ↔ unified `image` block bidirectional mapping.
+- Pi `system` role parsing and serialization (native `sections` → text, text → `content`).
+- Offline transcript fidelity smoke tests and cross-provider diagonal smoke tests (claude↔codex).
+- `ax convert` command for stdin-based transcript format conversion.
+
+### Changed
+
+- Unified transcript field `agent` renamed to `provider` (agentx-protocol/go v0.3.0+).
+- Pi/gemini/opencode import now uses fresh UUID filenames (prevents silent overwrite on re-import).
+
 ## [0.6.2] - 2026-10-25
 
 ### Changed
