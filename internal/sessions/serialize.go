@@ -276,8 +276,13 @@ func SerializeCodex(detail Detail) []map[string]any {
 			openTurn(m.Timestamp)
 			var content []any
 			for _, b := range m.Content {
-				if b.Type == "text" {
+				switch b.Type {
+				case "text":
 					content = append(content, map[string]any{"type": "input_text", "text": b.Text})
+				case "image":
+					if url := codexImageURL(b.Source); url != "" {
+						content = append(content, map[string]any{"type": "input_image", "image_url": url})
+					}
 				}
 			}
 			records = append(records, map[string]any{
@@ -496,13 +501,19 @@ func SerializePi(detail Detail) []map[string]any {
 		if parsed, err := time.Parse(time.RFC3339Nano, m.Timestamp); err == nil {
 			msg["timestamp"] = parsed.UnixMilli()
 		}
+		recTS := m.Timestamp
+		if m.RecordedAt != "" {
+			recTS = m.RecordedAt
+		}
 		return map[string]any{
 			"type": "message", "id": m.ID, "parentId": parent,
-			"timestamp": m.Timestamp, "message": msg,
+			"timestamp": recTS, "message": msg,
 		}
 	}
 	for _, m := range detail.Messages {
 		switch m.Role {
+		case "system":
+			records = append(records, envelope(m, map[string]any{"role": "system", "content": textContent(m.Content)}))
 		case "user":
 			var content []any
 			for _, b := range m.Content {
@@ -702,6 +713,22 @@ func SerializeOpenCode(detail Detail, basePath string) (map[string]any, []FileEn
 	}
 
 	return info, entries
+}
+
+func codexImageURL(source any) string {
+	obj, ok := source.(map[string]any)
+	if !ok {
+		return ""
+	}
+	if url := stringValue(obj["url"]); url != "" {
+		return url
+	}
+	mediaType := stringValue(obj["media_type"])
+	data := stringValue(obj["data"])
+	if mediaType != "" && data != "" {
+		return "data:" + mediaType + ";base64," + data
+	}
+	return ""
 }
 
 func codexEvent(ts string, payload map[string]any) map[string]any {

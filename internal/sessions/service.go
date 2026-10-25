@@ -536,9 +536,15 @@ func parsePi(path string, records []map[string]any) (Detail, bool) {
 		}
 		message, _ := record["message"].(map[string]any)
 		role := stringValue(message["role"])
-		// Pi stores the tree id/parentId on the record. The record timestamp is write time and
-		// differs from the message's own epoch-millis timestamp, which is the event time we keep.
-		ts := firstNonEmpty(timeValue(message["timestamp"]), timeValue(record["timestamp"]))
+		// Pi stores the tree id/parentId on the record. The record timestamp is write time;
+		// the message's epoch-millis timestamp is event time. We keep both when they differ.
+		eventTS := timeValue(message["timestamp"])
+		recordTS := timeValue(record["timestamp"])
+		ts := firstNonEmpty(eventTS, recordTS)
+		recordedAt := ""
+		if eventTS != "" && recordTS != "" && recordTS != eventTS {
+			recordedAt = recordTS
+		}
 		parentID := stringValue(record["parentId"])
 		if parentID == "" {
 			parentID = lastID
@@ -552,8 +558,9 @@ func parsePi(path string, records []map[string]any) (Detail, bool) {
 			isError, _ := message["isError"].(bool)
 			m := Message{
 				ID: msgID, ParentID: parentID, Role: "tool",
-				Result:    message["content"],
-				Timestamp: ts, ToolUseID: toolCallID, ToolName: toolName, IsError: isError,
+				Result:     message["content"],
+				Timestamp:  ts, RecordedAt: recordedAt,
+				ToolUseID:  toolCallID, ToolName: toolName, IsError: isError,
 			}
 			detail.Messages = append(detail.Messages, m)
 			updateTimeBounds(&detail, ts)
@@ -569,10 +576,26 @@ func parsePi(path string, records []map[string]any) (Detail, bool) {
 			msgID := firstNonEmpty(recordID, fmt.Sprintf("pi-%d", len(detail.Messages)))
 			m := Message{
 				ID: msgID, ParentID: parentID, Role: "assistant",
-				Content: blocks, Timestamp: ts,
+				Content: blocks, Timestamp: ts, RecordedAt: recordedAt,
 				Model:      stringValue(message["model"]),
 				StopReason: stringValue(message["stopReason"]),
 			}
+			detail.Messages = append(detail.Messages, m)
+			updateTimeBounds(&detail, ts)
+			lastID = msgID
+			continue
+		}
+
+		if role == "system" {
+			text := extractText(message["content"])
+			if text == "" {
+				text = piSystemSections(message["sections"])
+			}
+			if text == "" {
+				continue
+			}
+			msgID := firstNonEmpty(recordID, fmt.Sprintf("pi-%d", len(detail.Messages)))
+			m := Message{ID: msgID, ParentID: parentID, Role: "system", Content: []ContentBlock{{Type: "text", Text: text}}, Timestamp: ts, RecordedAt: recordedAt}
 			detail.Messages = append(detail.Messages, m)
 			updateTimeBounds(&detail, ts)
 			lastID = msgID
@@ -590,7 +613,7 @@ func parsePi(path string, records []map[string]any) (Detail, bool) {
 			continue
 		}
 		msgID := firstNonEmpty(recordID, fmt.Sprintf("pi-%d", len(detail.Messages)))
-		m := Message{ID: msgID, ParentID: parentID, Role: "user", Content: blocks, Timestamp: ts}
+		m := Message{ID: msgID, ParentID: parentID, Role: "user", Content: blocks, Timestamp: ts, RecordedAt: recordedAt}
 		detail.Messages = append(detail.Messages, m)
 		updateTimeBounds(&detail, ts)
 		lastID = msgID
@@ -922,15 +945,55 @@ func codexContentBlocks(value any, role string) []ContentBlock {
 		}
 		kind := stringValue(obj["type"])
 		text := stringValue(obj["text"])
-		if kind == "input_text" || kind == "output_text" {
+		switch kind {
+		case "input_text", "output_text":
 			if text != "" {
 				blocks = append(blocks, ContentBlock{Type: "text", Text: text})
 			}
-		} else if text != "" {
-			blocks = append(blocks, ContentBlock{Type: "text", Text: text})
+		case "input_image":
+			if source := parseCodexImageURL(stringValue(obj["image_url"])); source != nil {
+				blocks = append(blocks, ContentBlock{Type: "image", Source: source})
+			}
+		default:
+			if text != "" {
+				blocks = append(blocks, ContentBlock{Type: "text", Text: text})
+			}
 		}
 	}
 	return blocks
+}
+
+func parseCodexImageURL(url string) map[string]any {
+	const prefix = "data:"
+	if !strings.HasPrefix(url, prefix) {
+		if url != "" {
+			return map[string]any{"type": "url", "url": url}
+		}
+		return nil
+	}
+	rest := url[len(prefix):]
+	semi := strings.Index(rest, ";")
+	comma := strings.Index(rest, ",")
+	if semi < 0 || comma < 0 || comma < semi {
+		return nil
+	}
+	mediaType := rest[:semi]
+	data := rest[comma+1:]
+	return map[string]any{"type": "base64", "media_type": mediaType, "data": data}
+}
+
+func piSystemSections(value any) string {
+	sections, ok := value.(map[string]any)
+	if !ok {
+		return ""
+	}
+	var parts []string
+	for _, key := range []string{"preamble", "tools", "rules", "context"} {
+		if text := stringValue(sections[key]); text != "" {
+			parts = append(parts, text)
+		}
+	}
+	return strings.Join(parts, "\n\n")
 }
 
 func piAssistantBlocks(value any) []ContentBlock {
