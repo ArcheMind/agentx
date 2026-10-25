@@ -44,6 +44,6 @@ func colorize(enabled bool, color, value string) string {
 	return color + value + ansiReset
 }
 
-func agentColor(provider string) string {
-	return agentColors[provider]
+func agentColor(agent string) string {
+	return agentColors[agent]
 }

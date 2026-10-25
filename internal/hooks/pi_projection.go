@@ -41,7 +41,7 @@ export default function (pi: any) {
 
   const invoke = async (event: string, payload: Record<string, unknown>, ctx: any, spec: { command: string; matcher?: string; timeout: number; project?: string; payload: string }) => {
 	const result = await new Promise<{ code: number; stdout: string; stderr: string }>((resolve) => {
-	  const args = ["hook", "__dispatch", "--provider", "pi", "--event", event, "--handler", spec.payload];
+	  const args = ["hook", "__dispatch", "--agent", "pi", "--event", event, "--handler", spec.payload];
 	  const child = spawn(executable, args, {
         cwd: ctx.cwd,
         stdio: ["pipe", "pipe", "pipe"],

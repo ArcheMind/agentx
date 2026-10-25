@@ -43,7 +43,7 @@ func withoutCodexTelemetry(stderr string) string {
 	return strings.Join(lines, "\n")
 }
 
-// verifyEffort reports whether the native model requests of the turn ran at the preset effort.
+// verifyEffort reports whether the native model requests of the turn ran at the profile effort.
 func verifyEffort(requested string, executed []string, source string) (string, error) {
 	if len(executed) == 0 {
 		if requested == "" {
@@ -70,7 +70,7 @@ func verifyEffort(requested string, executed []string, source string) (string, e
 	}
 	summary := fmt.Sprintf("executed effort %s (%d model request(s), from %s)", strings.Join(distinct, ", "), len(executed), source)
 	if len(mismatched) > 0 {
-		summary += fmt.Sprintf("; WARNING: preset requested %s but native executed %s", requested, strings.Join(mismatched, ", "))
+		summary += fmt.Sprintf("; WARNING: profile requested %s but native executed %s", requested, strings.Join(mismatched, ", "))
 	}
 	return summary, nil
 }
@@ -151,7 +151,7 @@ func verifyPi(a *ExternalSubagentState, offset int64) (string, error) {
 	}
 	var warnings []string
 	if a.Option.Effort != "" && evidence.thinking != a.Option.Effort {
-		warnings = append(warnings, fmt.Sprintf("WARNING: preset effort %s, but the Pi session records thinking level %q (Pi clamped it)", a.Option.Effort, evidence.thinking))
+		warnings = append(warnings, fmt.Sprintf("WARNING: profile effort %s, but the Pi session records thinking level %q (Pi clamped it)", a.Option.Effort, evidence.thinking))
 	}
 	summary, err := verifyEffort(a.Option.Effort, evidence.efforts, "Pi provider requests recorded by the AgentX observer")
 	if err != nil {

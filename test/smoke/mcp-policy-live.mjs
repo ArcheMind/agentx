@@ -13,11 +13,11 @@ spawnSync('git',['init','-q'],{cwd:root})
 await writeFile(join(outside,'existing.txt'),'original\n')
 const codexHome=process.env.AX_MCP_CODEX_HOME??join(homedir(),'.codex'),piAgentDir=process.env.AX_MCP_PI_AGENT_DIR??join(homedir(),'.pi','agent')
 const codexModel=process.env.AX_MCP_CODEX_MODEL??'gpt-5.6-luna',piModel=process.env.AX_MCP_PI_MODEL??'openai-codex/gpt-5.6-luna'
-const presetList=[['codex','codex',codexModel,'low'],['pi','pi',piModel,'']]
-for(const [name,agent,model,effort] of presetList){const dir=join(home,'.agentx','presets',name);await mkdir(dir,{recursive:true});await writeFile(join(dir,'PRESET.md'),`---\nagent: ${agent}\nmodel: ${model}\n${effort?`effort: ${effort}\n`:''}---\n\nPolicy acceptance ${name}\n`)}
+const profileList=[['codex','codex',codexModel,'low'],['pi','pi',piModel,'']]
+for(const [name,agent,model,effort] of profileList){const dir=join(home,'.agentx','profiles',name);await mkdir(dir,{recursive:true});await writeFile(join(dir,'PROFILE.md'),`---\nagent: ${agent}\nmodel: ${model}\n${effort?`effort: ${effort}\n`:''}---\n\nPolicy acceptance ${name}\n`)}
 // Auth is discovered from the server environment, so missing credentials need their own server.
 function startServer(authEnv){
- const child=spawn(binary,['preset','serve'],{cwd:root,env:{...process.env,AX_SUBAGENT_HOME:home,AX_LOG:'debug',...authEnv},stdio:['pipe','pipe','pipe']})
+ const child=spawn(binary,['mcp','serve'],{cwd:root,env:{...process.env,AX_SUBAGENT_HOME:home,AX_LOG:'debug',...authEnv},stdio:['pipe','pipe','pipe']})
  const server={child,stderr:'',pending:'',counter:0,waiting:new Map()}
  child.stderr.on('data',chunk=>server.stderr+=chunk)
  child.stdout.on('data',chunk=>{server.pending+=chunk;let end;while((end=server.pending.indexOf('\n'))>=0){const line=server.pending.slice(0,end);server.pending=server.pending.slice(end+1);const event=JSON.parse(line);if(event.id!==undefined){const task=server.waiting.get(event.id);server.waiting.delete(event.id);event.error?task.reject(Error(JSON.stringify(event.error))):task.resolve(event.result)}}})

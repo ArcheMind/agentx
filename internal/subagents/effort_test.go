@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ArcheMind/agentx/internal/presets"
+	"github.com/ArcheMind/agentx/internal/profiles"
 	"github.com/ArcheMind/agentx/internal/runtime"
 )
 
@@ -57,7 +57,7 @@ func (r *codexEffortRunner) Execute(ctx context.Context, p runtime.CommandPlan, 
 	r.mu.Lock()
 	thread := fmt.Sprintf("12345678-1234-1234-1234-%012d", len(r.plans))
 	r.mu.Unlock()
-	if presets.Contains(p.Args, "resume") {
+	if profiles.Contains(p.Args, "resume") {
 		thread = p.Args[len(p.Args)-2]
 	}
 	dir := filepath.Join(p.Env["CODEX_HOME"], "sessions", "2026", "10", "21")
@@ -73,9 +73,9 @@ func (r *codexEffortRunner) Execute(ctx context.Context, p runtime.CommandPlan, 
 func TestCodexSilentEffortClampIsReported(t *testing.T) {
 	r := &codexEffortRunner{executed: "max"}
 	s := testServer(t, r)
-	ultra := reviewPreset
+	ultra := reviewProfile
 	ultra.Effort = "ultra"
-	savePreset(t, s.Home, ultra)
+	saveProfile(t, s.Home, ultra)
 	clamped := callTest(t, s, "ExternalSubagent", map[string]any{"description": "x", "prompt": "x", "model": "review", "run_in_background": false})
 	if !strings.Contains(clamped, "WARNING") || !strings.Contains(clamped, "ultra") || !strings.Contains(clamped, "max") {
 		t.Fatal(clamped)
@@ -83,9 +83,9 @@ func TestCodexSilentEffortClampIsReported(t *testing.T) {
 	if env := r.plans[0].Env["RUST_LOG"]; env != codexTelemetryFilter {
 		t.Fatal(env)
 	}
-	native := reviewPreset
+	native := reviewProfile
 	native.Effort = ""
-	savePreset(t, s.Home, native)
+	saveProfile(t, s.Home, native)
 	text := callTest(t, s, "ExternalSubagent", map[string]any{"description": "x", "prompt": "x", "model": "review", "run_in_background": false})
 	if !strings.Contains(text, "effort=native default") || !strings.Contains(text, "Native evidence: executed effort max") {
 		t.Fatal(text)
@@ -149,7 +149,7 @@ func piServer(t *testing.T, r runtime.Runner, effort string) *Server {
 	bin := t.TempDir()
 	os.WriteFile(filepath.Join(bin, "pi"), []byte("#!/bin/sh\nexit 0\n"), 0o700)
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
-	savePreset(t, s.Home, presets.Preset{Name: "pi-review", Agent: "pi", Model: "provider/model", Description: "Pi", Effort: effort})
+	saveProfile(t, s.Home, profiles.Profile{Name: "pi-review", Agent: "pi", Model: "provider/model", Description: "Pi", Effort: effort})
 	return s
 }
 
@@ -190,8 +190,8 @@ func TestPiClampAndMissingObserverReported(t *testing.T) {
 		want   string
 	}{
 		{"session clamp", &piRunner{thinking: "medium", effort: ptr("medium"), observer: true}, "thinking level \"medium\""},
-		{"provider remap", &piRunner{thinking: "high", effort: ptr("low"), observer: true}, "WARNING: preset requested high but native executed low"},
-		{"no effort field", &piRunner{thinking: "high", observer: true}, "WARNING: preset requested high but native executed none sent"},
+		{"provider remap", &piRunner{thinking: "high", effort: ptr("low"), observer: true}, "WARNING: profile requested high but native executed low"},
+		{"no effort field", &piRunner{thinking: "high", observer: true}, "WARNING: profile requested high but native executed none sent"},
 		{"observer absent", &piRunner{thinking: "high"}, "could not be verified"},
 	}
 	for _, c := range cases {

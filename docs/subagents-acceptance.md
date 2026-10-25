@@ -87,17 +87,17 @@ the following:
 - A grant change rejects continuation.
 - Debug logs redact credentials, and unset variables do not reach the child.
 
-Note (2026-10-21): the user changed the grant/preset mismatch semantics. A
-callable preset without a grant is now only not callable, and an orphan grant or
-a grant on an interactive-launch-only preset is reported as a problem without
+Note (2026-10-21): the user changed the grant/profile mismatch semantics. A
+callable profile without a grant is now only not callable, and an orphan grant or
+a grant on an interactive-launch-only profile is reported as a problem without
 effect. Structural grant errors still reject the whole configuration. This takes
-effect from integrate/wave-1 commit 0b7dbf3 ("Reject only the affected preset
-when grants and presets disagree"). The missing/orphan-grant rejection verified
+effect from integrate/wave-1 commit 0b7dbf3 ("Reject only the affected profile
+when grants and profiles disagree"). The missing/orphan-grant rejection verified
 above reflects the earlier semantics.
 
 Note (2026-10-21, later the same day): the user removed the grants model and
 `subagents.json` altogether (integrate/wave-2, commit 6d474f7 "Replace
-subagents.json and grants with call-time write scope"). The presets and roles
+subagents.json and grants with call-time write scope"). The profiles and roles
 collections are the only configuration; enable/disable is the Claude user MCP
 registration; write scope is requested per `ExternalSubagent` call (`write`,
 `writable_roots`, or `write` with `isolation:"worktree"`, where the worktree is
@@ -125,7 +125,7 @@ a foreground call (`run_in_background:false`), the same semantics as a native
 headless subagent; the A08 rows for interactive background delivery remain the
 historical record of what was delivered. The `enable`/`disable` subcommands
 were removed; registration is Claude's own `claude mcp add`/`remove`, and the
-MCP catalog lists only MCP-callable presets.
+MCP catalog lists only MCP-callable profiles.
 
 ## Roles and effort (backlog 004 G04, G09)
 
@@ -157,9 +157,9 @@ Investigation that set the design (direct CLI runs, same date and versions):
 
 | ID | Status | Observation |
 | --- | --- | --- |
-| A05 | Pass (Codex, Pi) | Roles `alpha` (security reviewer: start `SECURITY:`, end with a random `ALPHA-…` token) and `beta` (docs editor: `DOCS:`, `BETA-…`) on the same preset. `codex-role/alpha` replied `SECURITY: … / ALPHA-08d3e7a8`, `codex-role/beta` `DOCS: … / BETA-0f0061c9`, `general-purpose` with neither. Pi gave the same pattern. The tokens exist only in the role files. Each Codex rollout holds the role text as a `developer` message (none for `general-purpose`). Every Pi provider request was recorded with `role_included:true`. Fixed model, different role: native argv identical apart from `developer_instructions` (Codex) or `--extension`/`--append-system-prompt` (Pi), so agent, model, effort and grant did not change. Fixed role, different model: `alpha` produced its token on both Codex and Pi. A resumed Codex turn kept the role (`SECURITY: … ALPHA-08d3e7a8`). After `ROLE.md` was edited, `SendExternalSubagentMessage` was rejected (`original role alpha changed or was removed`). Unknown `gamma` was rejected before any work started. |
-| A12 | Pass for the combinations below; others rejected | Codex gpt-5.6-luna, one preset per level, executed level read from `response.completed` telemetry: `none`, `low`, `medium`, `high`, `xhigh` and `max` each ran as requested. `ultra` was run by Codex as `max` and the turn failed (`native effort mismatch: preset effort ultra, but … max executed`). `minimal` failed with the native 400, now returned as the reason. Pi `openai-codex/gpt-5.6-luna` `low`..`max`: each session's `thinking_level_change` and every observer-recorded provider request equal the level. Real clamp: Pi `deepseek/deepseek-flash` with `max` was clamped by Pi to `high` (session and request both `high`); the turn failed (`Pi session records thinking level "high" (Pi clamped it)`). Direct Pi runs with the observer: `minimal` is recorded as `minimal` but sent as `low`, and `off` sends no effort. These two stay rejected at preset validation. The check reads native session and request evidence, not CLI arguments or reply text. |
-| A13 | Pass | Initialization instructions and `ExternalSubagent` metadata carry a role DATA block, and the `subagent_type` enum is `general-purpose` plus valid declared roles (live: `["general-purpose","alpha","beta"]`). Each preset's access/limits describe role carriage, the effort check and Pi's observer extension. `status` lists `roles`, `invalid_roles` and `role_behavior`. Reports show `role=` and a `Native evidence:` line. The `ax` creation flow offers Pi `low`..`max`, labelled as checked at every ExternalSubagent turn. A role or preset change after initialization adds a stale-snapshot note to call results. A role change never rebinds an existing session (A05). |
+| A05 | Pass (Codex, Pi) | Roles `alpha` (security reviewer: start `SECURITY:`, end with a random `ALPHA-…` token) and `beta` (docs editor: `DOCS:`, `BETA-…`) on the same profile. `codex-role/alpha` replied `SECURITY: … / ALPHA-08d3e7a8`, `codex-role/beta` `DOCS: … / BETA-0f0061c9`, `general-purpose` with neither. Pi gave the same pattern. The tokens exist only in the role files. Each Codex rollout holds the role text as a `developer` message (none for `general-purpose`). Every Pi provider request was recorded with `role_included:true`. Fixed model, different role: native argv identical apart from `developer_instructions` (Codex) or `--extension`/`--append-system-prompt` (Pi), so agent, model, effort and grant did not change. Fixed role, different model: `alpha` produced its token on both Codex and Pi. A resumed Codex turn kept the role (`SECURITY: … ALPHA-08d3e7a8`). After `ROLE.md` was edited, `SendExternalSubagentMessage` was rejected (`original role alpha changed or was removed`). Unknown `gamma` was rejected before any work started. |
+| A12 | Pass for the combinations below; others rejected | Codex gpt-5.6-luna, one profile per level, executed level read from `response.completed` telemetry: `none`, `low`, `medium`, `high`, `xhigh` and `max` each ran as requested. `ultra` was run by Codex as `max` and the turn failed (`native effort mismatch: profile effort ultra, but … max executed`). `minimal` failed with the native 400, now returned as the reason. Pi `openai-codex/gpt-5.6-luna` `low`..`max`: each session's `thinking_level_change` and every observer-recorded provider request equal the level. Real clamp: Pi `deepseek/deepseek-flash` with `max` was clamped by Pi to `high` (session and request both `high`); the turn failed (`Pi session records thinking level "high" (Pi clamped it)`). Direct Pi runs with the observer: `minimal` is recorded as `minimal` but sent as `low`, and `off` sends no effort. These two stay rejected at profile validation. The check reads native session and request evidence, not CLI arguments or reply text. |
+| A13 | Pass | Initialization instructions and `ExternalSubagent` metadata carry a role DATA block, and the `subagent_type` enum is `general-purpose` plus valid declared roles (live: `["general-purpose","alpha","beta"]`). Each profile's access/limits describe role carriage, the effort check and Pi's observer extension. `status` lists `roles`, `invalid_roles` and `role_behavior`. Reports show `role=` and a `Native evidence:` line. The `ax` creation flow offers Pi `low`..`max`, labelled as checked at every ExternalSubagent turn. A role or profile change after initialization adds a stale-snapshot note to call results. A role change never rebinds an existing session (A05). |
 
 Regression on the same commit: `make smoke-mcp-live`
 (`…/agentx-mcp-live-I5qQcQ`) and `make smoke-mcp-policy-live`
@@ -168,11 +168,11 @@ active. The debug log of the roles/effort run contains no `sk-` key values;
 `DEEPSEEK_API_KEY` appears only by name in `unset_env`.
 
 Deterministic coverage: `go test ./internal/roles ./internal/subagents
-./internal/presets ./internal/app` covers role parsing and rejection (execution
+./internal/profiles ./internal/app` covers role parsing and rejection (execution
 keys, reserved name, case-variant name, size, missing parts), role locking,
 unchanged execution argv across roles, a missing developer message, Codex
 clamp and missing telemetry, Pi session clamp, provider remap, a missing effort
-field, a dropped role and an absent observer. `make smoke-presets` checks role
+field, a dropped role and an absent observer. `make smoke-profiles` checks role
 metadata, role argv and unknown-role rejection against the built binary with a
 fake Codex.
 
@@ -180,7 +180,7 @@ Still open or not claimed:
 - Effort for models other than those in the table is not claimed in advance;
   it is checked at run time and fails on mismatch. A Pi model whose requests
   carry no `reasoning.effort`/`reasoning_effort` field fails explicit effort.
-- Codex `none`, `minimal` and `ultra` remain valid preset values because the
+- Codex `none`, `minimal` and `ultra` remain valid profile values because the
   Codex CLI accepts them (for example the sol models list `ultra`). The creation
   flow offers only the levels Codex lists for the chosen model (gpt-5.6-luna:
   `low`..`max`), and the run-time check catches the rest.
@@ -207,7 +207,7 @@ G01–G03 section. Evidence directory (with `server-debug.log` and
 | --- | --- | --- |
 | A06 | Pass (Codex, Pi read-only) | Success: bounded-write grant with root = the repository. The native plan ran in `<worktree>/sub` with `writable_roots=["<worktree>"]` and without the repository path. Rollout `…/rollout-2026-10-21T05-10-57-01a15e5f-2a8d-7350-8b22-eda5b9b39f0b.jsonl` shows `printf isolated > agent.txt` with exit 0. The file exists only in the worktree, and the report names path, branch `agentx/<id>`, base commit and `?? sub/agent.txt`. Escape: an absolute write to the original `repo/sub/escape.txt` failed with `operation not permitted` (rollout `…-01a15e5f-2a8e-7902-a74b-7305306ed11a.jsonl`), and the file is absent. Read-only Codex in a worktree: `printf readonly > ro.txt` failed with `operation not permitted`. Failure: a nonexistent model failed natively; the report named the kept worktree. Cancellation: the agent wrote `partial.txt`, then `StopExternalSubagent` confirmed `cancelled`; the report listed `?? sub/partial.txt` and the file was still present. Pi read-only ran with its working directory inside the worktree. The original snapshot was identical afterwards (`M sub/tracked.txt`, `?? draft.txt`, edit intact). All six worktrees remained in `git worktree list` after the server exited. |
 | A07 | Open (external) | `isolation:"remote"` is rejected before any work with the external reason; no native process starts. Investigated 2026-10-21: `codex cloud` (exec/status/list/diff/apply) has no cancel command. It also runs in a Codex Cloud environment bound to a pushed GitHub branch, not this working directory; this account lists no tasks, and the CLI cannot list environments. `codex exec-server --remote` registers a WebSocket exec server that the user must provision on a remote host; none exists here, and starting one locally would only alias a local directory. Pi 0.84.4 has no remote execution. |
-| A13 (isolation) | Pass | The initialization catalog, each preset's limits (`Isolation: worktree supported …; Remote: rejected …`), the tool description and the `isolation` field description all state the same support. Reports carry the worktree path, branch, base, effective writable roots, retention and the state after the last task. Isolation is fixed per ExternalSubagent: continuation reuses the same worktree. A removed worktree fails explicitly, and the task never moves to the original directory. Unknown isolation values reject. |
+| A13 (isolation) | Pass | The initialization catalog, each profile's limits (`Isolation: worktree supported …; Remote: rejected …`), the tool description and the `isolation` field description all state the same support. Reports carry the worktree path, branch, base, effective writable roots, retention and the state after the last task. Isolation is fixed per ExternalSubagent: continuation reuses the same worktree. A removed worktree fails explicitly, and the task never moves to the original directory. Unknown isolation values reject. |
 
 Note (2026-10-21, after independent acceptance of `a09587c`): the reviewer
 found that a writable root spelled as a case variant of the repository
@@ -284,13 +284,13 @@ native runner) covers the following:
 - Pi plan cwd.
 
 Note (2026-10-21): rows A04 and A12 of the scenario matrix below, and the
-retained preset-visibility observations, predate G05. Their statement that all
+retained profile-visibility observations, predate G05. Their statement that all
 isolation is rejected was true for that run. Worktree isolation is supported
 since branch `feat/isolation`; remote stays rejected.
 
 ## Environment and retained observations
 
-### Current preset DATA visibility
+### Current profile DATA visibility
 
 The config-derived catalog is shared by initialization instructions and creation
 metadata/model choices. Deterministic coverage checks quoted data boundaries,
@@ -298,30 +298,30 @@ disabled/invalid/empty/no-default states and reconnect snapshot semantics.
 
 One author-owned observation used the exact question `有哪些可用subagent选择？`,
 default native tools, deferred search and `dontAsk`, with randomized isolated
-presets. Claude Code 2.1.296 / `claude-fable-5-1` returned both presets with their
+profiles. Claude Code 2.1.296 / `claude-fable-5-1` returned both profiles with their
 correct engines/models and readonly limits, distinguished native types, and
 qualified static checks versus unverified remote availability. No tools were
 called. Safe answer/call evidence is `observed.json` under
-`/var/folders/34/yf5zv4k133l7nrksmz2flmw00000gn/T/agentx-preset-visibility-zex6J4`.
+`/var/folders/34/yf5zv4k133l7nrksmz2flmw00000gn/T/agentx-profile-visibility-zex6J4`.
 This is one observed response, not a deterministic language-behavior guarantee.
 Independent reviewer-owned Claude observations (2.1.296 / `claude-fable-5-1`)
 subsequently accepted natural behavior:
 
-- A different general question listed both randomized presets, default, readonly
+- A different general question listed both randomized profiles, default, readonly
   capabilities/limits and distinguished internal Agent types with zero tool calls
-  (`agentx-preset-visibility-6kzu6j`).
+  (`agentx-profile-visibility-6kzu6j`).
 - An exact-model/isolation question preserved both complete configured model IDs,
   explicitly rejected isolation and qualified remote availability, with zero
-  tool calls (`agentx-preset-visibility-2JPu68`).
+  tool calls (`agentx-profile-visibility-2JPu68`).
 - A created/continuable-session question used ToolSearch then
   `listExternalSubagentSessions`, correctly reporting an empty connection rather
-  than presenting configured presets as created instances
-  (`agentx-preset-visibility-j6tjOk`).
+  than presenting configured profiles as created instances
+  (`agentx-profile-visibility-j6tjOk`).
 
 These directories share the temporary parent path above; each contains
 `observed.json`. The first two decisive observations used an isolated temporary
 working directory. An earlier exact-model question from the repository directory
-used Bash to inspect source (`agentx-preset-visibility-Ay2AvN`); it is excluded as
+used Bash to inspect source (`agentx-profile-visibility-Ay2AvN`); it is excluded as
 evidence that metadata alone suffices. An initial general response shortened the
 Pi model ID, motivating more precise DATA labels before the accepted observations.
 Reviewer semantic judgment, not a fixed keyword assertion, determined acceptance.
@@ -438,14 +438,14 @@ checks are not a sandbox penetration test.
 | --- | --- |
 | A01 First use | Live isolated management installs persistent MCP entry. Actual Claude discovers and invokes both configured real engine choices without registration. |
 | A02 Single call | Actual Claude creates each real backend object in one Agent call. Separate live foreground calls return terminal native reports, identities and hints. |
-| A03 Defaults | Historical (pre-002): configured-default execution. Since 002 there is no default preset; an omitted `model` is rejected (deterministic server test). |
+| A03 Defaults | Historical (pre-002): configured-default execution. Since 002 there is no default profile; an omitted `model` is rejected (deterministic server test). |
 | A04 Constraints | Unknown/disabled choices and unsupported role/effort/isolation reject; capabilities/limits visible in generated tool description. |
 | A05 Fore/background | Live both engines false waits; real Claude true returns queued then consumes channel. Deterministic omitted background returns queued immediately. |
 | A06 Memory | Live distinct first-turn labels recalled via both native sessions, no caller history replay. |
 | A07 Busy message | Actual Claude's exact SendMessage results report each matching real worker running and message accepted/queued; both later recall their own context through channel results. |
 | A08 Parallel/addressing | Live different engines parallel with distinct contexts; deterministic same-combination fresh sessions, name reassignment and old-ID access. |
 | A09 Cancellation | Real ListAgents shows Pi survivor and Codex target running together; cancelling Codex terminates it while Pi later completes. Deterministic per-queued-task notifications and unknown/already-ended cases supplement this. |
-| A10 Disable/re-enable | Live isolated management preserves the presets collection (`make smoke-mcp-management`); deterministic new-work rejection and completion of accepted queue while disabled. |
+| A10 Disable/re-enable | Live isolated management preserves the profiles collection (`make smoke-mcp-management`); deterministic new-work rejection and completion of accepted queue while disabled. |
 | A11 Configuration changes | Each new task reads current config. Original option pinned at acceptance/dequeue; changed or removed identity rejects continuation. |
 | A12 Parameters | Deterministic required/optional/unknown/null/wrong-type/case/empty checks. Deprecated mode/team_name cannot alter readonly native plan. Live Codex low effort; Pi effort and all isolation reject. |
 | A13 Failures | Injected unavailable-model/execution failure is a tool error. Malformed/incomplete output, missing Pi session, changed native ID fail without retry. Ignored cancellation is explicitly unconfirmed, not cancelled. |

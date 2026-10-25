@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ArcheMind/agentx/internal/presets"
+	"github.com/ArcheMind/agentx/internal/profiles"
 	"github.com/ArcheMind/agentx/internal/runtime"
 )
 
@@ -215,7 +215,7 @@ func TestPiWorktreeIsolationChangesOnlyWorkingDirectory(t *testing.T) {
 	bin := t.TempDir()
 	os.WriteFile(filepath.Join(bin, "pi"), []byte("#!/bin/sh\nexit 0\n"), 0700)
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
-	savePreset(t, s.Home, presets.Preset{Name: "pi-iso", Agent: "pi", Model: "provider/model", Description: "pi"})
+	saveProfile(t, s.Home, profiles.Profile{Name: "pi-iso", Agent: "pi", Model: "provider/model", Description: "pi"})
 	s.call("ExternalSubagent", []byte(`{"description":"x","prompt":"x","model":"pi-iso","isolation":"worktree","name":"p","run_in_background":false}`))
 	s.mu.Lock()
 	a, _ := s.target("p")

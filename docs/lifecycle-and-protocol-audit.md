@@ -30,7 +30,7 @@ AgentX owns only locate and install planning. Each Agent registry entry owns its
 
 ## Sessions
 
-The built-in cross-Agent service remains `providers`, `list`, `info`, and `resume`. Native session lifecycles are not uniform: Gemini advertises project-scoped list/resume/delete, while Codex advertises resume/fork/archive/unarchive/delete. AgentX does not normalize destructive operations that lack a shared workflow or semantics. The source dimension is consistently named `--source` on list, info, and resume.
+The built-in cross-Agent service remains `list`, `info`, and `resume`. Native session lifecycles are not uniform: Gemini advertises project-scoped list/resume/delete, while Codex advertises resume/fork/archive/unarchive/delete. AgentX does not normalize destructive operations that lack a shared workflow or semantics. The source dimension is consistently named `--source` on list, info, and resume.
 
 ## CLI grammar
 
@@ -38,7 +38,7 @@ Resources lead the hierarchy:
 
 - `agent list|which|install|models|run`
 - `auth login|status|logout`
-- `session providers|list|info|resume`
+- `session list|info|resume`
 
 The action-leading commands and the plural `agents`/`sessions` aliases are removed. Agent installation is explicitly Agent-scoped.
 

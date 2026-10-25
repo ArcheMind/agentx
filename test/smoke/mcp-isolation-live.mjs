@@ -23,9 +23,9 @@ const codexModel=process.env.AX_MCP_CODEX_MODEL??'gpt-5.6-luna',piModel=process.
 // Under isolation the only writable root is the worktree AgentX creates: no caller path string, such
 // as a case-variant spelling of the repository (same directory on default macOS APFS), reaches the sandbox.
 const repoAlias=join(base,'REPO')
-const presets={'iso':['codex',codexModel],'iso-pi':['pi',piModel],'iso-badmodel':['codex','agentx-no-such-model']}
-for(const [name,[agent,model]] of Object.entries(presets)){const dir=join(home,'.agentx','presets',name);await mkdir(dir,{recursive:true});await writeFile(join(dir,'PRESET.md'),`---\nagent: ${agent}\nmodel: ${model}\n${agent==='codex'?'effort: low\n':''}---\n\nIsolation acceptance ${name}\n`)}
-const child=spawn(binary,['preset','serve'],{cwd,env:{...process.env,AX_SUBAGENT_HOME:home,AX_LOG:'debug',CODEX_HOME:codexHome,PI_CODING_AGENT_DIR:piAgentDir},stdio:['pipe','pipe','pipe']})
+const profiles={'iso':['codex',codexModel],'iso-pi':['pi',piModel],'iso-badmodel':['codex','agentx-no-such-model']}
+for(const [name,[agent,model]] of Object.entries(profiles)){const dir=join(home,'.agentx','profiles',name);await mkdir(dir,{recursive:true});await writeFile(join(dir,'PROFILE.md'),`---\nagent: ${agent}\nmodel: ${model}\n${agent==='codex'?'effort: low\n':''}---\n\nIsolation acceptance ${name}\n`)}
+const child=spawn(binary,['mcp','serve'],{cwd,env:{...process.env,AX_SUBAGENT_HOME:home,AX_LOG:'debug',CODEX_HOME:codexHome,PI_CODING_AGENT_DIR:piAgentDir},stdio:['pipe','pipe','pipe']})
 let stderr='',pending='',counter=0
 const waiting=new Map()
 child.stderr.on('data',chunk=>stderr+=chunk)

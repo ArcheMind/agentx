@@ -28,19 +28,19 @@ CLI grammar and output protocol
 
 ## CLI layer
 
-`internal/app` owns the resource-first grammar, argument validation, text and structured output, dry-run behavior, and stable error envelopes. It coordinates capabilities but does not contain provider-specific parsing.
+`internal/app` owns the resource-first grammar, argument validation, text and structured output, dry-run behavior, and stable error envelopes. It coordinates capabilities but does not contain agent-specific parsing.
 
 ## Agent registry and drivers
 
 `internal/drivers` registers one identity per supported agent. Installation, authentication, model discovery, and launch are separate interfaces because native tools do not expose a symmetrical lifecycle.
 
-This avoids a large adapter filled with optional methods and prevents the CLI from advertising a capability simply because another provider implements it.
+This avoids a large adapter filled with optional methods and prevents the CLI from advertising a capability simply because another agent implements it.
 
 ## Native sessions
 
 `internal/sessions` reads each agent's local native session format and normalizes only the fields required for discovery, inspection, and bounded handoff. The native file path remains visible as the source.
 
-Resume never writes a source provider's database. AgentX builds a bounded transcript and invokes the target agent through its launch driver.
+Resume never writes a source agent's database. AgentX builds a bounded transcript and invokes the target agent through its launch driver.
 
 ## Agent Skills
 
@@ -66,4 +66,4 @@ Installation accepts a local directory or a Git repository plus subpath, validat
 
 ## Adding an agent capability
 
-A change starts with evidence of a stable native source or command. Add the smallest orthogonal driver, register the capability, update the lifecycle audit, and extend the consistency checks. If providers do not share semantics, keep the feature native instead of forcing it into AgentX.
+A change starts with evidence of a stable native source or command. Add the smallest orthogonal driver, register the capability, update the lifecycle audit, and extend the consistency checks. If agents do not share semantics, keep the feature native instead of forcing it into AgentX.

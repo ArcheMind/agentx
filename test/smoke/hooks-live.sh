@@ -76,7 +76,7 @@ run_agent() {
 	node "$root/test/smoke/make-hooks.mjs" "$project/.agents/hooks.json" "$recorder" "$agent_results"
 	"$ax" "$agent" --model "$model" --cwd "$project" --dry-run -- "$@" >"$agent_results/plan.json"
 	if [ "$agent" = claude ]; then
-		set -- --debug-file "$agent_results/provider-debug.log" "$@"
+		set -- --debug-file "$agent_results/agent-debug.log" "$@"
 	fi
 	if ! "$ax" "$agent" --model "$model" --cwd "$project" -- "$@" >"$agent_results/stdout.log" 2>"$agent_results/stderr.log"; then
 		if [ "$agent" = gemini ]; then
@@ -105,7 +105,7 @@ run_case() {
 	if run_agent "$agent" "$@"; then
 		return
 	fi
-	printf '%s smoke failed; continuing with the remaining providers.\n' "$agent" >&2
+	printf '%s smoke failed; continuing with the remaining agents.\n' "$agent" >&2
 	failures="${failures}${failures:+, }${agent}"
 }
 

@@ -1,4 +1,4 @@
-package presets
+package profiles
 
 import (
 	"errors"
@@ -10,8 +10,8 @@ import (
 
 func TestRoundTripKeepsDescriptionInMarkdownBody(t *testing.T) {
 	home := t.TempDir()
-	preset := Preset{Name: "deep-review", Description: "Review complex changes.\n\nNot for quick fixes.", Agent: "codex", Model: "gpt-5.6-luna", Effort: "high"}
-	if err := Create(home, preset); err != nil {
+	profile := Profile{Name: "deep-review", Description: "Review complex changes.\n\nNot for quick fixes.", Agent: "codex", Model: "gpt-5.6-luna", Effort: "high"}
+	if err := Create(home, profile); err != nil {
 		t.Fatal(err)
 	}
 	data, err := os.ReadFile(Path(home, "deep-review"))
@@ -20,17 +20,17 @@ func TestRoundTripKeepsDescriptionInMarkdownBody(t *testing.T) {
 	}
 	text := string(data)
 	if !strings.HasPrefix(text, "---\nagent: codex\nmodel: gpt-5.6-luna\neffort: high\n---\n\nReview complex changes.") || strings.Contains(text, "name:") {
-		t.Fatalf("PRESET.md = %q", text)
+		t.Fatalf("PROFILE.md = %q", text)
 	}
 	loaded, problems, err := Load(home)
-	if err != nil || len(problems) != 0 || len(loaded) != 1 || !loaded[0].Equal(preset) {
+	if err != nil || len(problems) != 0 || len(loaded) != 1 || !loaded[0].Equal(profile) {
 		t.Fatalf("loaded = %#v problems = %#v err = %v", loaded, problems, err)
 	}
 }
 
 func TestNativeDefaultEffortIsOmitted(t *testing.T) {
 	home := t.TempDir()
-	if err := Create(home, Preset{Name: "pi-review", Description: "Independent review", Agent: "pi", Model: "openai-codex/gpt-5.6-luna"}); err != nil {
+	if err := Create(home, Profile{Name: "pi-review", Description: "Independent review", Agent: "pi", Model: "openai-codex/gpt-5.6-luna"}); err != nil {
 		t.Fatal(err)
 	}
 	data, _ := os.ReadFile(Path(home, "pi-review"))
@@ -41,11 +41,11 @@ func TestNativeDefaultEffortIsOmitted(t *testing.T) {
 
 func TestCreateRejectsDuplicateWithoutOverwriting(t *testing.T) {
 	home := t.TempDir()
-	original := Preset{Name: "daily", Description: "Original", Agent: "claude", Model: "opus"}
+	original := Profile{Name: "daily", Description: "Original", Agent: "claude", Model: "opus"}
 	if err := Create(home, original); err != nil {
 		t.Fatal(err)
 	}
-	err := Create(home, Preset{Name: "daily", Description: "Replacement", Agent: "codex", Model: "x"})
+	err := Create(home, Profile{Name: "daily", Description: "Replacement", Agent: "codex", Model: "x"})
 	if !errors.Is(err, ErrExists) {
 		t.Fatalf("err = %v", err)
 	}
@@ -60,7 +60,7 @@ func TestCreateRejectsDuplicateWithoutOverwriting(t *testing.T) {
 }
 
 func TestValidationRejectsKnownUnsupportedCombinations(t *testing.T) {
-	for _, preset := range []Preset{
+	for _, profile := range []Profile{
 		{Name: "bad name", Description: "x", Agent: "codex", Model: "m"},
 		{Name: "blank", Description: "  \n ", Agent: "codex", Model: "m"},
 		{Name: "dsh", Description: "x", Agent: "dsh", Model: "m"},
@@ -72,18 +72,18 @@ func TestValidationRejectsKnownUnsupportedCombinations(t *testing.T) {
 		{Name: "claude-ultra", Description: "x", Agent: "claude", Model: "m", Effort: "ultra"},
 		{Name: "no-model", Description: "x", Agent: "codex"},
 	} {
-		if err := preset.Validate(); err == nil {
-			t.Fatalf("accepted %#v", preset)
+		if err := profile.Validate(); err == nil {
+			t.Fatalf("accepted %#v", profile)
 		}
-		if err := Create(t.TempDir(), preset); err == nil {
-			t.Fatalf("saved %#v", preset)
+		if err := Create(t.TempDir(), profile); err == nil {
+			t.Fatalf("saved %#v", profile)
 		}
 	}
 }
 
 func TestPiAcceptsOnlyCheckableThinkingLevels(t *testing.T) {
 	for _, effort := range []string{"low", "medium", "high", "xhigh", "max"} {
-		if err := (Preset{Name: "pi", Description: "x", Agent: "pi", Model: "p/m", Effort: effort}).Validate(); err != nil {
+		if err := (Profile{Name: "pi", Description: "x", Agent: "pi", Model: "p/m", Effort: effort}).Validate(); err != nil {
 			t.Fatal(effort, err)
 		}
 	}
@@ -91,7 +91,7 @@ func TestPiAcceptsOnlyCheckableThinkingLevels(t *testing.T) {
 
 func TestLoadReportsBrokenEntriesWithoutHidingValidOnes(t *testing.T) {
 	home := t.TempDir()
-	if err := Create(home, Preset{Name: "good", Description: "Works", Agent: "codex", Model: "m"}); err != nil {
+	if err := Create(home, Profile{Name: "good", Description: "Works", Agent: "codex", Model: "m"}); err != nil {
 		t.Fatal(err)
 	}
 	write := func(name, content string) {
@@ -111,7 +111,7 @@ func TestLoadReportsBrokenEntriesWithoutHidingValidOnes(t *testing.T) {
 	if err != nil || len(valid) != 1 || valid[0].Name != "good" {
 		t.Fatalf("valid = %#v err = %v", valid, err)
 	}
-	want := map[string]string{"missing": "PRESET.md is missing", "no-front": "front matter", "unknown": `unknown field "color"`, "named": "directory name is the preset name", "bad name": "directory name must", "stray.txt": "not a preset directory"}
+	want := map[string]string{"missing": "PROFILE.md is missing", "no-front": "front matter", "unknown": `unknown field "color"`, "named": "directory name is the profile name", "bad name": "directory name must", "stray.txt": "not a profile directory"}
 	if len(problems) != len(want) {
 		t.Fatalf("problems = %#v", problems)
 	}
@@ -124,7 +124,7 @@ func TestLoadReportsBrokenEntriesWithoutHidingValidOnes(t *testing.T) {
 
 func TestRenameCopyDeleteAreIndependent(t *testing.T) {
 	home := t.TempDir()
-	base := Preset{Name: "review", Description: "Review", Agent: "codex", Model: "m", Effort: "low"}
+	base := Profile{Name: "review", Description: "Review", Agent: "codex", Model: "m", Effort: "low"}
 	if err := Create(home, base); err != nil {
 		t.Fatal(err)
 	}
@@ -158,9 +158,9 @@ func TestRenameCopyDeleteAreIndependent(t *testing.T) {
 
 func TestUpdateKeepsOriginalOnInvalidInput(t *testing.T) {
 	home := t.TempDir()
-	base := Preset{Name: "review", Description: "Review", Agent: "codex", Model: "m"}
+	base := Profile{Name: "review", Description: "Review", Agent: "codex", Model: "m"}
 	Create(home, base)
-	if err := Update(home, Preset{Name: "review", Description: " ", Agent: "codex", Model: "m"}); err == nil {
+	if err := Update(home, Profile{Name: "review", Description: " ", Agent: "codex", Model: "m"}); err == nil {
 		t.Fatal("accepted blank description")
 	}
 	if loaded, _ := Read(home, "review"); !loaded.Equal(base) {
@@ -182,18 +182,18 @@ func TestLaunchArgsNeverInventEffort(t *testing.T) {
 		"pi":     {"--thinking", "high"},
 	}
 	for agent, want := range cases {
-		got := Preset{Agent: agent, Effort: "high"}.LaunchArgs()
+		got := Profile{Agent: agent, Effort: "high"}.LaunchArgs()
 		if strings.Join(got, " ") != strings.Join(want, " ") {
 			t.Fatalf("%s args = %v", agent, got)
 		}
-		if args := (Preset{Agent: agent}).LaunchArgs(); len(args) != 0 {
+		if args := (Profile{Agent: agent}).LaunchArgs(); len(args) != 0 {
 			t.Fatalf("%s native default args = %v", agent, args)
 		}
 	}
 }
 
-func TestParsePresetWithNewFields(t *testing.T) {
-	data := []byte("---\nagent: codex\nmodel: test\nsandbox: false\nuser_config: false\nflags:\n  - --custom\n  - value\n---\nA test preset\n")
+func TestParseProfileWithNewFields(t *testing.T) {
+	data := []byte("---\nagent: codex\nmodel: test\nsandbox: false\nuser_config: false\nflags:\n  - --custom\n  - value\n---\nA test profile\n")
 	p, err := Parse("test", data)
 	if err != nil {
 		t.Fatal(err)

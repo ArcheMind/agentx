@@ -10,9 +10,9 @@ import (
 func TestSessionStart(t *testing.T) {
 	want := hooks.Event{Name: hooks.SessionStart, SessionID: "session-1", CWD: "/work", Source: "resume"}
 	cases := []struct {
-		provider string
-		event    string
-		payload  string
+		agent   string
+		event   string
+		payload string
 	}{
 		{"claude", "SessionStart", `{"hook_event_name":"SessionStart","session_id":"session-1","cwd":"/work","source":"resume"}`},
 		{"codex", "SessionStart", `{"hook_event_name":"SessionStart","session_id":"session-1","cwd":"/work","source":"resume"}`},
@@ -21,8 +21,8 @@ func TestSessionStart(t *testing.T) {
 	}
 
 	for _, test := range cases {
-		t.Run(test.provider, func(t *testing.T) {
-			got, err := hooks.Decode(test.provider, test.event, []byte(test.payload))
+		t.Run(test.agent, func(t *testing.T) {
+			got, err := hooks.Decode(test.agent, test.event, []byte(test.payload))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -36,9 +36,9 @@ func TestSessionStart(t *testing.T) {
 func TestSessionEnd(t *testing.T) {
 	want := hooks.Event{Name: hooks.SessionEnd, SessionID: "session-1", CWD: "/work", Reason: "completed"}
 	cases := []struct {
-		provider string
-		event    string
-		payload  string
+		agent   string
+		event   string
+		payload string
 	}{
 		{"claude", "SessionEnd", `{"hook_event_name":"SessionEnd","session_id":"session-1","cwd":"/work","reason":"exit"}`},
 		{"codex", "SessionEnd", `{"hook_event_name":"SessionEnd","session_id":"session-1","cwd":"/work","reason":"completed"}`},
@@ -47,8 +47,8 @@ func TestSessionEnd(t *testing.T) {
 	}
 
 	for _, test := range cases {
-		t.Run(test.provider, func(t *testing.T) {
-			got, err := hooks.Decode(test.provider, test.event, []byte(test.payload))
+		t.Run(test.agent, func(t *testing.T) {
+			got, err := hooks.Decode(test.agent, test.event, []byte(test.payload))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -62,9 +62,9 @@ func TestSessionEnd(t *testing.T) {
 func TestTurnBefore(t *testing.T) {
 	want := hooks.Event{Name: hooks.TurnBefore, SessionID: "session-1", CWD: "/work", Prompt: "review this"}
 	cases := []struct {
-		provider string
-		event    string
-		payload  string
+		agent   string
+		event   string
+		payload string
 	}{
 		{"claude", "UserPromptSubmit", `{"hook_event_name":"UserPromptSubmit","session_id":"session-1","cwd":"/work","prompt":"review this"}`},
 		{"codex", "UserPromptSubmit", `{"hook_event_name":"UserPromptSubmit","session_id":"session-1","cwd":"/work","prompt":"review this"}`},
@@ -73,8 +73,8 @@ func TestTurnBefore(t *testing.T) {
 	}
 
 	for _, test := range cases {
-		t.Run(test.provider, func(t *testing.T) {
-			got, err := hooks.Decode(test.provider, test.event, []byte(test.payload))
+		t.Run(test.agent, func(t *testing.T) {
+			got, err := hooks.Decode(test.agent, test.event, []byte(test.payload))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -88,9 +88,9 @@ func TestTurnBefore(t *testing.T) {
 func TestTurnAfter(t *testing.T) {
 	want := hooks.Event{Name: hooks.TurnAfter, SessionID: "session-1", CWD: "/work", Outcome: "completed", LastAssistantMessage: "done"}
 	cases := []struct {
-		provider string
-		event    string
-		payload  string
+		agent   string
+		event   string
+		payload string
 	}{
 		{"claude", "Stop", `{"hook_event_name":"Stop","session_id":"session-1","cwd":"/work","last_assistant_message":"done"}`},
 		{"codex", "Stop", `{"hook_event_name":"Stop","session_id":"session-1","cwd":"/work","last_assistant_message":"done"}`},
@@ -99,8 +99,8 @@ func TestTurnAfter(t *testing.T) {
 	}
 
 	for _, test := range cases {
-		t.Run(test.provider, func(t *testing.T) {
-			got, err := hooks.Decode(test.provider, test.event, []byte(test.payload))
+		t.Run(test.agent, func(t *testing.T) {
+			got, err := hooks.Decode(test.agent, test.event, []byte(test.payload))
 			if err != nil {
 				t.Fatal(err)
 			}

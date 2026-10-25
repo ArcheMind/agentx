@@ -10,12 +10,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ArcheMind/agentx/internal/presets"
+	"github.com/ArcheMind/agentx/internal/profiles"
 	"github.com/ArcheMind/agentx/internal/sessions"
 	"golang.org/x/term"
 )
 
-const recentSessionsPerProvider = 10
+const recentSessionsPerAgent = 10
 
 type sessionGroup struct {
 	Heading string
@@ -23,7 +23,7 @@ type sessionGroup struct {
 }
 
 func (a App) recentSessionGroups(includeSubagents bool) ([]sessionGroup, error) {
-	items, err := a.Sessions.RecentGroups("", recentSessionsPerProvider, includeSubagents)
+	items, err := a.Sessions.RecentGroups("", recentSessionsPerAgent, includeSubagents)
 	if err != nil {
 		return nil, err
 	}
@@ -37,7 +37,7 @@ type contentRow struct {
 	text      string
 	itemIndex int // selectable item index; -1 for structural rows
 	kind      contentRowKind
-	provider  string
+	agent     string
 	updated   string
 	workspace string
 	title     string
@@ -50,7 +50,7 @@ const (
 	contentRowHeading
 	contentRowEmpty
 	contentRowSession
-	contentRowPreset
+	contentRowProfile
 	contentRowCreate
 	contentRowProblem
 )
@@ -75,16 +75,16 @@ func buildContentRows(groups []sessionGroup, now time.Time) []contentRow {
 				updated += " " + duration
 			}
 			if group.Heading == "Global" {
-				text := fmt.Sprintf("%-8s  %-25s  %-20s  %s", item.Provider, updated, displayWorkspace(item.Workspace, 20), singleLine(title, 35))
+				text := fmt.Sprintf("%-8s  %-25s  %-20s  %s", item.Agent, updated, displayWorkspace(item.Workspace, 20), singleLine(title, 35))
 				rows = append(rows, contentRow{
 					text: text, itemIndex: itemIndex, kind: contentRowSession,
-					provider: item.Provider, updated: updated, workspace: displayWorkspace(item.Workspace, 20), title: singleLine(title, 35),
+					agent: item.Agent, updated: updated, workspace: displayWorkspace(item.Workspace, 20), title: singleLine(title, 35),
 				})
 			} else {
-				text := fmt.Sprintf("%-8s  %-25s  %s", item.Provider, updated, singleLine(title, 57))
+				text := fmt.Sprintf("%-8s  %-25s  %s", item.Agent, updated, singleLine(title, 57))
 				rows = append(rows, contentRow{
 					text: text, itemIndex: itemIndex, kind: contentRowSession,
-					provider: item.Provider, updated: updated, title: singleLine(title, 57),
+					agent: item.Agent, updated: updated, title: singleLine(title, 57),
 				})
 			}
 			itemIndex++
@@ -134,7 +134,7 @@ func terminalHeight(input io.Reader) int {
 func (a App) chooseOptions(reader *bufio.Reader, title string, options []string) (int, error) {
 	rows := make([]contentRow, len(options))
 	for index, option := range options {
-		rows[index] = contentRow{text: option, itemIndex: index, provider: option}
+		rows[index] = contentRow{text: option, itemIndex: index, agent: option}
 	}
 	return a.chooseInteractive(reader, title, rows, len(options), errors.New("no options available"))
 }
@@ -142,7 +142,7 @@ func (a App) chooseOptions(reader *bufio.Reader, title string, options []string)
 func (a App) pick(reader *bufio.Reader, title string, options []string) (int, error) {
 	rows := make([]contentRow, len(options))
 	for index, option := range options {
-		rows[index] = contentRow{text: option, itemIndex: index, provider: option}
+		rows[index] = contentRow{text: option, itemIndex: index, agent: option}
 	}
 	index, _, err := a.runSelector(reader, selector{title: title, help: selectorHelp, marker: "> "}, rows, len(options), errors.New("no options available"))
 	return index, err
@@ -318,10 +318,10 @@ func styledMarker(marker string, row contentRow, color bool) string {
 	if marker == "  " {
 		return marker
 	}
-	if row.kind == contentRowPreset || row.kind == contentRowCreate || row.kind == contentRowProblem {
-		return colorize(color, presetAccent+ansiBold, marker)
+	if row.kind == contentRowProfile || row.kind == contentRowCreate || row.kind == contentRowProblem {
+		return colorize(color, profileAccent+ansiBold, marker)
 	}
-	style := agentColor(row.provider)
+	style := agentColor(row.agent)
 	if style == "" {
 		style = ansiCyan
 	}
@@ -334,15 +334,15 @@ func styledContentRow(row contentRow, selected, color bool) string {
 		return colorize(color, ansiBold, row.text)
 	case contentRowEmpty:
 		return colorize(color, ansiDim, row.text)
-	case contentRowPreset:
+	case contentRowProfile:
 		name := row.title
 		if selected {
-			name = colorize(color, presetAccent+ansiBold, name)
+			name = colorize(color, profileAccent+ansiBold, name)
 		}
-		combo := colorize(color, agentColor(row.provider), presets.AgentName(row.provider)) + colorize(color, ansiDim, row.updated)
+		combo := colorize(color, agentColor(row.agent), profiles.AgentName(row.agent)) + colorize(color, ansiDim, row.updated)
 		return name + "  " + combo + "  " + row.text
 	case contentRowCreate:
-		style := presetAccent
+		style := profileAccent
 		if selected {
 			style += ansiBold
 		}
@@ -357,7 +357,7 @@ func styledContentRow(row contentRow, selected, color bool) string {
 		}
 		return name + "  " + colorize(color, ansiRed, row.text)
 	case contentRowSession:
-		provider := colorize(color, agentColor(row.provider), fmt.Sprintf("%-8s", row.provider))
+		agent := colorize(color, agentColor(row.agent), fmt.Sprintf("%-8s", row.agent))
 		updated := colorize(color, ansiDim, fmt.Sprintf("%-25s", row.updated))
 		titleStyle := ""
 		if selected {
@@ -365,12 +365,12 @@ func styledContentRow(row contentRow, selected, color bool) string {
 		}
 		title := colorize(color && titleStyle != "", titleStyle, row.title)
 		if row.workspace == "" {
-			return fmt.Sprintf("%s  %s  %s", provider, updated, title)
+			return fmt.Sprintf("%s  %s  %s", agent, updated, title)
 		}
 		workspace := colorize(color, ansiDim, fmt.Sprintf("%-20s", row.workspace))
-		return fmt.Sprintf("%s  %s  %s  %s", provider, updated, workspace, title)
+		return fmt.Sprintf("%s  %s  %s  %s", agent, updated, workspace, title)
 	default:
-		style := agentColor(row.provider)
+		style := agentColor(row.agent)
 		if selected {
 			style += ansiBold
 		}

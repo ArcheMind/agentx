@@ -49,14 +49,14 @@ func (a App) hook(ctx context.Context, args []string) error {
 	return nil
 }
 
-func (a App) prepareHooks(request *runtime.RunRequest, provider string, write bool) error {
+func (a App) prepareHooks(request *runtime.RunRequest, agent string, write bool) error {
 	service := a.Hooks
 	service.Project = request.Cwd
 	executable, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("resolve AgentX executable: %w", err)
 	}
-	projection, err := service.Prepare(provider, executable, write)
+	projection, err := service.Prepare(agent, executable, write)
 	if err != nil {
 		return err
 	}
@@ -72,17 +72,17 @@ func (a App) prepareHooks(request *runtime.RunRequest, provider string, write bo
 }
 
 func (a App) dispatchHook(ctx context.Context, args []string) error {
-	provider := ""
+	agent := ""
 	event := ""
 	handler := hooks.Handler{}
 	for index := 0; index < len(args); index++ {
 		switch args[index] {
-		case "--provider":
+		case "--agent":
 			index++
 			if index >= len(args) {
-				return errors.New("--provider requires a value")
+				return errors.New("--agent requires a value")
 			}
-			provider = args[index]
+			agent = args[index]
 		case "--event":
 			index++
 			if index >= len(args) {
@@ -105,14 +105,14 @@ func (a App) dispatchHook(ctx context.Context, args []string) error {
 			return fmt.Errorf("unknown hook dispatch option %q", args[index])
 		}
 	}
-	if provider == "" || event == "" || strings.TrimSpace(handler.Command) == "" || handler.Timeout <= 0 {
-		return errors.New("hook dispatch requires --provider, --event, and a valid --handler")
+	if agent == "" || event == "" || strings.TrimSpace(handler.Command) == "" || handler.Timeout <= 0 {
+		return errors.New("hook dispatch requires --agent, --event, and a valid --handler")
 	}
 	payload, err := io.ReadAll(a.Stdin)
 	if err != nil {
 		return fmt.Errorf("read hook input: %w", err)
 	}
-	result, err := hooks.DispatchOne(ctx, a.Runner, provider, event, payload, handler)
+	result, err := hooks.DispatchOne(ctx, a.Runner, agent, event, payload, handler)
 	if err != nil {
 		if result.ExitCode > 0 {
 			message := strings.TrimSpace(result.Stderr)

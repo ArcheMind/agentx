@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ArcheMind/agentx/internal/presets"
+	"github.com/ArcheMind/agentx/internal/profiles"
 	"github.com/ArcheMind/agentx/internal/runtime"
 )
 
@@ -40,34 +40,34 @@ func TestSubagentLaunchDryRun(t *testing.T) {
 	}
 }
 
-// registerAgentx writes the entry exactly as claude mcp add --scope user agentx -- <ax> preset serve does.
+// registerAgentx writes the entry exactly as claude mcp add --scope user agentx -- <ax> mcp serve does.
 func registerAgentx(t *testing.T, home string) {
 	t.Helper()
 	executable, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)
 	}
-	data, _ := json.Marshal(map[string]any{"mcpServers": map[string]any{"agentx": map[string]any{"type": "stdio", "command": executable, "args": []string{"preset", "serve"}, "env": map[string]string{}}}})
+	data, _ := json.Marshal(map[string]any{"mcpServers": map[string]any{"agentx": map[string]any{"type": "stdio", "command": executable, "args": []string{"mcp", "serve"}, "env": map[string]string{}}}})
 	if err := os.WriteFile(filepath.Join(home, ".claude.json"), data, 0o600); err != nil {
 		t.Fatal(err)
 	}
 }
 
-func TestPresetListIgnoresLegacyConfigAndShowsAllPresets(t *testing.T) {
+func TestProfileListIgnoresLegacyConfigAndShowsAllProfiles(t *testing.T) {
 	var output bytes.Buffer
 	app := New(false, strings.NewReader(""), &output, &bytes.Buffer{})
 	app.Hooks.Home = t.TempDir()
 	t.Setenv("AX_SUBAGENT_HOME", "")
 	t.Setenv("CLAUDE_CONFIG_DIR", "")
-	for _, p := range []presets.Preset{{Name: "review", Agent: "codex", Model: "m", Description: "d"}, {Name: "daily", Agent: "claude", Model: "opus", Description: "d"}} {
-		if err := presets.Create(app.Hooks.Home, p); err != nil {
+	for _, p := range []profiles.Profile{{Name: "review", Agent: "codex", Model: "m", Description: "d"}, {Name: "daily", Agent: "claude", Model: "opus", Description: "d"}} {
+		if err := profiles.Create(app.Hooks.Home, p); err != nil {
 			t.Fatal(err)
 		}
 	}
 	legacy := filepath.Join(app.Hooks.Home, ".config", "agentx", "subagents.json")
 	os.MkdirAll(filepath.Dir(legacy), 0o700)
 	os.WriteFile(legacy, []byte(`{"enabled":true,"grants":{"review":{}}}`), 0o600)
-	if err := app.Run(context.Background(), []string{"--json", "preset", "list"}); err != nil {
+	if err := app.Run(context.Background(), []string{"--json", "profile", "list"}); err != nil {
 		t.Fatal(err)
 	}
 	var value map[string]any
@@ -77,9 +77,9 @@ func TestPresetListIgnoresLegacyConfigAndShowsAllPresets(t *testing.T) {
 	if value["enabled"] != nil || value["grant_problems"] != nil || value["configuration"] != nil {
 		t.Fatalf("list still reads a separate switch or grants: %v", value)
 	}
-	listed := value["presets"].([]any)
+	listed := value["profiles"].([]any)
 	if len(listed) != 2 {
-		t.Fatalf("presets = %v", listed)
+		t.Fatalf("profiles = %v", listed)
 	}
 	byName := map[string]map[string]any{}
 	for _, raw := range listed {
@@ -91,10 +91,10 @@ func TestPresetListIgnoresLegacyConfigAndShowsAllPresets(t *testing.T) {
 		t.Fatalf("list = %v", listed)
 	}
 	if daily["limits"] == nil {
-		t.Fatalf("claude preset missing limits: %v", daily)
+		t.Fatalf("claude profile missing limits: %v", daily)
 	}
 	for _, removed := range []string{"enable", "disable", "status"} {
-		if err := app.Run(context.Background(), []string{"preset", removed}); err == nil {
+		if err := app.Run(context.Background(), []string{"profile", removed}); err == nil {
 			t.Fatalf("%s still exists", removed)
 		}
 	}
@@ -113,18 +113,18 @@ func TestExecRejectsStructuredNativeOutputAndInvalidSession(t *testing.T) {
 	}
 }
 
-func TestPresetShowReportsSinglePresetAndInvalidOnes(t *testing.T) {
+func TestProfileShowReportsSingleProfileAndInvalidOnes(t *testing.T) {
 	var output bytes.Buffer
 	app := New(false, strings.NewReader(""), &output, &bytes.Buffer{})
 	app.Hooks.Home = t.TempDir()
 	t.Setenv("AX_SUBAGENT_HOME", "")
-	if err := presets.Create(app.Hooks.Home, presets.Preset{Name: "review", Agent: "codex", Model: "m", Description: "d"}); err != nil {
+	if err := profiles.Create(app.Hooks.Home, profiles.Profile{Name: "review", Agent: "codex", Model: "m", Description: "d"}); err != nil {
 		t.Fatal(err)
 	}
-	broken := filepath.Join(presets.Dir(app.Hooks.Home), "broken")
+	broken := filepath.Join(profiles.Dir(app.Hooks.Home), "broken")
 	os.MkdirAll(broken, 0o700)
-	os.WriteFile(filepath.Join(broken, "PRESET.md"), []byte("---\nagent: codex\n---\nx\n"), 0o600)
-	if err := app.Run(context.Background(), []string{"--json", "preset", "show", "review"}); err != nil {
+	os.WriteFile(filepath.Join(broken, "PROFILE.md"), []byte("---\nagent: codex\n---\nx\n"), 0o600)
+	if err := app.Run(context.Background(), []string{"--json", "profile", "show", "review"}); err != nil {
 		t.Fatal(err)
 	}
 	var shown map[string]any
@@ -134,10 +134,10 @@ func TestPresetShowReportsSinglePresetAndInvalidOnes(t *testing.T) {
 	if shown["name"] != "review" || shown["limits"] == nil || shown["execution"] != nil || shown["auth"] != nil {
 		t.Fatalf("show = %v", shown)
 	}
-	if err := app.Run(context.Background(), []string{"preset", "show", "broken"}); err == nil || !strings.Contains(err.Error(), "invalid") {
-		t.Fatalf("broken preset not reported: %v", err)
+	if err := app.Run(context.Background(), []string{"profile", "show", "broken"}); err == nil || !strings.Contains(err.Error(), "invalid") {
+		t.Fatalf("broken profile not reported: %v", err)
 	}
-	if err := app.Run(context.Background(), []string{"preset", "show", "missing"}); err == nil || !strings.Contains(err.Error(), "not found") {
-		t.Fatalf("missing preset not reported: %v", err)
+	if err := app.Run(context.Background(), []string{"profile", "show", "missing"}); err == nil || !strings.Contains(err.Error(), "not found") {
+		t.Fatalf("missing profile not reported: %v", err)
 	}
 }

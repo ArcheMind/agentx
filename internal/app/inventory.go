@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -8,7 +9,13 @@ import (
 	"github.com/ArcheMind/agentx/internal/mcp"
 )
 
-func (a App) mcp(args []string) error {
+func (a App) mcp(ctx context.Context, args []string) error {
+	if len(args) > 0 && args[0] == "serve" {
+		if len(args) != 1 {
+			return fmt.Errorf("usage: ax mcp serve")
+		}
+		return a.mcpServe(ctx)
+	}
 	return a.inventoryCommand("mcp", args, (mcp.Service{Home: a.Skills.Home, Project: a.Skills.Project}).List())
 }
 func (a App) inventoryCommand(kind string, args []string, result inventory.Result) error {

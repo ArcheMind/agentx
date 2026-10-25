@@ -24,8 +24,8 @@ func TestPortableHooksProjectThroughEachNativeLoadingSurface(t *testing.T) {
 	service := hooks.Service{Home: home, Project: project}
 
 	tests := []struct {
-		provider string
-		check    func(t *testing.T, projection hooks.Projection)
+		agent string
+		check func(t *testing.T, projection hooks.Projection)
 	}{
 		{"claude", func(t *testing.T, projection hooks.Projection) {
 			if len(projection.Args) != 2 || projection.Args[0] != "--plugin-dir" {
@@ -40,7 +40,7 @@ func TestPortableHooksProjectThroughEachNativeLoadingSurface(t *testing.T) {
 		{"codex", func(t *testing.T, projection hooks.Projection) {
 			joined := strings.Join(projection.Args, " ")
 			for _, event := range []string{"SessionStart", "SessionEnd", "UserPromptSubmit", "Stop"} {
-				if !strings.Contains(joined, "hooks."+event) || !strings.Contains(joined, "--provider codex --event "+event) {
+				if !strings.Contains(joined, "hooks."+event) || !strings.Contains(joined, "--agent codex --event "+event) {
 					t.Fatalf("args %q do not project %s", joined, event)
 				}
 			}
@@ -69,8 +69,8 @@ func TestPortableHooksProjectThroughEachNativeLoadingSurface(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		t.Run(test.provider, func(t *testing.T) {
-			projection, err := service.Prepare(test.provider, "/opt/agentx/bin/ax", true)
+		t.Run(test.agent, func(t *testing.T) {
+			projection, err := service.Prepare(test.agent, "/opt/agentx/bin/ax", true)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -90,7 +90,7 @@ func TestProjectedCommandTransportDoesNotExposeShellSyntax(t *testing.T) {
 	}
 	content := strings.Join(projection.Args, "\n")
 	if strings.Contains(content, command) || strings.Contains(content, "%PATH%") {
-		t.Fatalf("projection exposes command to provider shell: %s", content)
+		t.Fatalf("projection exposes command to agent shell: %s", content)
 	}
 	assertProjectedHandler(t, content, "codex", "Stop", hooks.Handler{Command: command, Timeout: 600})
 }
@@ -176,7 +176,7 @@ func TestDispatchPresentsCanonicalCommandIOAcrossAgents(t *testing.T) {
 	project := t.TempDir()
 	writeConfig(t, filepath.Join(project, ".agents", "hooks.json"), `{"hooks":{"UserPromptSubmit":[{"hooks":[{"type":"command","command":"policy-check"}]}]}}`)
 	tests := []struct {
-		provider    string
+		agent       string
 		payload     string
 		outputEvent string
 	}{
@@ -186,14 +186,14 @@ func TestDispatchPresentsCanonicalCommandIOAcrossAgents(t *testing.T) {
 		{"pi", `{"hook_event_name":"input","session_id":"s1","cwd":"` + project + `","text":"review this"}`, "UserPromptSubmit"},
 	}
 	for _, test := range tests {
-		t.Run(test.provider, func(t *testing.T) {
-			projection, err := (hooks.Service{Home: home, Project: project}).Prepare(test.provider, "/opt/agentx/bin/ax", true)
+		t.Run(test.agent, func(t *testing.T) {
+			projection, err := (hooks.Service{Home: home, Project: project}).Prepare(test.agent, "/opt/agentx/bin/ax", true)
 			if err != nil {
 				t.Fatal(err)
 			}
 			handler := projectedHandlerFromProjection(t, projection)
 			runner := &recordingHookRunner{stdout: `{"systemMessage":"checked","hookSpecificOutput":{"hookEventName":"UserPromptSubmit","additionalContext":"policy context"}}`}
-			result, err := hooks.DispatchOne(context.Background(), runner, test.provider, "UserPromptSubmit", []byte(test.payload), handler)
+			result, err := hooks.DispatchOne(context.Background(), runner, test.agent, "UserPromptSubmit", []byte(test.payload), handler)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -224,9 +224,9 @@ func TestProjectedProjectHookDoesNotRunInAnotherProject(t *testing.T) {
 	}
 }
 
-func TestUserPromptBlockUsesEachProviderDecision(t *testing.T) {
+func TestUserPromptBlockUsesEachAgentDecision(t *testing.T) {
 	tests := []struct {
-		provider string
+		agent    string
 		payload  string
 		decision string
 	}{
@@ -236,9 +236,9 @@ func TestUserPromptBlockUsesEachProviderDecision(t *testing.T) {
 		{"pi", `{"hook_event_name":"input","session_id":"s1","cwd":"/work","text":"stop"}`, "block"},
 	}
 	for _, test := range tests {
-		t.Run(test.provider, func(t *testing.T) {
+		t.Run(test.agent, func(t *testing.T) {
 			runner := &recordingHookRunner{stdout: `{"decision":"block","reason":"denied"}`}
-			result, err := hooks.DispatchOne(context.Background(), runner, test.provider, "UserPromptSubmit", []byte(test.payload), hooks.Handler{Command: "policy", Timeout: 600})
+			result, err := hooks.DispatchOne(context.Background(), runner, test.agent, "UserPromptSubmit", []byte(test.payload), hooks.Handler{Command: "policy", Timeout: 600})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -308,9 +308,9 @@ func assertContains(t *testing.T, content string, expected ...string) {
 	}
 }
 
-func assertProjectedHandler(t *testing.T, content, provider, event string, expected hooks.Handler) {
+func assertProjectedHandler(t *testing.T, content, agent, event string, expected hooks.Handler) {
 	t.Helper()
-	marker := "--provider " + provider + " --event " + event + " --handler "
+	marker := "--agent " + agent + " --event " + event + " --handler "
 	index := strings.Index(content, marker)
 	if index < 0 {
 		t.Fatalf("projection does not contain %q:\n%s", marker, content)

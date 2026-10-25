@@ -9,8 +9,8 @@ import (
 
 func TestNativeFormatsToUnifiedTranscript(t *testing.T) {
 	for _, test := range conversionContractCases() {
-		t.Run(test.provider, func(t *testing.T) {
-			got := parseNativeContract(t, test.provider, test.native)
+		t.Run(test.agent, func(t *testing.T) {
+			got := parseNativeContract(t, test.agent, test.native)
 			assertSessionContract(t, got, test.unified)
 		})
 	}
@@ -18,9 +18,9 @@ func TestNativeFormatsToUnifiedTranscript(t *testing.T) {
 
 func TestUnifiedTranscriptToNativeFormats(t *testing.T) {
 	for _, test := range conversionContractCases() {
-		t.Run(test.provider, func(t *testing.T) {
+		t.Run(test.agent, func(t *testing.T) {
 			var native string
-			switch test.provider {
+			switch test.agent {
 			case "claude":
 				native = marshalJSONL(t, SerializeClaude(test.unified))
 			case "codex":
@@ -35,29 +35,29 @@ func TestUnifiedTranscriptToNativeFormats(t *testing.T) {
 				native = marshalJSONL(t, SerializePi(test.unified))
 			}
 
-			got := parseNativeContract(t, test.provider, native)
+			got := parseNativeContract(t, test.agent, native)
 			assertSessionContract(t, got, test.unified)
 		})
 	}
 }
 
 type conversionContractCase struct {
-	provider string
-	native   string
-	unified  Detail
+	agent   string
+	native  string
+	unified Detail
 }
 
 func conversionContractCases() []conversionContractCase {
 	return []conversionContractCase{
 		{
-			provider: "claude",
+			agent: "claude",
 			native: strings.Join([]string{
 				`{"type":"user","sessionId":"claude-contract","cwd":"/work","timestamp":"2026-09-01T10:00:00Z","uuid":"c1","message":{"role":"user","content":"run ls"}}`,
 				`{"type":"assistant","sessionId":"claude-contract","timestamp":"2026-09-01T10:01:00Z","uuid":"c2","parentUuid":"c1","message":{"role":"assistant","model":"claude-4","stop_reason":"tool_use","content":[{"type":"thinking","thinking":"inspect","signature":"sig-claude"},{"type":"text","text":"checking"},{"type":"tool_use","id":"ct1","name":"shell","input":{"cmd":"ls"}}]}}`,
 				`{"type":"user","sessionId":"claude-contract","timestamp":"2026-09-01T10:02:00Z","uuid":"c3","parentUuid":"c2","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"ct1","content":"file.txt","is_error":true}]}}`,
 			}, "\n"),
 			unified: Detail{
-				ID: "claude-contract", Provider: "claude", Workspace: "/work", Title: "run ls",
+				ID: "claude-contract", Agent: "claude", Workspace: "/work", Title: "run ls",
 				StartedAt: "2026-09-01T10:00:00Z", UpdatedAt: "2026-09-01T10:02:00Z", MessageCount: 3,
 				Messages: []Message{
 					{ID: "c1", Role: "user", Content: []ContentBlock{{Type: "text", Text: "run ls"}}, Timestamp: "2026-09-01T10:00:00Z"},
@@ -71,7 +71,7 @@ func conversionContractCases() []conversionContractCase {
 			},
 		},
 		{
-			provider: "codex",
+			agent: "codex",
 			native: strings.Join([]string{
 				`{"type":"session_meta","timestamp":"2026-09-01T11:00:00Z","payload":{"id":"codex-contract","cwd":"/work","timestamp":"2026-09-01T11:00:00Z","source":{"subagent":{}}}}`,
 				`{"type":"response_item","timestamp":"2026-09-01T11:01:00Z","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"run ls"}]}}`,
@@ -80,7 +80,7 @@ func conversionContractCases() []conversionContractCase {
 				`{"type":"response_item","timestamp":"2026-09-01T11:04:00Z","payload":{"type":"function_call_output","call_id":"xt1","output":"file.txt"}}`,
 			}, "\n"),
 			unified: Detail{
-				ID: "codex-contract", Provider: "codex", IsSubagent: true, Workspace: "/work", Title: "run ls",
+				ID: "codex-contract", Agent: "codex", IsSubagent: true, Workspace: "/work", Title: "run ls",
 				StartedAt: "2026-09-01T11:00:00Z", UpdatedAt: "2026-09-01T11:04:00Z", MessageCount: 3,
 				Messages: []Message{
 					{ID: "codex-0", Role: "user", Content: []ContentBlock{{Type: "text", Text: "run ls"}}, Timestamp: "2026-09-01T11:01:00Z"},
@@ -93,10 +93,10 @@ func conversionContractCases() []conversionContractCase {
 			},
 		},
 		{
-			provider: "gemini",
-			native:   `{"sessionId":"gemini-contract","kind":"subagent","summary":"Inspect file","startTime":"2026-09-01T12:00:00Z","lastUpdated":"2026-09-01T12:02:00Z","messages":[{"type":"user","content":"run ls","timestamp":"2026-09-01T12:00:00Z"},{"type":"gemini","content":"checking","toolCalls":[{"id":"gt1","name":"read_file","args":{"path":"file.txt"},"status":"success","result":[{"functionResponse":{"id":"gt1","name":"read_file","response":{"output":"contents"}}}]}],"timestamp":"2026-09-01T12:01:00Z"}]}`,
+			agent:  "gemini",
+			native: `{"sessionId":"gemini-contract","kind":"subagent","summary":"Inspect file","startTime":"2026-09-01T12:00:00Z","lastUpdated":"2026-09-01T12:02:00Z","messages":[{"type":"user","content":"run ls","timestamp":"2026-09-01T12:00:00Z"},{"type":"gemini","content":"checking","toolCalls":[{"id":"gt1","name":"read_file","args":{"path":"file.txt"},"status":"success","result":[{"functionResponse":{"id":"gt1","name":"read_file","response":{"output":"contents"}}}]}],"timestamp":"2026-09-01T12:01:00Z"}]}`,
 			unified: Detail{
-				ID: "gemini-contract", Provider: "gemini", IsSubagent: true, Title: "Inspect file",
+				ID: "gemini-contract", Agent: "gemini", IsSubagent: true, Title: "Inspect file",
 				StartedAt: "2026-09-01T12:00:00Z", UpdatedAt: "2026-09-01T12:02:00Z", MessageCount: 3,
 				Messages: []Message{
 					{ID: "gemini-0", Role: "user", Content: []ContentBlock{{Type: "text", Text: "run ls"}}, Timestamp: "2026-09-01T12:00:00Z"},
@@ -109,7 +109,7 @@ func conversionContractCases() []conversionContractCase {
 			},
 		},
 		{
-			provider: "pi",
+			agent: "pi",
 			native: strings.Join([]string{
 				`{"type":"session","id":"pi-contract","cwd":"/work","timestamp":"2026-09-01T13:00:00Z"}`,
 				`{"type":"message","message":{"id":"p1","role":"user","timestamp":"2026-09-01T13:00:00Z","content":[{"type":"text","text":"run ls"}]}}`,
@@ -117,7 +117,7 @@ func conversionContractCases() []conversionContractCase {
 				`{"type":"message","message":{"role":"toolResult","timestamp":"2026-09-01T13:02:00Z","toolCallId":"pt1","toolName":"shell","content":[{"type":"text","text":"file.txt"}],"isError":true}}`,
 			}, "\n"),
 			unified: Detail{
-				ID: "pi-contract", Provider: "pi", Workspace: "/work", Title: "run ls",
+				ID: "pi-contract", Agent: "pi", Workspace: "/work", Title: "run ls",
 				StartedAt: "2026-09-01T13:00:00Z", UpdatedAt: "2026-09-01T13:02:00Z", MessageCount: 3,
 				Messages: []Message{
 					{ID: "p1", Role: "user", Content: []ContentBlock{{Type: "text", Text: "run ls"}}, Timestamp: "2026-09-01T13:00:00Z"},
@@ -133,10 +133,10 @@ func conversionContractCases() []conversionContractCase {
 	}
 }
 
-func parseNativeContract(t *testing.T, provider, native string) Detail {
+func parseNativeContract(t *testing.T, agent, native string) Detail {
 	t.Helper()
 	var records []map[string]any
-	if provider == "gemini" {
+	if agent == "gemini" {
 		var record map[string]any
 		if err := json.Unmarshal([]byte(native), &record); err != nil {
 			t.Fatal(err)
@@ -151,9 +151,9 @@ func parseNativeContract(t *testing.T, provider, native string) Detail {
 			records = append(records, record)
 		}
 	}
-	detail, ok := ParseRecords(provider, records)
+	detail, ok := ParseRecords(agent, records)
 	if !ok {
-		t.Fatalf("parse %s fixture", provider)
+		t.Fatalf("parse %s fixture", agent)
 	}
 	return detail
 }

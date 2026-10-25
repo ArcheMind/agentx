@@ -59,18 +59,18 @@ type nativeEvent struct {
 	DurationMS           int64  `json:"duration_ms"`
 }
 
-func Decode(provider, event string, payload []byte) (Event, error) {
+func Decode(agent, event string, payload []byte) (Event, error) {
 	var native nativeEvent
 	if err := json.Unmarshal(payload, &native); err != nil {
-		return Event{}, fmt.Errorf("decode %s %s hook input: %w", provider, event, err)
+		return Event{}, fmt.Errorf("decode %s %s hook input: %w", agent, event, err)
 	}
 
-	name, err := eventName(provider, event)
+	name, err := eventName(agent, event)
 	if err != nil {
 		return Event{}, err
 	}
 	if native.HookEventName != "" && native.HookEventName != event {
-		return Event{}, fmt.Errorf("%s hook input names event %q, expected %q", provider, native.HookEventName, event)
+		return Event{}, fmt.Errorf("%s hook input names event %q, expected %q", agent, native.HookEventName, event)
 	}
 	result := Event{
 		Name: name, SessionID: native.SessionID, TurnID: native.TurnID, CWD: native.CWD,
@@ -84,44 +84,44 @@ func Decode(provider, event string, payload []byte) (Event, error) {
 	}
 	switch name {
 	case SessionStart:
-		result.Source = normalizeSource(provider, native.Source, native.Reason)
+		result.Source = normalizeSource(agent, native.Source, native.Reason)
 	case SessionEnd:
-		result.Reason = normalizeEndReason(provider, native.Reason)
+		result.Reason = normalizeEndReason(agent, native.Reason)
 	case TurnBefore:
 		result.Prompt = native.Prompt
-		if result.Prompt == "" && provider == "pi" {
+		if result.Prompt == "" && agent == "pi" {
 			result.Prompt = native.Text
 		}
 	case TurnAfter:
 		result.Outcome = normalizeOutcome(event, native.Outcome, native.Error)
 		result.LastAssistantMessage = native.LastAssistantMessage
-		if result.LastAssistantMessage == "" && provider == "gemini" {
+		if result.LastAssistantMessage == "" && agent == "gemini" {
 			result.LastAssistantMessage = native.PromptResponse
 		}
 	}
 	return result, nil
 }
 
-func eventName(provider, event string) (Name, error) {
+func eventName(agent, event string) (Name, error) {
 	events := map[string]map[string]Name{
 		"claude": {"SessionStart": SessionStart, "SessionEnd": SessionEnd, "UserPromptSubmit": TurnBefore, "Stop": TurnAfter, "StopFailure": TurnAfter},
 		"codex":  {"SessionStart": SessionStart, "SessionEnd": SessionEnd, "UserPromptSubmit": TurnBefore, "Stop": TurnAfter, "Interrupt": TurnAfter},
 		"gemini": {"SessionStart": SessionStart, "SessionEnd": SessionEnd, "BeforeAgent": TurnBefore, "AfterAgent": TurnAfter},
 		"pi":     {"session_start": SessionStart, "session_shutdown": SessionEnd, "input": TurnBefore, "agent_settled": TurnAfter},
 	}
-	providerEvents, ok := events[provider]
+	agentEvents, ok := events[agent]
 	if !ok {
-		return "", fmt.Errorf("unsupported hook provider %q", provider)
+		return "", fmt.Errorf("unsupported hook agent %q", agent)
 	}
-	name, ok := providerEvents[event]
+	name, ok := agentEvents[event]
 	if !ok {
-		return "", fmt.Errorf("unsupported %s hook event %q", provider, event)
+		return "", fmt.Errorf("unsupported %s hook event %q", agent, event)
 	}
 	return name, nil
 }
 
-func normalizeSource(provider, source, reason string) string {
-	if provider == "pi" {
+func normalizeSource(agent, source, reason string) string {
+	if agent == "pi" {
 		source = reason
 	}
 	switch source {
@@ -134,7 +134,7 @@ func normalizeSource(provider, source, reason string) string {
 	}
 }
 
-func normalizeEndReason(provider, reason string) string {
+func normalizeEndReason(agent, reason string) string {
 	switch reason {
 	case "completed":
 		return "completed"

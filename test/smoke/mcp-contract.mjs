@@ -5,7 +5,7 @@ import {join,resolve} from 'node:path'
 
 const home=await mkdtemp(join(tmpdir(),'agentx-mcp-contract-'))
 const binary=resolve(process.env.AX_MCP_BINARY??process.argv[2]??'bin/ax')
-const child=spawn(binary,['preset','serve'],{env:{...process.env,AX_SUBAGENT_HOME:home},stdio:['pipe','pipe','pipe']})
+const child=spawn(binary,['mcp','serve'],{env:{...process.env,AX_SUBAGENT_HOME:home},stdio:['pipe','pipe','pipe']})
 let next=0,pending='',stderr=''
 const requests=new Map()
 child.stderr.on('data',chunk=>stderr+=chunk)

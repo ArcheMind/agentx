@@ -49,18 +49,18 @@ type commandResult struct {
 	err      error
 }
 
-func DispatchOne(ctx context.Context, runner agentruntime.Runner, provider, event string, payload []byte, handler Handler) (DispatchResult, error) {
-	if !isPortableTarget(provider) {
-		return DispatchResult{}, fmt.Errorf("unsupported hook provider %q", provider)
+func DispatchOne(ctx context.Context, runner agentruntime.Runner, agent, event string, payload []byte, handler Handler) (DispatchResult, error) {
+	if !isPortableTarget(agent) {
+		return DispatchResult{}, fmt.Errorf("unsupported hook agent %q", agent)
 	}
 	if !isPortableEvent(event) {
 		return DispatchResult{}, fmt.Errorf("unsupported portable hook event %q", event)
 	}
-	native, err := providerEvent(provider, event)
+	native, err := agentEvent(agent, event)
 	if err != nil {
 		return DispatchResult{}, err
 	}
-	canonical, input, err := canonicalInput(provider, native, event, payload)
+	canonical, input, err := canonicalInput(agent, native, event, payload)
 	if err != nil {
 		return DispatchResult{}, err
 	}
@@ -70,10 +70,10 @@ func DispatchOne(ctx context.Context, runner agentruntime.Runner, provider, even
 	if !matches(handler.Matcher, matcherSubject(canonical)) {
 		return DispatchResult{}, nil
 	}
-	return dispatchHandlers(ctx, runner, provider, event, canonical, input, []Handler{handler})
+	return dispatchHandlers(ctx, runner, agent, event, canonical, input, []Handler{handler})
 }
 
-func dispatchHandlers(ctx context.Context, runner agentruntime.Runner, provider, event string, canonical Event, input []byte, handlers []Handler) (DispatchResult, error) {
+func dispatchHandlers(ctx context.Context, runner agentruntime.Runner, agent, event string, canonical Event, input []byte, handlers []Handler) (DispatchResult, error) {
 	results := make([]commandResult, len(handlers))
 	var wait sync.WaitGroup
 	for index, handler := range handlers {
@@ -84,11 +84,11 @@ func dispatchHandlers(ctx context.Context, runner agentruntime.Runner, provider,
 		}(index, handler)
 	}
 	wait.Wait()
-	return aggregate(provider, event, results)
+	return aggregate(agent, event, results)
 }
 
-func canonicalInput(provider, native, event string, payload []byte) (Event, []byte, error) {
-	decoded, err := Decode(provider, native, payload)
+func canonicalInput(agent, native, event string, payload []byte) (Event, []byte, error) {
+	decoded, err := Decode(agent, native, payload)
 	if err != nil {
 		return Event{}, nil, err
 	}
@@ -136,7 +136,7 @@ func shellPlan(command, cwd string) agentruntime.CommandPlan {
 	return agentruntime.CommandPlan{Executable: "sh", Args: []string{"-c", command}, Cwd: cwd}
 }
 
-func aggregate(provider, event string, results []commandResult) (DispatchResult, error) {
+func aggregate(agent, event string, results []commandResult) (DispatchResult, error) {
 	sort.Slice(results, func(i, j int) bool { return results[i].index < results[j].index })
 	systemMessages := []string{}
 	contexts := []string{}
@@ -180,7 +180,7 @@ func aggregate(provider, event string, results []commandResult) (DispatchResult,
 		if blockReason == "" {
 			blockReason = "Hook blocked the turn."
 		}
-		output, err := encodeOutput(provider, event, strings.Join(systemMessages, "\n"), "", "block", blockReason)
+		output, err := encodeOutput(agent, event, strings.Join(systemMessages, "\n"), "", "block", blockReason)
 		return DispatchResult{Stdout: output, Stderr: strings.Join(diagnostics, "\n"), ExitCode: 0}, err
 	}
 	if len(failures) > 0 {
@@ -190,11 +190,11 @@ func aggregate(provider, event string, results []commandResult) (DispatchResult,
 	if event == "SessionStart" || event == "UserPromptSubmit" {
 		contextText = strings.Join(contexts, "\n")
 	}
-	output, err := encodeOutput(provider, event, strings.Join(systemMessages, "\n"), contextText, "", "")
+	output, err := encodeOutput(agent, event, strings.Join(systemMessages, "\n"), contextText, "", "")
 	return DispatchResult{Stdout: output, Stderr: strings.Join(diagnostics, "\n")}, err
 }
 
-func encodeOutput(provider, event, systemMessage, additionalContext, decision, reason string) (string, error) {
+func encodeOutput(agent, event, systemMessage, additionalContext, decision, reason string) (string, error) {
 	if systemMessage == "" && additionalContext == "" && decision == "" {
 		return "", nil
 	}
@@ -204,25 +204,25 @@ func encodeOutput(provider, event, systemMessage, additionalContext, decision, r
 	}
 	if decision != "" {
 		nativeDecision := decision
-		if provider == "gemini" && decision == "block" {
+		if agent == "gemini" && decision == "block" {
 			nativeDecision = "deny"
 		}
 		output["decision"] = nativeDecision
 		output["reason"] = reason
 	}
 	if additionalContext != "" {
-		native, err := providerEvent(provider, event)
+		native, err := agentEvent(agent, event)
 		if err != nil {
 			return "", err
 		}
-		if provider == "pi" {
+		if agent == "pi" {
 			native = event
 		}
 		output["hookSpecificOutput"] = map[string]string{"hookEventName": native, "additionalContext": additionalContext}
 	}
 	data, err := json.Marshal(output)
 	if err != nil {
-		return "", fmt.Errorf("encode %s hook output: %w", provider, err)
+		return "", fmt.Errorf("encode %s hook output: %w", agent, err)
 	}
 	return string(data) + "\n", nil
 }

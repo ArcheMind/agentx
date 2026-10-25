@@ -14,10 +14,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ArcheMind/agentx-protocol/transcript"
+	transcript "github.com/ArcheMind/agentx-protocol/go"
 )
 
-type Provider struct {
+type Agent struct {
 	ID        string `json:"id" yaml:"id"`
 	Name      string `json:"name" yaml:"name"`
 	Installed bool   `json:"installed" yaml:"installed"`
@@ -34,7 +34,7 @@ type (
 
 type Summary struct {
 	ID           string `json:"id" yaml:"id"`
-	Provider     string `json:"provider" yaml:"provider"`
+	Agent        string `json:"agent" yaml:"agent"`
 	IsSubagent   bool   `json:"isSubagent,omitempty" yaml:"isSubagent,omitempty"`
 	Workspace    string `json:"workspace,omitempty" yaml:"workspace,omitempty"`
 	Title        string `json:"title,omitempty" yaml:"title,omitempty"`
@@ -46,7 +46,7 @@ type Summary struct {
 
 func summaryOf(detail Detail) Summary {
 	return Summary{
-		ID: detail.ID, Provider: detail.Provider, IsSubagent: detail.IsSubagent,
+		ID: detail.ID, Agent: detail.Agent, IsSubagent: detail.IsSubagent,
 		Workspace: detail.Workspace, Title: detail.Title,
 		StartedAt: detail.StartedAt, UpdatedAt: detail.UpdatedAt,
 		MessageCount: detail.MessageCount, Source: detail.Source,
@@ -54,7 +54,7 @@ func summaryOf(detail Detail) Summary {
 }
 
 type ListOptions struct {
-	Provider         string
+	Agent            string
 	Workspace        string
 	All              bool
 	IncludeSubagents bool
@@ -72,25 +72,25 @@ func New() Service {
 	return Service{HomeDir: home, LookPath: exec.LookPath}
 }
 
-func (s Service) Providers() []Provider {
-	providers := make([]Provider, 0, len(providerSpecs))
-	for _, spec := range providerSpecs {
+func (s Service) Agents() []Agent {
+	agents := make([]Agent, 0, len(agentSpecs))
+	for _, spec := range agentSpecs {
 		_, err := s.lookPath(spec.binary)
-		providers = append(providers, Provider{
+		agents = append(agents, Agent{
 			ID: spec.id, Name: spec.name, Installed: err == nil, Root: spec.root(s.HomeDir),
 		})
 	}
-	return providers
+	return agents
 }
 
 func (s Service) List(options ListOptions) ([]Summary, error) {
-	if options.Provider != "" && providerSpecByID(options.Provider) == nil {
-		return nil, fmt.Errorf("unknown session provider %q", options.Provider)
+	if options.Agent != "" && agentSpecByID(options.Agent) == nil {
+		return nil, fmt.Errorf("unknown session agent %q", options.Agent)
 	}
 	if options.Sort == "" {
 		options.Sort = "date"
 	}
-	if options.Sort != "date" && options.Sort != "messages" && options.Sort != "provider" {
+	if options.Sort != "date" && options.Sort != "messages" && options.Sort != "agent" {
 		return nil, fmt.Errorf("unsupported session sort %q", options.Sort)
 	}
 	if options.Limit < 0 {
@@ -110,8 +110,8 @@ func (s Service) List(options ListOptions) ([]Summary, error) {
 	}
 
 	var all []Summary
-	for _, spec := range providerSpecs {
-		if options.Provider != "" && spec.id != options.Provider {
+	for _, spec := range agentSpecs {
+		if options.Agent != "" && spec.id != options.Agent {
 			continue
 		}
 		details, err := spec.load(s.HomeDir)
@@ -133,11 +133,11 @@ func (s Service) List(options ListOptions) ([]Summary, error) {
 		switch options.Sort {
 		case "messages":
 			return all[i].MessageCount > all[j].MessageCount
-		case "provider":
-			if all[i].Provider == all[j].Provider {
+		case "agent":
+			if all[i].Agent == all[j].Agent {
 				return all[i].UpdatedAt > all[j].UpdatedAt
 			}
-			return all[i].Provider < all[j].Provider
+			return all[i].Agent < all[j].Agent
 		default:
 			return all[i].UpdatedAt > all[j].UpdatedAt
 		}
@@ -148,10 +148,10 @@ func (s Service) List(options ListOptions) ([]Summary, error) {
 	counts := make(map[string]int)
 	limited := make([]Summary, 0, len(all))
 	for _, item := range all {
-		if counts[item.Provider] >= options.Limit {
+		if counts[item.Agent] >= options.Limit {
 			continue
 		}
-		counts[item.Provider]++
+		counts[item.Agent]++
 		limited = append(limited, item)
 	}
 	return limited, nil
@@ -161,11 +161,11 @@ func (s Service) Info(id, source string) (Detail, error) {
 	if id == "" {
 		return Detail{}, errors.New("session ID is required")
 	}
-	if source != "" && providerSpecByID(source) == nil {
-		return Detail{}, fmt.Errorf("unknown session provider %q", source)
+	if source != "" && agentSpecByID(source) == nil {
+		return Detail{}, fmt.Errorf("unknown session agent %q", source)
 	}
 	var matches []Detail
-	for _, spec := range providerSpecs {
+	for _, spec := range agentSpecs {
 		if source != "" && spec.id != source {
 			continue
 		}
@@ -183,7 +183,7 @@ func (s Service) Info(id, source string) (Detail, error) {
 		return Detail{}, fmt.Errorf("session %q was not found", id)
 	}
 	if len(matches) > 1 {
-		return Detail{}, fmt.Errorf("session ID %q is ambiguous; pass --source <provider>", id)
+		return Detail{}, fmt.Errorf("session ID %q is ambiguous; pass --source <agent>", id)
 	}
 	return matches[0], nil
 }
@@ -195,7 +195,7 @@ func (s Service) lookPath(binary string) (string, error) {
 	return s.LookPath(binary)
 }
 
-type providerSpec struct {
+type agentSpec struct {
 	id     string
 	name   string
 	binary string
@@ -203,7 +203,7 @@ type providerSpec struct {
 	load   func(string) ([]Detail, error)
 }
 
-var providerSpecs = []providerSpec{
+var agentSpecs = []agentSpec{
 	{id: "claude", name: "Claude Code", binary: "claude", root: func(home string) string { return filepath.Join(home, ".claude", "projects") }, load: loadClaude},
 	{id: "codex", name: "Codex CLI", binary: "codex", root: func(home string) string { return filepath.Join(home, ".codex", "sessions") }, load: loadCodex},
 	{id: "gemini", name: "Gemini CLI", binary: "gemini", root: func(home string) string { return filepath.Join(home, ".gemini", "tmp") }, load: loadGemini},
@@ -211,10 +211,10 @@ var providerSpecs = []providerSpec{
 	{id: "pi", name: "Pi Coding Agent", binary: "pi", root: func(home string) string { return filepath.Join(home, ".pi", "agent", "sessions") }, load: loadPi},
 }
 
-func providerSpecByID(id string) *providerSpec {
-	for index := range providerSpecs {
-		if providerSpecs[index].id == id {
-			return &providerSpecs[index]
+func agentSpecByID(id string) *agentSpec {
+	for index := range agentSpecs {
+		if agentSpecs[index].id == id {
+			return &agentSpecs[index]
 		}
 	}
 	return nil
@@ -713,8 +713,8 @@ func readJSONL(path string) ([]map[string]any, error) {
 	return records, nil
 }
 
-func newDetail(provider, source string) Detail {
-	return Detail{Provider: provider, Source: source}
+func newDetail(agent, source string) Detail {
+	return Detail{Agent: agent, Source: source}
 }
 
 func codexSubagentSource(value any) bool {
@@ -981,7 +981,7 @@ func matchesWorkspace(detail Detail, workspace string) bool {
 	if cleanPath(detail.Workspace) == workspace {
 		return true
 	}
-	if detail.Provider != "gemini" || detail.Workspace != "" {
+	if detail.Agent != "gemini" || detail.Workspace != "" {
 		return false
 	}
 	hash := fmt.Sprintf("%x", sha256.Sum256([]byte(workspace)))
@@ -1021,12 +1021,12 @@ func nonEmpty(values []string) []string {
 	return result
 }
 
-// ParseRecords parses raw records from a native provider format into a unified Detail.
-// For JSONL providers (claude, codex, pi), records is the list of parsed JSON objects.
-// For JSON providers (gemini), records should contain a single top-level object.
+// ParseRecords parses raw records from a native agent format into a unified Detail.
+// For JSONL agents (claude, codex, pi), records is the list of parsed JSON objects.
+// For JSON agents (gemini), records should contain a single top-level object.
 // For opencode, this returns false since opencode uses a file-per-message layout.
-func ParseRecords(provider string, records []map[string]any) (Detail, bool) {
-	switch provider {
+func ParseRecords(agent string, records []map[string]any) (Detail, bool) {
+	switch agent {
 	case "claude":
 		return parseClaude("stdin", records)
 	case "codex":

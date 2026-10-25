@@ -102,7 +102,7 @@ run_case() {
 	if run_agent "$agent" "$@"; then
 		return
 	fi
-	printf '%s Skill smoke failed; continuing with the remaining providers.\n' "$agent" >&2
+	printf '%s Skill smoke failed; continuing with the remaining agents.\n' "$agent" >&2
 	failures="${failures}${failures:+, }${agent}"
 }
 

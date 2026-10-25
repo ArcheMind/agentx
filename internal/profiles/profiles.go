@@ -1,4 +1,4 @@
-package presets
+package profiles
 
 import (
 	"bytes"
@@ -16,13 +16,13 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-const FileName = "PRESET.md"
+const FileName = "PROFILE.md"
 
 var NamePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$`)
 
-var ErrExists = errors.New("a preset with this name already exists")
+var ErrExists = errors.New("a profile with this name already exists")
 
-type Preset struct {
+type Profile struct {
 	Name        string   `json:"name" yaml:"-"`
 	Description string   `json:"description" yaml:"-"`
 	Agent       string   `json:"agent" yaml:"agent"`
@@ -33,7 +33,7 @@ type Preset struct {
 	Flags       []string `json:"flags,omitempty" yaml:"flags,omitempty"`
 }
 
-func (p Preset) Equal(o Preset) bool {
+func (p Profile) Equal(o Profile) bool {
 	return p.Name == o.Name && p.Description == o.Description && p.Agent == o.Agent && p.Model == o.Model && p.Effort == o.Effort &&
 		boolEqual(p.Sandbox, o.Sandbox) && boolEqual(p.UserConfig, o.UserConfig) && slices.Equal(p.Flags, o.Flags)
 }
@@ -72,7 +72,7 @@ var AgentOrder = []string{"claude", "codex", "gemini", "opencode", "pi"}
 var piModel = regexp.MustCompile(`^[A-Za-z0-9_-]+/[^*?:[:space:]]+$`)
 
 func Dir(home string) string {
-	return filepath.Join(home, ".agentx", "presets")
+	return filepath.Join(home, ".agentx", "profiles")
 }
 
 func Path(home, name string) string {
@@ -86,12 +86,12 @@ func ValidName(name string) error {
 	return nil
 }
 
-func (p Preset) Validate() error {
+func (p Profile) Validate() error {
 	if err := ValidName(p.Name); err != nil {
 		return err
 	}
 	if strings.TrimSpace(p.Description) == "" {
-		return fmt.Errorf("description is empty; write when to use this preset below the front matter")
+		return fmt.Errorf("description is empty; write when to use this profile below the front matter")
 	}
 	rule, ok := Agents[p.Agent]
 	if !ok {
@@ -117,8 +117,8 @@ func (p Preset) Validate() error {
 	return nil
 }
 
-// LaunchArgs maps the preset effort to native interactive flags.
-func (p Preset) LaunchArgs() []string {
+// LaunchArgs maps the profile effort to native interactive flags.
+func (p Profile) LaunchArgs() []string {
 	if p.Effort == "" {
 		return nil
 	}
@@ -147,7 +147,7 @@ func EffortLabel(effort string) string {
 	return effort
 }
 
-func Encode(p Preset) ([]byte, error) {
+func Encode(p Profile) ([]byte, error) {
 	front, err := yaml.Marshal(p)
 	if err != nil {
 		return nil, err
@@ -161,17 +161,17 @@ func Encode(p Preset) ([]byte, error) {
 	return out.Bytes(), nil
 }
 
-func Parse(name string, data []byte) (Preset, error) {
+func Parse(name string, data []byte) (Profile, error) {
 	text := strings.ReplaceAll(string(data), "\r\n", "\n")
 	if !strings.HasPrefix(text, "---\n") {
-		return Preset{Name: name}, fmt.Errorf("%s must start with a --- front matter block holding agent, model and optional effort", FileName)
+		return Profile{Name: name}, fmt.Errorf("%s must start with a --- front matter block holding agent, model and optional effort", FileName)
 	}
 	rest := text[len("---\n"):]
 	end := strings.Index(rest, "\n---\n")
 	body := ""
 	if end < 0 {
 		if !strings.HasSuffix(rest, "\n---") {
-			return Preset{Name: name}, fmt.Errorf("%s front matter is not closed with ---", FileName)
+			return Profile{Name: name}, fmt.Errorf("%s front matter is not closed with ---", FileName)
 		}
 		end = len(rest) - len("\n---")
 	} else {
@@ -180,9 +180,9 @@ func Parse(name string, data []byte) (Preset, error) {
 	front := rest[:end]
 	var fields map[string]any
 	if err := yaml.Unmarshal([]byte(front), &fields); err != nil {
-		return Preset{Name: name}, fmt.Errorf("%s front matter is not valid YAML: %w", FileName, err)
+		return Profile{Name: name}, fmt.Errorf("%s front matter is not valid YAML: %w", FileName, err)
 	}
-	p := Preset{Name: name, Description: strings.TrimSpace(body)}
+	p := Profile{Name: name, Description: strings.TrimSpace(body)}
 	keys := make([]string, 0, len(fields))
 	for key := range fields {
 		keys = append(keys, key)
@@ -197,7 +197,7 @@ func Parse(name string, data []byte) (Preset, error) {
 			}
 		case "sandbox", "user_config", "flags":
 		case "name":
-			return p, fmt.Errorf("%s must not set name; the directory name is the preset name", FileName)
+			return p, fmt.Errorf("%s must not set name; the directory name is the profile name", FileName)
 		case "description":
 			return p, fmt.Errorf("%s must not set description in front matter; write it below the front matter", FileName)
 		default:
@@ -239,33 +239,33 @@ func Parse(name string, data []byte) (Preset, error) {
 	return p, p.Validate()
 }
 
-func Read(home, name string) (Preset, error) {
+func Read(home, name string) (Profile, error) {
 	if err := entryName(name); err != nil {
-		return Preset{Name: name}, err
+		return Profile{Name: name}, err
 	}
 	data, err := os.ReadFile(Path(home, name))
 	if os.IsNotExist(err) {
 		if info, statErr := os.Stat(filepath.Join(Dir(home), name)); statErr == nil && info.IsDir() {
-			return Preset{Name: name}, fmt.Errorf("%s is missing", FileName)
+			return Profile{Name: name}, fmt.Errorf("%s is missing", FileName)
 		}
-		return Preset{Name: name}, fmt.Errorf("preset %q does not exist in %s", name, Dir(home))
+		return Profile{Name: name}, fmt.Errorf("profile %q does not exist in %s", name, Dir(home))
 	}
 	if err != nil {
-		return Preset{Name: name}, err
+		return Profile{Name: name}, err
 	}
 	return Parse(name, data)
 }
 
-// Load returns valid presets and per-entry problems so one broken entry never hides the others.
-func Load(home string) ([]Preset, []Problem, error) {
+// Load returns valid profiles and per-entry problems so one broken entry never hides the others.
+func Load(home string) ([]Profile, []Problem, error) {
 	entries, err := os.ReadDir(Dir(home))
 	if os.IsNotExist(err) {
 		return nil, nil, nil
 	}
 	if err != nil {
-		return nil, nil, fmt.Errorf("read presets directory %s: %w", Dir(home), err)
+		return nil, nil, fmt.Errorf("read profiles directory %s: %w", Dir(home), err)
 	}
-	var valid []Preset
+	var valid []Profile
 	var problems []Problem
 	for _, entry := range entries {
 		name := entry.Name()
@@ -274,24 +274,24 @@ func Load(home string) ([]Preset, []Problem, error) {
 		}
 		path := filepath.Join(Dir(home), name)
 		if !entry.IsDir() {
-			problems = append(problems, Problem{Name: name, Path: path, Err: "not a preset directory; each preset is a directory containing " + FileName})
+			problems = append(problems, Problem{Name: name, Path: path, Err: "not a profile directory; each profile is a directory containing " + FileName})
 			continue
 		}
 		if err := ValidName(name); err != nil {
 			problems = append(problems, Problem{Name: name, Path: path, Err: "directory " + err.Error()})
 			continue
 		}
-		preset, err := Read(home, name)
+		profile, err := Read(home, name)
 		if err != nil {
 			problems = append(problems, Problem{Name: name, Path: Path(home, name), Err: err.Error()})
 			continue
 		}
-		valid = append(valid, preset)
+		valid = append(valid, profile)
 	}
 	return valid, problems, nil
 }
 
-func Create(home string, p Preset) error {
+func Create(home string, p Profile) error {
 	if err := p.Validate(); err != nil {
 		return err
 	}
@@ -326,8 +326,8 @@ func Create(home string, p Preset) error {
 	return nil
 }
 
-// Update replaces the preset file in place; previous valid content survives any failure.
-func Update(home string, p Preset) error {
+// Update replaces the profile file in place; previous valid content survives any failure.
+func Update(home string, p Profile) error {
 	if err := p.Validate(); err != nil {
 		return err
 	}
@@ -337,9 +337,9 @@ func Update(home string, p Preset) error {
 	}
 	dir := filepath.Join(Dir(home), p.Name)
 	if info, err := os.Stat(dir); err != nil || !info.IsDir() {
-		return fmt.Errorf("preset %q does not exist in %s", p.Name, Dir(home))
+		return fmt.Errorf("profile %q does not exist in %s", p.Name, Dir(home))
 	}
-	file, err := os.CreateTemp(dir, ".PRESET-*")
+	file, err := os.CreateTemp(dir, ".PROFILE-*")
 	if err != nil {
 		return err
 	}
@@ -366,7 +366,7 @@ func Rename(home, from, to string) error {
 	}
 	source := filepath.Join(Dir(home), from)
 	if _, err := os.Stat(source); err != nil {
-		return fmt.Errorf("preset %q does not exist in %s", from, Dir(home))
+		return fmt.Errorf("profile %q does not exist in %s", from, Dir(home))
 	}
 	target := filepath.Join(Dir(home), to)
 	if _, err := os.Lstat(target); err == nil && !strings.EqualFold(from, to) {
@@ -394,14 +394,14 @@ func Delete(home, name string) error {
 	}
 	path := filepath.Join(Dir(home), name)
 	if _, err := os.Lstat(path); err != nil {
-		return fmt.Errorf("preset %q does not exist in %s", name, Dir(home))
+		return fmt.Errorf("profile %q does not exist in %s", name, Dir(home))
 	}
 	return os.RemoveAll(path)
 }
 
 func entryName(name string) error {
 	if name == "" || name == "." || name == ".." || strings.HasPrefix(name, ".") || filepath.Base(name) != name || strings.ContainsAny(name, `/\`) {
-		return fmt.Errorf("invalid preset entry %q", name)
+		return fmt.Errorf("invalid profile entry %q", name)
 	}
 	return nil
 }

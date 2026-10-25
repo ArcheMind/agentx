@@ -6,10 +6,10 @@ import {randomUUID} from 'node:crypto'
 
 const home=await mkdtemp(join(tmpdir(),'agentx-mcp-live-'))
 const codexHome=process.env.AX_MCP_CODEX_HOME??join(homedir(),'.codex'),piAgentDir=process.env.AX_MCP_PI_AGENT_DIR??join(homedir(),'.pi','agent')
-const writePreset=async(home,{name,agent,model,effort,description})=>{const dir=join(home,'.agentx','presets',name);await mkdir(dir,{recursive:true});await writeFile(join(dir,'PRESET.md'),`---\nagent: ${agent}\nmodel: ${model}\n${effort?`effort: ${effort}\n`:''}---\n\n${description}\n`)}
+const writeProfile=async(home,{name,agent,model,effort,description})=>{const dir=join(home,'.agentx','profiles',name);await mkdir(dir,{recursive:true});await writeFile(join(dir,'PROFILE.md'),`---\nagent: ${agent}\nmodel: ${model}\n${effort?`effort: ${effort}\n`:''}---\n\n${description}\n`)}
 const options=[{name:'codex-test',agent:'codex',model:process.env.AX_MCP_CODEX_MODEL??'gpt-5.6-luna',description:'Read-only Codex smoke',effort:'low'},{name:'pi-test',agent:'pi',model:process.env.AX_MCP_PI_MODEL??'openai-codex/gpt-5.6-luna',description:'Read-only Pi smoke'}]
-for(const option of options)await writePreset(home,option)
-const child=spawn(resolve(process.argv[2]??'bin/ax'),['preset','serve'],{env:{...process.env,AX_SUBAGENT_HOME:home,AX_LOG:'debug',CODEX_HOME:codexHome,PI_CODING_AGENT_DIR:piAgentDir},stdio:['pipe','pipe','pipe']})
+for(const option of options)await writeProfile(home,option)
+const child=spawn(resolve(process.argv[2]??'bin/ax'),['mcp','serve'],{env:{...process.env,AX_SUBAGENT_HOME:home,AX_LOG:'debug',CODEX_HOME:codexHome,PI_CODING_AGENT_DIR:piAgentDir},stdio:['pipe','pipe','pipe']})
 let raw='',stderr='',pending='',counter=0
 const waiting=new Map(),notifications=[],notifyWaiters=[]
 child.stderr.on('data',chunk=>stderr+=chunk)

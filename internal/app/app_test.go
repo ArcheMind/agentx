@@ -278,7 +278,7 @@ func TestInteractiveSelectorUsesAgentThemeColors(t *testing.T) {
 		t.Run(provider, func(t *testing.T) {
 			row := contentRow{
 				text: provider + " row", itemIndex: 0, kind: contentRowSession,
-				provider: provider, updated: "Today 12:00", title: "Theme task",
+				agent: provider, updated: "Today 12:00", title: "Theme task",
 			}
 			colored := styledMarker("> ", row, true) + styledContentRow(row, true, true)
 			for _, expected := range []string{agentColor(provider), ansiBold, ansiDim, ansiReset} {
@@ -332,7 +332,7 @@ func TestBareAXStartsInteractiveHome(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "no session started") {
 		t.Fatalf("error = %v", err)
 	}
-	for _, want := range []string{"New session · Presets", emptyPresetsHint, "+ Create preset…", "Recent sessions · Current workspace", "Recent sessions · Global", "No recent sessions", "m manage presets"} {
+	for _, want := range []string{"New session · Profiles", emptyProfilesHint, "+ Create profile…", "Recent sessions · Current workspace", "Recent sessions · Global", "No recent sessions", "m manage profiles"} {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("interactive output lacks %q: %q", want, stdout.String())
 		}
@@ -371,8 +371,8 @@ func TestInteractiveResumeCanIncludeSubagents(t *testing.T) {
 }
 
 func TestSessionSelectorMovesAcrossGroupBoundary(t *testing.T) {
-	current := sessions.Summary{ID: "current", Provider: "codex", Title: "Current work"}
-	global := sessions.Summary{ID: "global", Provider: "claude", Workspace: "/work/other", Title: "Other work"}
+	current := sessions.Summary{ID: "current", Agent: "codex", Title: "Current work"}
+	global := sessions.Summary{ID: "global", Agent: "claude", Workspace: "/work/other", Title: "Other work"}
 	groups := []sessionGroup{
 		{Heading: "Current workspace", Items: []sessions.Summary{current}},
 		{Heading: "Global", Items: []sessions.Summary{global}},
@@ -396,7 +396,7 @@ func TestSessionSelectorMovesAcrossGroupBoundary(t *testing.T) {
 
 func TestSessionSelectorHandlesEmptySections(t *testing.T) {
 	t.Run("current workspace empty", func(t *testing.T) {
-		global := sessions.Summary{ID: "global", Provider: "codex"}
+		global := sessions.Summary{ID: "global", Agent: "codex"}
 		groups := []sessionGroup{
 			{Heading: "Current workspace"},
 			{Heading: "Global", Items: []sessions.Summary{global}},
@@ -413,7 +413,7 @@ func TestSessionSelectorHandlesEmptySections(t *testing.T) {
 	})
 
 	t.Run("global empty", func(t *testing.T) {
-		current := sessions.Summary{ID: "current", Provider: "codex"}
+		current := sessions.Summary{ID: "current", Agent: "codex"}
 		groups := []sessionGroup{
 			{Heading: "Current workspace", Items: []sessions.Summary{current}},
 			{Heading: "Global"},
@@ -440,7 +440,7 @@ func TestSessionSelectorHandlesEmptySections(t *testing.T) {
 }
 
 func TestSessionSelectorCanBeCancelled(t *testing.T) {
-	groups := []sessionGroup{{Heading: "Current workspace", Items: []sessions.Summary{{ID: "current", Provider: "codex"}}}}
+	groups := []sessionGroup{{Heading: "Current workspace", Items: []sessions.Summary{{ID: "current", Agent: "codex"}}}}
 	application := newHomeApp(t, "q", &bytes.Buffer{})
 	_, err := chooseRecent(application, groups)
 	if err == nil || !strings.Contains(err.Error(), "cancelled") {
@@ -452,14 +452,14 @@ func TestSessionSelectorViewport(t *testing.T) {
 	var currentItems []sessions.Summary
 	for i := 0; i < 3; i++ {
 		currentItems = append(currentItems, sessions.Summary{
-			ID: fmt.Sprintf("c%d", i), Provider: "codex", Title: fmt.Sprintf("Task %d", i),
+			ID: fmt.Sprintf("c%d", i), Agent: "codex", Title: fmt.Sprintf("Task %d", i),
 			UpdatedAt: "2026-09-10T12:00:00Z",
 		})
 	}
 	var globalItems []sessions.Summary
 	for i := 0; i < 3; i++ {
 		globalItems = append(globalItems, sessions.Summary{
-			ID: fmt.Sprintf("g%d", i), Provider: "claude", Title: fmt.Sprintf("Global %d", i),
+			ID: fmt.Sprintf("g%d", i), Agent: "claude", Title: fmt.Sprintf("Global %d", i),
 			Workspace: "/work/other", UpdatedAt: "2026-09-10T11:00:00Z",
 		})
 	}
@@ -614,7 +614,7 @@ func TestSessionRowsUseWorkspaceColumnOnlyForGlobal(t *testing.T) {
 		{
 			Heading: "Current workspace",
 			Items: []sessions.Summary{{
-				Provider:  "claude",
+				Agent:     "claude",
 				StartedAt: "2026-09-10T14:00:00Z",
 				UpdatedAt: "2026-09-10T15:00:00Z",
 				Workspace: "/work/current",
@@ -624,7 +624,7 @@ func TestSessionRowsUseWorkspaceColumnOnlyForGlobal(t *testing.T) {
 		{
 			Heading: "Global",
 			Items: []sessions.Summary{{
-				Provider:  "codex",
+				Agent:     "codex",
 				UpdatedAt: "invalid timestamp that is too long",
 				Workspace: filepath.Join(string(filepath.Separator), "work", "company", "very-long-project-name"),
 				Title:     strings.Repeat("title", 12),
@@ -712,7 +712,7 @@ func TestSessionInfoUsesGlobalYAMLOutput(t *testing.T) {
 	if err := application.Run(context.Background(), []string{"--yaml", "session", "show", "session-id", "--source", "claude"}); err != nil {
 		t.Fatal(err)
 	}
-	for _, expected := range []string{"id: session-id", "provider: claude", "text: continue work"} {
+	for _, expected := range []string{"id: session-id", "agent: claude", "text: continue work"} {
 		if !strings.Contains(stdout.String(), expected) {
 			t.Fatalf("YAML %q does not contain %q", stdout.String(), expected)
 		}
@@ -739,14 +739,6 @@ func TestSessionShowAlias(t *testing.T) {
 	}
 	if !strings.Contains(stdout.String(), "id: session-id") {
 		t.Fatalf("info alias output = %q", stdout.String())
-	}
-}
-
-func TestSessionProvidersRemoved(t *testing.T) {
-	application := New(false, strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{})
-	err := application.Run(context.Background(), []string{"session", "providers"})
-	if err == nil || !strings.Contains(err.Error(), "removed") {
-		t.Fatalf("error = %v", err)
 	}
 }
 
@@ -794,74 +786,6 @@ func TestAgentModelsAlias(t *testing.T) {
 	}
 }
 
-func TestConvertToRejectsUnknownProvider(t *testing.T) {
-	application := New(false, strings.NewReader("{}"), &bytes.Buffer{}, &bytes.Buffer{})
-	err := application.Run(context.Background(), []string{"convert", "to", "unknown"})
-	if err == nil || !strings.Contains(err.Error(), "unknown convert provider") {
-		t.Fatalf("error = %v", err)
-	}
-}
-
-func TestConvertFromRejectsUnknownProvider(t *testing.T) {
-	application := New(false, strings.NewReader("{}"), &bytes.Buffer{}, &bytes.Buffer{})
-	err := application.Run(context.Background(), []string{"convert", "from", "unknown"})
-	if err == nil || !strings.Contains(err.Error(), "unknown convert provider") {
-		t.Fatalf("error = %v", err)
-	}
-}
-
-func TestConvertRequiresFlag(t *testing.T) {
-	application := New(false, strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{})
-	err := application.Run(context.Background(), []string{"convert"})
-	if err == nil || !strings.Contains(err.Error(), "usage:") {
-		t.Fatalf("error = %v", err)
-	}
-}
-
-func TestConvertUnknownVerb(t *testing.T) {
-	application := New(false, strings.NewReader("{}"), &bytes.Buffer{}, &bytes.Buffer{})
-	err := application.Run(context.Background(), []string{"convert", "merge", "claude"})
-	if err == nil || !strings.Contains(err.Error(), "usage:") {
-		t.Fatalf("error = %v", err)
-	}
-}
-
-func TestConvertToClaude(t *testing.T) {
-	input := `{"id":"s1","provider":"claude","messageCount":1,"messages":[{"id":"m1","role":"user","content":[{"type":"text","text":"hello"}]}]}`
-	var stdout bytes.Buffer
-	application := New(false, strings.NewReader(input), &stdout, &bytes.Buffer{})
-	if err := application.Run(context.Background(), []string{"convert", "to", "claude"}); err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(stdout.String(), `"type":"user"`) || !strings.Contains(stdout.String(), `"sessionId":"s1"`) {
-		t.Fatalf("convert --to claude output = %q", stdout.String())
-	}
-}
-
-func TestConvertFromCodex(t *testing.T) {
-	input := `{"type":"session_meta","timestamp":"2026-09-01T11:00:00Z","payload":{"id":"cx1","cwd":"/work","timestamp":"2026-09-01T11:00:00Z"}}
-{"type":"response_item","timestamp":"2026-09-01T11:01:00Z","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"hello"}]}}`
-	var stdout bytes.Buffer
-	application := New(false, strings.NewReader(input), &stdout, &bytes.Buffer{})
-	if err := application.Run(context.Background(), []string{"convert", "from", "codex"}); err != nil {
-		t.Fatal(err)
-	}
-	for _, expected := range []string{`"id": "cx1"`, `"provider": "codex"`, `"text": "hello"`} {
-		if !strings.Contains(stdout.String(), expected) {
-			t.Fatalf("convert --from codex output %q does not contain %q", stdout.String(), expected)
-		}
-	}
-}
-
-func TestConvertToOpenCodeErrors(t *testing.T) {
-	input := `{"summary":{"id":"s1","provider":"opencode","message_count":0},"messages":[]}`
-	application := New(false, strings.NewReader(input), &bytes.Buffer{}, &bytes.Buffer{})
-	err := application.Run(context.Background(), []string{"convert", "to", "opencode"})
-	if err == nil || !strings.Contains(err.Error(), "directory target") {
-		t.Fatalf("error = %v", err)
-	}
-}
-
 func TestSessionExportStreamsUnifiedJSON(t *testing.T) {
 	home := t.TempDir()
 	workspace := t.TempDir()
@@ -879,7 +803,7 @@ func TestSessionExportStreamsUnifiedJSON(t *testing.T) {
 	if err := application.Run(context.Background(), []string{"session", "export", "session-id", "--source", "claude"}); err != nil {
 		t.Fatal(err)
 	}
-	for _, expected := range []string{`"id": "session-id"`, `"provider": "claude"`, `"text": "continue work"`} {
+	for _, expected := range []string{`"id": "session-id"`, `"agent": "claude"`, `"text": "continue work"`} {
 		if !strings.Contains(stdout.String(), expected) {
 			t.Fatalf("export output %q does not contain %q", stdout.String(), expected)
 		}
@@ -889,7 +813,7 @@ func TestSessionExportStreamsUnifiedJSON(t *testing.T) {
 func TestSessionImportWritesNativeStore(t *testing.T) {
 	home := t.TempDir()
 	workspace := t.TempDir()
-	input := `{"id":"s1","provider":"codex","workspace":"` + workspace + `","messageCount":1,"messages":[{"id":"m1","role":"user","content":[{"type":"text","text":"hello"}]}]}`
+	input := `{"id":"s1","agent":"codex","workspace":"` + workspace + `","messageCount":1,"messages":[{"id":"m1","role":"user","content":[{"type":"text","text":"hello"}]}]}`
 	var stdout bytes.Buffer
 	application := New(false, strings.NewReader(input), &stdout, &bytes.Buffer{})
 	application.Sessions = sessions.Service{HomeDir: home}
@@ -938,15 +862,15 @@ func TestResumeFlagValidation(t *testing.T) {
 }
 
 func TestTranscriptFileName(t *testing.T) {
-	name := transcriptFileName(sessions.Detail{ID: "abcdef1234567890", Provider: "claude", Title: "Fix Login Bug!"})
+	name := transcriptFileName(sessions.Detail{ID: "abcdef1234567890", Agent: "claude", Title: "Fix Login Bug!"})
 	if name != "claude-fix-login-bug-abcdef12.json" {
 		t.Fatalf("name = %q", name)
 	}
-	name = transcriptFileName(sessions.Detail{ID: "x1", Provider: "codex", Title: "修复 登录"})
+	name = transcriptFileName(sessions.Detail{ID: "x1", Agent: "codex", Title: "修复 登录"})
 	if name != "codex-修复-登录-x1.json" {
 		t.Fatalf("unicode name = %q", name)
 	}
-	if name = transcriptFileName(sessions.Detail{Provider: "pi"}); name != "pi.json" {
+	if name = transcriptFileName(sessions.Detail{Agent: "pi"}); name != "pi.json" {
 		t.Fatalf("bare name = %q", name)
 	}
 }
@@ -954,7 +878,7 @@ func TestTranscriptFileName(t *testing.T) {
 func TestHomeSelectorExportsSession(t *testing.T) {
 	var stdout bytes.Buffer
 	application := newHomeApp(t, "je", &stdout)
-	groups := []sessionGroup{{Heading: "Current workspace", Items: []sessions.Summary{{ID: "current", Provider: "codex", Title: "Current work"}}}}
+	groups := []sessionGroup{{Heading: "Current workspace", Items: []sessions.Summary{{ID: "current", Agent: "codex", Title: "Current work"}}}}
 	item, action, _, err := application.chooseHome(bufio.NewReader(application.Stdin), application.Hooks.Home, groups, 0)
 	if err != nil {
 		t.Fatal(err)
@@ -982,7 +906,7 @@ func TestExportChosenSessionWritesMeaningfulFile(t *testing.T) {
 	var stdout bytes.Buffer
 	application := New(false, strings.NewReader(""), &stdout, &bytes.Buffer{})
 	application.Sessions = sessions.Service{HomeDir: home}
-	if err := application.exportChosenSession(sessions.Summary{ID: "cx1", Provider: "codex"}); err != nil {
+	if err := application.exportChosenSession(sessions.Summary{ID: "cx1", Agent: "codex"}); err != nil {
 		t.Fatal(err)
 	}
 	matches, err := filepath.Glob("codex-*.json")
@@ -996,7 +920,7 @@ func TestExportChosenSessionWritesMeaningfulFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, expected := range []string{`"id": "cx1"`, `"provider": "codex"`, `"text": "hello work"`} {
+	for _, expected := range []string{`"id": "cx1"`, `"agent": "codex"`, `"text": "hello work"`} {
 		if !strings.Contains(string(data), expected) {
 			t.Fatalf("exported transcript %q does not contain %q", string(data), expected)
 		}

@@ -101,7 +101,7 @@ func (a App) Run(ctx context.Context, args []string) error {
 		}
 		fmt.Fprintf(a.Stdout, "agentx %s\n", Version)
 		return nil
-	case "list":
+	case "status":
 		return a.overview(ctx, args[1:])
 	case "agent":
 		return a.agent(ctx, args[1:])
@@ -110,15 +110,13 @@ func (a App) Run(ctx context.Context, args []string) error {
 	case "session":
 		return a.sessions(ctx, args[1:])
 	case "mcp":
-		return a.mcp(args[1:])
+		return a.mcp(ctx, args[1:])
 	case "skill":
 		return a.skill(ctx, args[1:])
 	case "hook":
 		return a.hook(ctx, args[1:])
-	case "preset":
-		return a.preset(ctx, args[1:])
-	case "convert":
-		return a.convert(args[1:])
+	case "profile":
+		return a.profile(ctx, args[1:])
 	default:
 		if _, err := a.Registry.Get(args[0]); err == nil {
 			return a.runAgent(ctx, args)
@@ -604,8 +602,6 @@ func (a App) sessions(ctx context.Context, args []string) error {
 		return sessionUsageError()
 	}
 	switch args[0] {
-	case "providers":
-		return fmt.Errorf("session providers has been removed; use ax list instead")
 	case "list":
 		return a.sessionList(args[1:])
 	case "show", "info":
@@ -630,7 +626,7 @@ func (a App) sessionList(args []string) error {
 			if index >= len(args) {
 				return fmt.Errorf("--source requires a value")
 			}
-			options.Provider = args[index]
+			options.Agent = args[index]
 		case "--workspace":
 			index++
 			if index >= len(args) {
@@ -672,14 +668,14 @@ func (a App) sessionList(args []string) error {
 		return writeStructured(a.Stdout, items, a.Output)
 	}
 	for _, item := range items {
-		fmt.Fprintf(a.Stdout, "%-10s %-36s %5d  %s\n", item.Provider, item.ID, item.MessageCount, item.Title)
+		fmt.Fprintf(a.Stdout, "%-10s %-36s %5d  %s\n", item.Agent, item.ID, item.MessageCount, item.Title)
 	}
 	return nil
 }
 
 func (a App) sessionInfo(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: ax [--json|--yaml] session show <session-id> [--source <provider>] [--peek] [--peek-lines <n>]")
+		return fmt.Errorf("usage: ax [--json|--yaml] session show <session-id> [--source <agent>] [--peek] [--peek-lines <n>]")
 	}
 	id := args[0]
 	var source string
@@ -715,7 +711,7 @@ func (a App) sessionInfo(args []string) error {
 	if a.Output != OutputText {
 		return writeStructured(a.Stdout, detail, a.Output)
 	}
-	fmt.Fprintf(a.Stdout, "ID: %s\nProvider: %s\n", detail.ID, detail.Provider)
+	fmt.Fprintf(a.Stdout, "ID: %s\nAgent: %s\n", detail.ID, detail.Agent)
 	if detail.Title != "" {
 		fmt.Fprintf(a.Stdout, "Title: %s\n", detail.Title)
 	}
@@ -737,7 +733,7 @@ func (a App) sessionInfo(args []string) error {
 
 func (a App) sessionResume(ctx context.Context, args []string) error {
 	if len(args) < 2 {
-		return fmt.Errorf("usage: ax [--json|--yaml] session resume <target-agent> <session-id> [--source <provider>] [--workspace <path>] [--dry-run]")
+		return fmt.Errorf("usage: ax [--json|--yaml] session resume <target-agent> <session-id> [--source <agent>] [--workspace <path>] [--dry-run]")
 	}
 	agent, err := a.Registry.Get(args[0])
 	if err != nil {
@@ -775,7 +771,7 @@ func (a App) sessionResume(ctx context.Context, args []string) error {
 
 func (a App) sessionExport(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: ax [--json|--yaml] session export <session-id> [--source <provider>]")
+		return fmt.Errorf("usage: ax [--json|--yaml] session export <session-id> [--source <agent>]")
 	}
 	id := args[0]
 	var source string
@@ -881,7 +877,7 @@ func transcriptFileName(detail sessions.Detail) string {
 	if runes := []rune(id); len(runes) > 8 {
 		id = string(runes[:8])
 	}
-	parts := []string{detail.Provider}
+	parts := []string{detail.Agent}
 	if mapped != "" {
 		parts = append(parts, mapped)
 	}
@@ -911,7 +907,7 @@ func (a App) resumeSession(ctx context.Context, agent runtime.Agent, detail sess
 		return fmt.Errorf("session workspace %s is not an accessible directory", workspace)
 	}
 	var resumeToken string
-	if detail.Provider == agent.ID {
+	if detail.Agent == agent.ID {
 		resumeToken = detail.ID
 	} else {
 		stateDir := filepath.Join(a.Sessions.HomeDir, ".local", "state", "agentx", "resume")
@@ -1013,28 +1009,27 @@ Usage:
   ax [--include-subagents]
   ax --resume <transcript-file>
   ax <agent> [--model <model>] [--cwd <path>] [--dry-run] [-- <native args...>]
-  ax [--json|--yaml] list
+  ax [--json|--yaml] status
 
   ax [--json|--yaml] agent <list|show|install|run|exec> [args...]
   ax [--json|--yaml] auth <list|show|login|logout> [args...]
   ax [--json|--yaml] session <list|show|resume|export|import> [args...]
   ax [--json|--yaml] skill <list|show|install> [args...]
   ax [--json|--yaml] hook list
-  ax [--json|--yaml] mcp <list|show> [args...]
-  ax [--json|--yaml] preset <list|show> [args...]
-  ax preset serve   (register: claude mcp add --scope user agentx -- <ax> preset serve)
+  ax [--json|--yaml] mcp <list|show|serve> [args...]
+  ax [--json|--yaml] profile <list|show> [args...]
+  ax mcp serve   (register: claude mcp add --scope user agentx -- <ax> mcp serve)
   ax claude [-- <native args...>]
-  ax [--json|--yaml] convert <to|from> <provider>
 
   ax agent exec <codex|pi|gemini> [--model <model>] [--resume <session-id>] [--cwd <path>] [--dry-run] < prompt.txt
 
   ax version
 
 Running ax without arguments opens the interactive home: start a new session
-with a preset, create or manage presets (m), continue a recent session, or
+with a profile, create or manage profiles (m), continue a recent session, or
 export one as a unified transcript file (e). ax --resume <transcript-file>
 resumes an exported transcript interactively.
-Presets live in ~/.agentx/presets/<name>/PRESET.md and are shared with MCP
+Profiles live in ~/.agentx/profiles/<name>/PROFILE.md and are shared with MCP
 ExternalSubagents. The ax <agent> shortcut launches an installed agent directly.
 
 Agents: claude, codex, dsh, gemini, opencode, pi
@@ -1042,115 +1037,6 @@ Agents: claude, codex, dsh, gemini, opencode, pi
 Set AX_LOG=debug or pass --verbose before the command to log raw external input,
 output, and errors as JSON on stderr.
 `)
-}
-
-var convertProviders = []string{"claude", "codex", "gemini", "opencode", "pi"}
-
-func isConvertProvider(id string) bool {
-	for _, p := range convertProviders {
-		if p == id {
-			return true
-		}
-	}
-	return false
-}
-
-func (a App) convert(args []string) error {
-	if len(args) < 2 {
-		return fmt.Errorf("usage: ax [--json|--yaml] convert <to|from> <provider>")
-	}
-	switch args[0] {
-	case "to":
-		return a.convertTo(args[1])
-	case "from":
-		return a.convertFrom(args[1])
-	default:
-		return fmt.Errorf("usage: ax [--json|--yaml] convert <to|from> <provider>")
-	}
-}
-
-func (a App) convertTo(provider string) error {
-	if !isConvertProvider(provider) {
-		return fmt.Errorf("unknown convert provider %q; supported: %s", provider, strings.Join(convertProviders, ", "))
-	}
-	data, err := io.ReadAll(a.Stdin)
-	if err != nil {
-		return fmt.Errorf("read stdin: %w", err)
-	}
-	var detail sessions.Detail
-	if err := json.Unmarshal(data, &detail); err != nil {
-		return fmt.Errorf("parse unified JSON from stdin: %w", err)
-	}
-
-	switch provider {
-	case "claude":
-		return writeJSONL(a.Stdout, sessions.SerializeClaude(detail))
-	case "codex":
-		return writeJSONL(a.Stdout, sessions.SerializeCodex(detail))
-	case "pi":
-		return writeJSONL(a.Stdout, sessions.SerializePi(detail))
-	case "gemini":
-		encoder := json.NewEncoder(a.Stdout)
-		encoder.SetIndent("", "  ")
-		return encoder.Encode(sessions.SerializeGemini(detail))
-	case "opencode":
-		return fmt.Errorf("opencode requires a directory target; use session resume instead")
-	}
-	return nil
-}
-
-func (a App) convertFrom(provider string) error {
-	if !isConvertProvider(provider) {
-		return fmt.Errorf("unknown convert provider %q; supported: %s", provider, strings.Join(convertProviders, ", "))
-	}
-	data, err := io.ReadAll(a.Stdin)
-	if err != nil {
-		return fmt.Errorf("read stdin: %w", err)
-	}
-
-	var records []map[string]any
-	switch provider {
-	case "gemini":
-		var single map[string]any
-		if err := json.Unmarshal(data, &single); err != nil {
-			return fmt.Errorf("parse %s JSON from stdin: %w", provider, err)
-		}
-		records = []map[string]any{single}
-	default:
-		lines := strings.Split(strings.TrimSpace(string(data)), "\n")
-		for _, line := range lines {
-			line = strings.TrimSpace(line)
-			if line == "" {
-				continue
-			}
-			var record map[string]any
-			if err := json.Unmarshal([]byte(line), &record); err != nil {
-				return fmt.Errorf("parse %s JSONL from stdin: %w", provider, err)
-			}
-			records = append(records, record)
-		}
-	}
-
-	detail, ok := sessions.ParseRecords(provider, records)
-	if !ok {
-		return fmt.Errorf("no valid session found in %s input", provider)
-	}
-
-	output := a.Output
-	if output == OutputText {
-		output = OutputJSON
-	}
-	return writeStructured(a.Stdout, detail, output)
-}
-
-func writeJSONL(writer io.Writer, records []map[string]any) error {
-	encoder := json.NewEncoder(writer)
-	for _, record := range records {
-		if err := encoder.Encode(record); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 type ExitError struct {

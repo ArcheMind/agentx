@@ -17,10 +17,10 @@ const codexModel=process.env.AX_MCP_CODEX_MODEL??'gpt-5.6-luna',piModel=process.
 // Every ChatGPT-accessible openai-codex model in Pi 0.84.4 maps the whole low..max range.
 const piClampModel=process.env.AX_MCP_PI_CLAMP_MODEL??'deepseek/deepseek-flash'
 const codexLevels=['none','minimal','low','medium','high','xhigh','max','ultra'],piLevels=['low','medium','high','xhigh','max']
-const presets=[{name:'pi-clamp',agent:'pi',model:piClampModel,effort:'max'},...codexLevels.map(effort=>({name:`codex-${effort}`,agent:'codex',model:codexModel,effort})),...piLevels.map(effort=>({name:`pi-${effort}`,agent:'pi',model:piModel,effort}))]
-for(const p of presets){const dir=join(home,'.agentx','presets',p.name);await mkdir(dir,{recursive:true});await writeFile(join(dir,'PRESET.md'),`---\nagent: ${p.agent}\nmodel: ${p.model}\n${p.effort?`effort: ${p.effort}\n`:''}---\n\nEffort acceptance ${p.name}\n`)}
+const profiles=[{name:'pi-clamp',agent:'pi',model:piClampModel,effort:'max'},...codexLevels.map(effort=>({name:`codex-${effort}`,agent:'codex',model:codexModel,effort})),...piLevels.map(effort=>({name:`pi-${effort}`,agent:'pi',model:piModel,effort}))]
+for(const p of profiles){const dir=join(home,'.agentx','profiles',p.name);await mkdir(dir,{recursive:true});await writeFile(join(dir,'PROFILE.md'),`---\nagent: ${p.agent}\nmodel: ${p.model}\n${p.effort?`effort: ${p.effort}\n`:''}---\n\nEffort acceptance ${p.name}\n`)}
 
-const child=spawn(binary,['preset','serve'],{cwd:work,env:{...process.env,AX_SUBAGENT_HOME:home,AX_LOG:'debug',CODEX_HOME:codexHome,PI_CODING_AGENT_DIR:piAgentDir},stdio:['pipe','pipe','pipe']})
+const child=spawn(binary,['mcp','serve'],{cwd:work,env:{...process.env,AX_SUBAGENT_HOME:home,AX_LOG:'debug',CODEX_HOME:codexHome,PI_CODING_AGENT_DIR:piAgentDir},stdio:['pipe','pipe','pipe']})
 let stderr='',pending='',counter=0
 const waiting=new Map(),notifications=[]
 child.stderr.on('data',chunk=>stderr+=chunk)
@@ -49,7 +49,7 @@ try{
   const otel=execFor(run.marker)[0]?.error_output??''
   const executed=[...otel.matchAll(/event\.kind=response\.completed .*model_reasoning_effort="?([a-z]+)/g)].map(m=>m[1])
   results.effort.codex[run.level]={failed:run.failed,executed,rollout:threadOf(run.marker)?rollout(threadOf(run.marker)):null,reason:run.text.match(/Reason: (.*)/)?.[1]??null}
-  if(run.level==='ultra')assert(run.failed&&run.text.includes('native effort mismatch: preset effort ultra')&&run.text.includes('max executed'),'ultra clamp not detected: '+run.text)
+  if(run.level==='ultra')assert(run.failed&&run.text.includes('native effort mismatch: profile effort ultra')&&run.text.includes('max executed'),'ultra clamp not detected: '+run.text)
   else if(run.level==='minimal')assert(run.failed&&run.text.includes("Unsupported value: 'minimal'"),'minimal not rejected natively: '+run.text)
   else assert(!run.failed&&run.text.includes(`Native evidence: executed effort ${run.level} (`)&&executed.length>0&&executed.every(e=>e===run.level),`codex ${run.level}: ${run.text}`)
  }
@@ -64,7 +64,7 @@ try{
  const clampEntries=piEntries(piSession(clamp.text))
  assert(clamp.failed&&clamp.text.includes('Pi session records thinking level "high"'),'pi clamp not detected: '+clamp.text)
  results.effort.pi.clamp={model:piClampModel,requested:'max',session:piSession(clamp.text),thinking:clampEntries.filter(e=>e.type==='thinking_level_change').at(-1)?.thinkingLevel,sent:clampEntries.filter(e=>e.type==='custom').map(e=>e.data.reasoning_effort),reason:clamp.text.match(/Reason: (.*)/)?.[1]}
- // Direct Pi runs with the same observer show why off and minimal stay rejected for presets.
+ // Direct Pi runs with the same observer show why off and minimal stay rejected for profiles.
  const observer=join(dirname(fileURLToPath(import.meta.url)),'..','..','internal','subagents','pi_observer.js')
  for(const level of ['off','minimal']){
   const session=join(base,`pi-direct-${level}.jsonl`)

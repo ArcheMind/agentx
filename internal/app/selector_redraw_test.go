@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ArcheMind/agentx/internal/presets"
+	"github.com/ArcheMind/agentx/internal/profiles"
 	"github.com/ArcheMind/agentx/internal/sessions"
 )
 
@@ -67,13 +67,13 @@ func renderScreen(output string) []string {
 }
 
 func TestHomeRedrawsInPlace(t *testing.T) {
-	application, stdout, _ := presetApp(t, "jjjkkjq")
+	application, stdout, _ := profileApp(t, "jjjkkjq")
 	mustCreate(t, application.Hooks.Home, deepReview)
-	mustCreate(t, application.Hooks.Home, presets.Preset{Name: "daily", Description: "Everyday development", Agent: "claude", Model: "opus"})
-	groups := []sessionGroup{{Heading: "Current workspace", Items: []sessions.Summary{{ID: "s1", Provider: "codex", Title: "Fix login state"}}}, {Heading: "Global"}}
+	mustCreate(t, application.Hooks.Home, profiles.Profile{Name: "daily", Description: "Everyday development", Agent: "claude", Model: "opus"})
+	groups := []sessionGroup{{Heading: "Current workspace", Items: []sessions.Summary{{ID: "s1", Agent: "codex", Title: "Fix login state"}}}, {Heading: "Global"}}
 	application.chooseHome(bufio.NewReader(application.Stdin), application.Hooks.Home, groups, 0)
 	screen := strings.Join(renderScreen(stdout.String()), "\n")
-	for _, heading := range []string{"New session · Presets", "Recent sessions · Current workspace", homeHelp} {
+	for _, heading := range []string{"New session · Profiles", "Recent sessions · Current workspace", homeHelp} {
 		if count := strings.Count(screen, heading); count != 1 {
 			t.Fatalf("%q appears %d times on screen:\n%s", heading, count, screen)
 		}

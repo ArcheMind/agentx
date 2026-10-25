@@ -80,7 +80,7 @@ func TestAgentRunProjectsHooksIntoNativeLaunchArguments(t *testing.T) {
 		t.Fatal(err)
 	}
 	tests := []struct {
-		provider string
+		agent    string
 		expected []string
 	}{
 		{"claude", []string{"--plugin-dir", ".agents"}},
@@ -88,11 +88,11 @@ func TestAgentRunProjectsHooksIntoNativeLaunchArguments(t *testing.T) {
 		{"pi", []string{"--extension", "agentx-hooks.ts"}},
 	}
 	for _, test := range tests {
-		t.Run(test.provider, func(t *testing.T) {
+		t.Run(test.agent, func(t *testing.T) {
 			var stdout bytes.Buffer
 			application := New(false, strings.NewReader(""), &stdout, &bytes.Buffer{})
 			application.Hooks = hooks.Service{Home: t.TempDir(), Project: project}
-			if err := application.Run(context.Background(), []string{test.provider, "--cwd", project, "--dry-run"}); err != nil {
+			if err := application.Run(context.Background(), []string{test.agent, "--cwd", project, "--dry-run"}); err != nil {
 				t.Fatal(err)
 			}
 			for _, expected := range test.expected {

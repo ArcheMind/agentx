@@ -261,13 +261,13 @@ func testSerializeOpenCodeRoundTrip(t *testing.T) {
 // writes the result to a new home dir, parses again, and verifies equivalence.
 func parseAndSerializeRoundTrip(
 	t *testing.T,
-	home, id, provider string,
+	home, id, agent string,
 	serialize func(Detail) string,
 	writeBack func(home2 string, content string),
 ) Detail {
 	t.Helper()
 	service := Service{HomeDir: home}
-	original, err := service.Info(id, provider)
+	original, err := service.Info(id, agent)
 	if err != nil {
 		t.Fatalf("initial parse: %v", err)
 	}
@@ -278,7 +278,7 @@ func parseAndSerializeRoundTrip(
 	writeBack(home2, content)
 
 	service2 := Service{HomeDir: home2}
-	roundTripped, err := service2.Info(id, provider)
+	roundTripped, err := service2.Info(id, agent)
 	if err != nil {
 		t.Fatalf("round-trip parse: %v", err)
 	}

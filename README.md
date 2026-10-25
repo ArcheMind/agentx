@@ -16,15 +16,15 @@ Claude Code, Codex CLI, DeepSeek Harness, Gemini CLI, OpenCode, and Pi run throu
 
 ## One list of every agent's work
 
-`ax` with no arguments opens one screen with your presets and the recent sessions of every agent, grouped by project.
+`ax` with no arguments opens one screen with your profiles and the recent sessions of every agent, grouped by project.
 
-Start from a preset or resume recent work:
+Start from a profile or resume recent work:
 
 ```text
-New session · Presets
+New session · Profiles
 › codex-review  Codex · gpt-5.6-luna · low     Read-only research and code review using native …
   pi-review     Pi · openai-codex/gpt-5.6-luna  Read-only independent research and code review u…
-  + Create preset…
+  + Create profile…
 
 Recent sessions · Current workspace
   claude    Sep 11 05:08 (18m)      Design the interactive session-resume experience for the…
@@ -40,7 +40,7 @@ Recent sessions · Global
   gemini    Sep 10 09:40 (2h 30m)   ../mobile-app         Prepare the mobile release checkli…
   pi        Sep 10 06:15 (55m)      ../infrastructure     Add a preflight check before the p…
 
-↑/↓ or j/k select · Enter open · e export session · m manage presets · q/Esc cancel
+↑/↓ or j/k select · Enter open · e export session · m manage profiles · q/Esc cancel
 ```
 
 Non-interactive and filtered:
@@ -78,7 +78,7 @@ AgentX converts the session into the target agent's native transcript format and
 
 ## Move it to another machine
 
-Press e on a session in the interactive home to export it as a unified transcript file (`<provider>-<title>-<id>.json`), or stream it:
+Press e on a session in the interactive home to export it as a unified transcript file (`<agent>-<title>-<id>.json`), or stream it:
 
 ```console
 ax session export <session-id> --source claude > work.json
@@ -86,24 +86,24 @@ ax session import codex work.json      # write into codex's native store, print 
 ax --resume work.json                  # import and resume interactively in one step
 ```
 
-## Call another agent's preset from inside yours
+## Call another agent's profile from inside yours
 
-A preset saves agent, model, effort, and when to use it. The same collection feeds `ax` and the MCP tools, so Claude can run your Codex or Pi presets directly:
+A profile saves agent, model, effort, and when to use it. The same collection feeds `ax` and the MCP tools, so Claude can run your Codex or Pi profiles directly:
 
 ```console
-$ ax preset list
+$ ax profile list
 codex-review         codex      static requirements satisfied; login and model access verified per execution
 pi-review            pi         static requirements satisfied; login and model access verified per execution
 
-$ claude mcp add --scope user agentx -- "$(command -v ax)" preset serve
+$ claude mcp add --scope user agentx -- "$(command -v ax)" mcp serve
 ```
 
 Then, inside Claude:
 
-> Use my codex-review and pi-review presets to review this change independently,
+> Use my codex-review and pi-review profiles to review this change independently,
 > then compare their findings.
 
-Each call runs the preset's own native agent in its own session. No relay inference call, no per-task registration. Calls are read-only unless they ask for `write`; `isolation: "worktree"` runs the subagent in a fresh git worktree that is its only writable root.
+Each call runs the profile's own native agent in its own session. No relay inference call, no per-task registration. Calls are read-only unless they ask for `write`; `isolation: "worktree"` runs the subagent in a fresh git worktree that is its only writable root.
 
 ```text
 ExternalSubagent · SendExternalSubagentMessage · StopExternalSubagent · listExternalSubagentSessions
@@ -116,7 +116,7 @@ Exact inputs, limits, and acceptance evidence: [docs/subagents.md](docs/subagent
 ```text
 ~/.agents/skills/<name>/SKILL.md      codex · dsh · gemini · opencode · pi, Claude via .claude/skills
 ~/.agents/hooks.json                  claude · codex · gemini · pi
-~/.agentx/presets/<name>/PRESET.md    ax · the ExternalSubagent tools above
+~/.agentx/profiles/<name>/PROFILE.md  ax · the ExternalSubagent tools above
 ```
 
 ```console
@@ -128,7 +128,7 @@ user     UserPromptSubmit  echo prompt submitted
 user     Stop              echo stopped
 ```
 
-A preset is one small file:
+A profile is one small file:
 
 ```markdown
 ---
@@ -140,7 +140,7 @@ effort: low
 Read-only research and code review. Not for large refactors.
 ```
 
-`ax` shows `+ Create preset…` on the home screen and `m` edits the highlighted one. Native config stays native: AgentX never merges into your Claude, Codex, Gemini, or Pi configuration; hook and skill bridges are isolated and visible to the agent's own trust review.
+`ax` shows `+ Create profile…` on the home screen and `m` edits the highlighted one. Native config stays native: AgentX never merges into your Claude, Codex, Gemini, or Pi configuration; hook and skill bridges are isolated and visible to the agent's own trust review.
 
 ## Install
 
@@ -179,16 +179,15 @@ DeepSeek Harness has no verified session source, so it is not a session or resum
 ax
 ax --resume <transcript-file>
 ax <agent> [--model <model>] [--cwd <path>] [--dry-run] [-- <native args...>]
-ax [--json|--yaml] list
+ax [--json|--yaml] status
 
 ax [--json|--yaml] agent <list|show|install|run|exec> [args...]
 ax [--json|--yaml] auth <list|show|login|logout> [args...]
 ax [--json|--yaml] session <list|show|resume|export|import> [args...]
 ax [--json|--yaml] skill <list|show|install> [args...]
 ax [--json|--yaml] hook list
-ax [--json|--yaml] mcp <list|show> [args...]
-ax [--json|--yaml] preset <list|show> [args...]
-ax [--json|--yaml] convert <to|from> <provider>
+ax [--json|--yaml] mcp <list|show|serve> [args...]
+ax [--json|--yaml] profile <list|show> [args...]
 
 ax version
 ```
@@ -196,7 +195,7 @@ ax version
 `--json` and `--yaml` apply to AgentX-owned data and dry-run plans; native install, login, launch, and resume keep their own interactive output.
 
 ```console
-ax list                              # readiness, account, and available models per agent
+ax status                            # readiness, account, and available models per agent
 ax agent install codex --dry-run     # then without --dry-run to install
 ax auth login codex                  # native authentication
 ax agent show codex                  # binary path, capabilities, models
@@ -210,7 +209,7 @@ ax --json session resume pi <session-id> --source claude --dry-run
 
 AgentX owns the workflow around agents, not the agents:
 
-- no universal agent settings file beyond the documented skills, hooks, and presets;
+- no universal agent settings file beyond the documented skills, hooks, and profiles;
 - no credential storage or proxying;
 - no replacement package managers or session databases;
 - no invented capabilities or fallbacks when a native source is missing.

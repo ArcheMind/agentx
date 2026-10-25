@@ -21,8 +21,8 @@ type Projection struct {
 	Warnings  []Warning `json:"warnings" yaml:"warnings"`
 }
 
-func (s Service) Prepare(provider, executable string, write bool) (Projection, error) {
-	if !isPortableTarget(provider) {
+func (s Service) Prepare(agent, executable string, write bool) (Projection, error) {
+	if !isPortableTarget(agent) {
 		return Projection{Args: []string{}, Artifacts: []string{}, Warnings: []Warning{}}, nil
 	}
 	result, err := s.List()
@@ -32,17 +32,17 @@ func (s Service) Prepare(provider, executable string, write bool) (Projection, e
 	projection := Projection{Args: []string{}, Artifacts: []string{}, Warnings: result.Warnings}
 	if len(result.Hooks) == 0 {
 		if write {
-			if err := removeOwnedDirectory(projectionRoot(s.Home, provider)); err != nil {
+			if err := removeOwnedDirectory(projectionRoot(s.Home, agent)); err != nil {
 				return Projection{}, err
 			}
 		}
 		return projection, nil
 	}
 	events := configuredEvents(result.Hooks)
-	switch provider {
+	switch agent {
 	case "claude":
-		root := projectionRoot(s.Home, provider)
-		config, err := jsonHookConfig(provider, executable, s.Project, events, result.Hooks)
+		root := projectionRoot(s.Home, agent)
+		config, err := jsonHookConfig(agent, executable, s.Project, events, result.Hooks)
 		if err != nil {
 			return Projection{}, err
 		}
@@ -66,7 +66,7 @@ func (s Service) Prepare(provider, executable string, write bool) (Projection, e
 					continue
 				}
 				handler := projectedHandler(item, "")
-				command, err := bridgeCommand(executable, provider, item.Event, handler)
+				command, err := bridgeCommand(executable, agent, item.Event, handler)
 				if err != nil {
 					return Projection{}, err
 				}
@@ -77,8 +77,8 @@ func (s Service) Prepare(provider, executable string, write bool) (Projection, e
 		}
 		return projection, nil
 	case "gemini":
-		root := projectionRoot(s.Home, provider)
-		config, err := jsonHookConfig(provider, executable, s.Project, events, result.Hooks)
+		root := projectionRoot(s.Home, agent)
+		config, err := jsonHookConfig(agent, executable, s.Project, events, result.Hooks)
 		if err != nil {
 			return Projection{}, err
 		}
@@ -94,7 +94,7 @@ func (s Service) Prepare(provider, executable string, write bool) (Projection, e
 		}
 		return projection, err
 	case "pi":
-		root := projectionRoot(s.Home, provider)
+		root := projectionRoot(s.Home, agent)
 		path := filepath.Join(root, "agentx-hooks.ts")
 		projection.Args = []string{"--extension", path}
 		projection.Artifacts = []string{root}
@@ -124,8 +124,8 @@ func configuredEvents(items []Hook) []string {
 	return events
 }
 
-func isPortableTarget(provider string) bool {
-	switch provider {
+func isPortableTarget(agent string) bool {
+	switch agent {
 	case "claude", "codex", "gemini", "pi":
 		return true
 	default:
@@ -133,7 +133,7 @@ func isPortableTarget(provider string) bool {
 	}
 }
 
-func jsonHookConfig(provider, executable, project string, events []string, hooks []Hook) ([]byte, error) {
+func jsonHookConfig(agent, executable, project string, events []string, hooks []Hook) ([]byte, error) {
 	type handler struct {
 		Type    string `json:"type"`
 		Command string `json:"command"`
@@ -147,7 +147,7 @@ func jsonHookConfig(provider, executable, project string, events []string, hooks
 		Hooks       map[string][]group `json:"hooks"`
 	}{Description: "AgentX portable hook bridge", Hooks: map[string][]group{}}
 	for _, event := range events {
-		native, err := providerEvent(provider, event)
+		native, err := agentEvent(agent, event)
 		if err != nil {
 			return nil, err
 		}
@@ -157,12 +157,12 @@ func jsonHookConfig(provider, executable, project string, events []string, hooks
 				continue
 			}
 			projected := projectedHandler(item, project)
-			command, err := bridgeCommand(executable, provider, item.Event, projected)
+			command, err := bridgeCommand(executable, agent, item.Event, projected)
 			if err != nil {
 				return nil, err
 			}
 			timeout := handlerBridgeTimeout(projected)
-			if provider == "gemini" {
+			if agent == "gemini" {
 				timeout *= 1000
 			}
 			groups = append(groups, group{Hooks: []handler{{Type: "command", Command: command, Timeout: timeout}}})
@@ -171,7 +171,7 @@ func jsonHookConfig(provider, executable, project string, events []string, hooks
 	}
 	data, err := json.MarshalIndent(root, "", "  ")
 	if err != nil {
-		return nil, fmt.Errorf("encode %s hook projection: %w", provider, err)
+		return nil, fmt.Errorf("encode %s hook projection: %w", agent, err)
 	}
 	return append(data, '\n'), nil
 }
@@ -199,13 +199,13 @@ func projectedHandler(item Hook, project string) Handler {
 	return handler
 }
 
-func bridgeCommand(executable, provider, event string, handler Handler) (string, error) {
+func bridgeCommand(executable, agent, event string, handler Handler) (string, error) {
 	data, err := json.Marshal(handler)
 	if err != nil {
-		return "", fmt.Errorf("encode %s %s hook handler: %w", provider, event, err)
+		return "", fmt.Errorf("encode %s %s hook handler: %w", agent, event, err)
 	}
 	payload := base64.RawURLEncoding.EncodeToString(data)
-	return shellExecutable(executable) + " hook __dispatch --provider " + provider + " --event " + event + " --handler " + payload, nil
+	return shellExecutable(executable) + " hook __dispatch --agent " + agent + " --event " + event + " --handler " + payload, nil
 }
 
 func shellExecutable(value string) string {
@@ -250,10 +250,10 @@ func writeOwnedDirectory(root string, files map[string][]byte) error {
 	return nil
 }
 
-func projectionRoot(home, provider string) string {
-	switch provider {
+func projectionRoot(home, agent string) string {
+	switch agent {
 	case "claude", "pi":
-		return filepath.Join(home, ".agents", ".agentx", "hooks", provider)
+		return filepath.Join(home, ".agents", ".agentx", "hooks", agent)
 	case "gemini":
 		return filepath.Join(home, ".gemini", "extensions", "agentx-hooks")
 	default:
@@ -295,18 +295,18 @@ func validateOwnedDirectory(root string) error {
 	return nil
 }
 
-func providerEvent(provider, event string) (string, error) {
+func agentEvent(agent, event string) (string, error) {
 	mapping := map[string]map[string]string{
 		"claude": {"SessionStart": "SessionStart", "SessionEnd": "SessionEnd", "UserPromptSubmit": "UserPromptSubmit", "Stop": "Stop"},
 		"codex":  {"SessionStart": "SessionStart", "SessionEnd": "SessionEnd", "UserPromptSubmit": "UserPromptSubmit", "Stop": "Stop"},
 		"gemini": {"SessionStart": "SessionStart", "SessionEnd": "SessionEnd", "UserPromptSubmit": "BeforeAgent", "Stop": "AfterAgent"},
 		"pi":     {"SessionStart": "session_start", "SessionEnd": "session_shutdown", "UserPromptSubmit": "input", "Stop": "agent_settled"},
 	}
-	providerEvents, ok := mapping[provider]
+	agentEvents, ok := mapping[agent]
 	if !ok {
-		return "", fmt.Errorf("unsupported hook provider %q", provider)
+		return "", fmt.Errorf("unsupported hook agent %q", agent)
 	}
-	native, ok := providerEvents[event]
+	native, ok := agentEvents[event]
 	if !ok {
 		return "", fmt.Errorf("unsupported portable hook event %q", event)
 	}

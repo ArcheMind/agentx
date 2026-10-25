@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-func TestBuiltInProviders(t *testing.T) {
+func TestBuiltInAgents(t *testing.T) {
 	service := Service{
 		HomeDir: t.TempDir(),
 		LookPath: func(binary string) (string, error) {
@@ -19,13 +19,13 @@ func TestBuiltInProviders(t *testing.T) {
 			return "", os.ErrNotExist
 		},
 	}
-	providers := service.Providers()
-	if len(providers) != 5 {
-		t.Fatalf("providers = %d, want 5", len(providers))
+	agents := service.Agents()
+	if len(agents) != 5 {
+		t.Fatalf("agents = %d, want 5", len(agents))
 	}
-	for _, provider := range providers {
-		if provider.Installed != (provider.ID == "codex") {
-			t.Fatalf("%s installed = %v", provider.ID, provider.Installed)
+	for _, agent := range agents {
+		if agent.Installed != (agent.ID == "codex") {
+			t.Fatalf("%s installed = %v", agent.ID, agent.Installed)
 		}
 	}
 }
@@ -66,22 +66,22 @@ func TestNativeSessionReaders(t *testing.T) {
 
 	service := Service{HomeDir: home}
 	for _, test := range []struct {
-		provider string
-		id       string
-		content  string
+		agent   string
+		id      string
+		content string
 	}{
-		{provider: "claude", id: "claude-id", content: "fix claude"},
-		{provider: "codex", id: "codex-id", content: "fix codex"},
-		{provider: "gemini", id: "gemini-id", content: "fix gemini"},
-		{provider: "opencode", id: "opencode-id", content: "fix opencode"},
-		{provider: "pi", id: "pi-id", content: "fix pi"},
+		{agent: "claude", id: "claude-id", content: "fix claude"},
+		{agent: "codex", id: "codex-id", content: "fix codex"},
+		{agent: "gemini", id: "gemini-id", content: "fix gemini"},
+		{agent: "opencode", id: "opencode-id", content: "fix opencode"},
+		{agent: "pi", id: "pi-id", content: "fix pi"},
 	} {
-		t.Run(test.provider, func(t *testing.T) {
-			detail, err := service.Info(test.id, test.provider)
+		t.Run(test.agent, func(t *testing.T) {
+			detail, err := service.Info(test.id, test.agent)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if detail.Provider != test.provider || detail.MessageCount == 0 || !strings.Contains(textContent(detail.Messages[0].Content), test.content) {
+			if detail.Agent != test.agent || detail.MessageCount == 0 || !strings.Contains(textContent(detail.Messages[0].Content), test.content) {
 				t.Fatalf("detail = %#v", detail)
 			}
 		})

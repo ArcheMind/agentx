@@ -16,7 +16,7 @@ One command should replace an error-prone cross-tool step: locate every agent, p
 
 ## Unify without making everything symmetrical
 
-Capabilities are modular. A provider can support model selection without exposing a trustworthy model list. Shared grammar reflects shared user intent, while provider-specific limitations remain visible.
+Capabilities are modular. An agent can support model selection without exposing a trustworthy model list. Shared grammar reflects shared user intent, while agent-specific limitations remain visible.
 
 ## Expand from a narrow successful workflow
 

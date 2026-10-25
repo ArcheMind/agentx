@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/ArcheMind/agentx/internal/presets"
+	"github.com/ArcheMind/agentx/internal/profiles"
 	"github.com/ArcheMind/agentx/internal/runtime"
 )
 
@@ -57,7 +57,7 @@ func authEnvironment(auth Auth) (map[string]string, []string) {
 
 // discoverAuth runs the native login check against the discovered source before each execution
 // so a missing or broken login fails loudly instead of the runtime falling back to another identity.
-func (s *Server) discoverAuth(ctx context.Context, o presets.Preset) (Auth, error) {
+func (s *Server) discoverAuth(ctx context.Context, o profiles.Profile) (Auth, error) {
 	if o.Agent == "claude" {
 		return Auth{Method: "native"}, nil
 	}
@@ -108,27 +108,27 @@ func (s *Server) discoverAuth(ctx context.Context, o presets.Preset) (Auth, erro
 	return auth, nil
 }
 
-func Limits(o presets.Preset) string {
+func Limits(o profiles.Profile) string {
 	var text strings.Builder
 	text.WriteString("Write: read-only unless the call sets write; write scope is passed to the agent's native sandbox. ")
 	text.WriteString("With isolation \"worktree\": writable_roots is not accepted. Without isolation: write requires writable_roots. ")
-	text.WriteString("Preset sandbox, user_config and flags are passed through to the agent. ")
+	text.WriteString("Profile sandbox, user_config and flags are passed through to the agent. ")
 	text.WriteString("Auth is discovered before each execution; the report names the source. ")
 	text.WriteString(IsolationLimits())
-	text.WriteString("Effort is fixed by the preset. Model availability is verified only by execution.")
+	text.WriteString("Effort is fixed by the profile. Model availability is verified only by execution.")
 	return text.String()
 }
 
 // checkWrite rejects write requests whose scope would be ambiguous or unenforceable before any
 // work starts; without write every run is read-only.
-func checkWrite(o presets.Preset, in ExternalSubagentInput) error {
+func checkWrite(o profiles.Profile, in ExternalSubagentInput) error {
 	switch {
 	case !in.Write && in.WritableRoots != nil:
 		return fmt.Errorf("writable_roots requires write: true; no task started")
 	case !in.Write:
 		return nil
-	case !presets.Agents[o.Agent].WriteCapable:
-		return fmt.Errorf("write rejected for %s preset %s: %s has no runtime write boundary; no task started", presets.AgentName(o.Agent), o.Name, presets.AgentName(o.Agent))
+	case !profiles.Agents[o.Agent].WriteCapable:
+		return fmt.Errorf("write rejected for %s profile %s: %s has no runtime write boundary; no task started", profiles.AgentName(o.Agent), o.Name, profiles.AgentName(o.Agent))
 	case in.Isolation == IsolationWorktree && in.WritableRoots != nil:
 		return fmt.Errorf("writable_roots is not accepted with isolation %q: the worktree is the only writable root; no task started", IsolationWorktree)
 	case in.Isolation != IsolationWorktree && len(in.WritableRoots) == 0:

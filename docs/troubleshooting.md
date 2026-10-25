@@ -38,7 +38,7 @@ ax session list --all
 ax session list --workspace /path/to/project
 ```
 
-Use `ax session providers` to see the native roots AgentX inspects.
+Use `ax status` to see which agents AgentX detects.
 
 Child Agent sessions are hidden from discovery by default. Pass `--include-subagents` to bare `ax` or `ax session list` when you need to inspect them.
 

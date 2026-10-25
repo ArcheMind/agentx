@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ArcheMind/agentx/internal/presets"
+	"github.com/ArcheMind/agentx/internal/profiles"
 	"github.com/ArcheMind/agentx/internal/runtime"
 )
 
@@ -24,7 +24,7 @@ func TestWriteRequestsRejectedBeforeAnyWork(t *testing.T) {
 	r := &testRunner{}
 	s := testServer(t, r)
 	installPi(t)
-	savePreset(t, s.Home, presets.Preset{Name: "pi-review", Agent: "pi", Model: "provider/model", Description: "d"})
+	saveProfile(t, s.Home, profiles.Profile{Name: "pi-review", Agent: "pi", Model: "provider/model", Description: "d"})
 	dir := t.TempDir()
 	for input, want := range map[string]string{
 		`{"description":"x","prompt":"x","model":"review","writable_roots":["` + dir + `"]}`:                            "writable_roots requires write: true",
@@ -159,7 +159,7 @@ func TestFailedAuthPreflightStartsNoNativeExecution(t *testing.T) {
 		r := &authRunner{pi: status}
 		s := testServer(t, r)
 		installPi(t)
-		savePreset(t, s.Home, presets.Preset{Name: "review", Agent: "pi", Model: "provider/model", Description: "d"})
+		saveProfile(t, s.Home, profiles.Profile{Name: "review", Agent: "pi", Model: "provider/model", Description: "d"})
 		_, err := s.call("ExternalSubagent", []byte(`{"description":"x","prompt":"x","model":"review","run_in_background":false}`))
 		if err == nil || !strings.Contains(err.Error(), "no fallback identity") {
 			t.Fatal(status, err)
@@ -171,7 +171,7 @@ func TestFailedAuthPreflightStartsNoNativeExecution(t *testing.T) {
 	r := &authRunner{pi: `{"status":"ready","provider":"provider","authType":"api_key"}`}
 	s := testServer(t, r)
 	installPi(t)
-	savePreset(t, s.Home, presets.Preset{Name: "review", Agent: "pi", Model: "provider/model", Description: "d"})
+	saveProfile(t, s.Home, profiles.Profile{Name: "review", Agent: "pi", Model: "provider/model", Description: "d"})
 	_, err := s.call("ExternalSubagent", []byte(`{"description":"x","prompt":"x","model":"review","run_in_background":false}`))
 	if err == nil || !strings.Contains(err.Error(), `PI_CODING_AGENT_DIR="`+os.Getenv("PI_CODING_AGENT_DIR")+`" (api_key)`) || len(r.plans) != 1 {
 		t.Fatal("discovered Pi auth not used or reported:", err)
@@ -202,7 +202,7 @@ func TestNativeFailureReturnedToClaudeIsRedacted(t *testing.T) {
 	if err == nil || strings.Contains(err.Error(), "abcdefghijklmnop") || !strings.Contains(err.Error(), "<redacted>") {
 		t.Fatal(err)
 	}
-	a := &ExternalSubagentState{Option: presets.Preset{Agent: "codex"}}
+	a := &ExternalSubagentState{Option: profiles.Profile{Agent: "codex"}}
 	if _, _, err := parseOutput(a, `{"type":"turn.failed","error":{"message":"bad key sk-proj-abcdefghijklmnopqrstuvwxyz"}}`); err == nil || strings.Contains(err.Error(), "abcdefghijklmnop") {
 		t.Fatal(err)
 	}
@@ -212,9 +212,9 @@ func TestSandboxFalseOmitsRestrictions(t *testing.T) {
 	r := &testRunner{}
 	s := testServer(t, r)
 	f := false
-	p := reviewPreset
+	p := reviewProfile
 	p.Sandbox = &f
-	savePreset(t, s.Home, p)
+	saveProfile(t, s.Home, p)
 	callTest(t, s, "ExternalSubagent", map[string]any{"description": "x", "prompt": "x", "model": "review", "write": true, "writable_roots": []string{t.TempDir()}, "run_in_background": false})
 	r.mu.Lock()
 	args := strings.Join(r.plans[0].Args, " ")
@@ -231,9 +231,9 @@ func TestUserConfigFalseAddsIsolationFlags(t *testing.T) {
 	r := &testRunner{}
 	s := testServer(t, r)
 	f := false
-	p := reviewPreset
+	p := reviewProfile
 	p.UserConfig = &f
-	savePreset(t, s.Home, p)
+	saveProfile(t, s.Home, p)
 	callTest(t, s, "ExternalSubagent", map[string]any{"description": "x", "prompt": "x", "model": "review", "run_in_background": false})
 	r.mu.Lock()
 	args := strings.Join(r.plans[0].Args, " ")
@@ -245,17 +245,17 @@ func TestUserConfigFalseAddsIsolationFlags(t *testing.T) {
 	}
 }
 
-func TestPresetFlagsAppendedToNativeArgs(t *testing.T) {
+func TestProfileFlagsAppendedToNativeArgs(t *testing.T) {
 	r := &testRunner{}
 	s := testServer(t, r)
-	p := reviewPreset
+	p := reviewProfile
 	p.Flags = []string{"-c", "custom_setting=true"}
-	savePreset(t, s.Home, p)
+	saveProfile(t, s.Home, p)
 	callTest(t, s, "ExternalSubagent", map[string]any{"description": "x", "prompt": "x", "model": "review", "run_in_background": false})
 	r.mu.Lock()
 	args := strings.Join(r.plans[0].Args, " ")
 	r.mu.Unlock()
 	if !strings.Contains(args, "-c custom_setting=true") {
-		t.Fatal("preset flags not appended", args)
+		t.Fatal("profile flags not appended", args)
 	}
 }
