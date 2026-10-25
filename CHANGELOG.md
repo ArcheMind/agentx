@@ -4,6 +4,16 @@ All notable changes to AgentX are documented here. The format follows [Keep a Ch
 
 ## [Unreleased]
 
+## [0.6.2] - 2026-10-25
+
+### Changed
+
+- `ax claude` attaches the AgentX MCP server and ExternalSubagent tools unconditionally, like `ax codex`; `ax help` examples now show interactive hand-off and calling a Claude Code subagent from Codex.
+
+### Removed
+
+- The Claude MCP registration check and the `ax <agent> --subagents` flag.
+
 ## [0.6.1] - 2026-10-25
 
 ### Changed
