@@ -76,13 +76,11 @@ function splitReasoning(m){
 
 function degrade(dst,messages){
   let list=structuredClone(messages)
-  // spec gap: pi has no system role (native roles are user/assistant/toolResult, pi PROTOCOL) and the spec maps no unified system message into pi; system messages are dropped.
-  if(dst==='pi')list=list.filter(m=>m.role!=='system')
   if(dst==='codex')list=list.flatMap(splitReasoning)
   return list.map(m=>{
-    if(dst==='codex'||dst==='pi'){
-      // spec gap: the spec maps no unified image block into codex (input_text only) or pi (user content is text blocks only); image is dropped.
-      if(m.content)m.content=m.content.filter(b=>!isImage(b))
+    if(dst==='pi'){
+      // pi user content is text blocks only; image blocks in user messages are dropped.
+      if(m.content&&m.role==='user')m.content=m.content.filter(b=>!isImage(b))
     }
     if(dst==='codex'){
       // Codex table in the spec maps no model/stopReason; a codex message item has neither field (codex PROTOCOL ContentItem/message).

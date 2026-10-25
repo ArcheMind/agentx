@@ -43,13 +43,13 @@ func WriteSessionFile(detail Detail, agentID, dir, homeDir string) (string, erro
 		detail.ID = newID
 		return newID, writeJSONLFile(path, SerializeCodex(detail))
 	case "pi":
-		path := filepath.Join(dir, id+".jsonl")
+		path := filepath.Join(dir, newUUID()+".jsonl")
 		return path, writeJSONLFile(path, SerializePi(detail))
 	case "gemini":
-		path := filepath.Join(dir, id+".json")
+		path := filepath.Join(dir, newUUID()+".json")
 		return path, writeJSONFile(path, SerializeGemini(detail))
 	case "opencode":
-		base := filepath.Join(dir, id)
+		base := filepath.Join(dir, newUUID())
 		info, entries := SerializeOpenCode(detail, base)
 		infoPath := filepath.Join(base, "session.json")
 		if err := os.MkdirAll(filepath.Dir(infoPath), 0700); err != nil {
