@@ -169,7 +169,7 @@ func SerializeClaude(detail Detail) []map[string]any {
 				"tool_use_id": m.ToolUseID,
 			}
 			if m.Result != nil {
-				result["content"] = m.Result
+				result["content"] = claudeToolResultContent(m.Result)
 			}
 			if m.IsError {
 				result["is_error"] = true
@@ -189,6 +189,27 @@ func SerializeClaude(detail Detail) []map[string]any {
 		}
 	}
 	return records
+}
+
+// claudeToolResultContent writes a result verbatim only when Claude accepts its
+// shape (a string, or an array of text/image blocks); otherwise it collapses to text.
+func claudeToolResultContent(result any) any {
+	switch value := result.(type) {
+	case string:
+		return value
+	case []any:
+		for _, item := range value {
+			obj, ok := item.(map[string]any)
+			if !ok {
+				return resultText(result)
+			}
+			if t, _ := obj["type"].(string); t != "text" && t != "image" {
+				return resultText(result)
+			}
+		}
+		return value
+	}
+	return resultText(result)
 }
 
 func claudeSerializeUserContent(blocks []ContentBlock) any {
@@ -462,6 +483,7 @@ func SerializeGemini(detail Detail) map[string]any {
 func SerializePi(detail Detail) []map[string]any {
 	records := []map[string]any{{
 		"type":      "session",
+		"version":   3,
 		"id":        detail.ID,
 		"cwd":       detail.Workspace,
 		"timestamp": detail.StartedAt,

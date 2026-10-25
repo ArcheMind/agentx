@@ -63,7 +63,7 @@ function normalize(unified){
 // Written independently of the serializers; every rule cites its justification. "spec gap:" marks a rule the spec does not state.
 // ---------------------------------------------------------------------------------------------
 const isImage=b=>b.type==='image'
-// spec gap: the spec defines no block-array -> text projection; text blocks joined by "\n" is the line-oriented reading of tool output.
+// Text projection: concatenated text fields of a block array, compact JSON otherwise (spec Tool result materialization rule, as amended; newline separator per that amendment).
 const textProjection=result=>typeof result==='string'?result:Array.isArray(result)?result.filter(b=>b&&typeof b.text==='string').map(b=>b.text).join('\n'):JSON.stringify(result)
 
 // spec gap: the Codex table says only function_call/custom_tool_call are appended to the *preceding* assistant message; a reasoning item is a standalone
@@ -101,7 +101,12 @@ function degrade(dst,messages){
       const piShaped=Array.isArray(m.result)&&m.result.every(b=>b&&(b.type==='text'||b.type==='image'))
       if(!piShaped)m.result=[{type:'text',text:textProjection(m.result)}]
     }
-    // Claude: spec Claude table reverses every row (result -> tool_result.content, image -> image, system -> system record, model/stop_reason, thinking signature), so nothing is lost.
+    if(dst==='claude'&&m.role==='tool'){
+      // Spec Tool result materialization rule: verbatim when the destination accepts the shape, else the text projection; claude tool_result.content accepts a string or text/image blocks.
+      const claudeShaped=typeof m.result==='string'||(Array.isArray(m.result)&&m.result.every(b=>b&&(b.type==='text'||b.type==='image')))
+      if(!claudeShaped)m.result=textProjection(m.result)
+    }
+    // Claude: spec Claude table reverses every row (image -> image, system -> system record, model/stop_reason, thinking signature), so nothing else is lost.
     return m
   })
 }
