@@ -729,7 +729,7 @@ func (a App) sessionInfo(args []string) error {
 	if peekLines > 0 {
 		fmt.Fprintln(a.Stdout, "\nTranscript tail:")
 		for _, message := range detail.Messages[len(detail.Messages)-peekLines:] {
-			fmt.Fprintf(a.Stdout, "[%s] %s\n", message.Role, singleLine(sessions.TextContent(message.Content), 200))
+			fmt.Fprintf(a.Stdout, "[%s] %s\n", message.Role, singleLine(sessions.MessageText(message), 200))
 		}
 	}
 	return nil

@@ -250,7 +250,7 @@ func parseClaude(path string, records []map[string]any) (Detail, bool) {
 		if detail.Workspace == "" {
 			detail.Workspace = stringValue(record["cwd"])
 		}
-		if kind != "user" && kind != "assistant" {
+		if kind != "user" && kind != "assistant" && kind != "system" {
 			continue
 		}
 		message, _ := record["message"].(map[string]any)
@@ -258,6 +258,25 @@ func parseClaude(path string, records []map[string]any) (Detail, bool) {
 		parentID := stringValue(record["parentUuid"])
 		if parentID == "" {
 			parentID = lastID
+		}
+
+		if kind == "system" {
+			// Most system records are bookkeeping without text; only text-bearing ones are conversation-visible.
+			text := stringValue(record["content"])
+			if strings.TrimSpace(text) == "" {
+				continue
+			}
+			msgID := stringValue(record["uuid"])
+			if msgID == "" {
+				msgID = fmt.Sprintf("claude-%d", len(detail.Messages))
+			}
+			detail.Messages = append(detail.Messages, Message{
+				ID: msgID, ParentID: parentID, Role: "system",
+				Content: []ContentBlock{{Type: "text", Text: text}}, Timestamp: ts,
+			})
+			updateTimeBounds(&detail, ts)
+			lastID = msgID
+			continue
 		}
 
 		if kind == "assistant" {
@@ -300,12 +319,18 @@ func parseClaude(path string, records []map[string]any) (Detail, bool) {
 				isError, _ := obj["is_error"].(bool)
 				toolMsg := Message{
 					ID: toolMsgID, ParentID: lastID, Role: "tool",
-					Content:   []ContentBlock{{Type: "text", Text: extractText(obj["content"])}},
+					Result:    obj["content"],
 					Timestamp: ts, ToolUseID: toolUseID, ToolName: toolName, IsError: isError,
 				}
 				detail.Messages = append(detail.Messages, toolMsg)
 				updateTimeBounds(&detail, ts)
 				lastID = toolMsgID
+				continue
+			}
+			if blockType == "image" {
+				if source, ok := obj["source"].(map[string]any); ok {
+					userBlocks = append(userBlocks, ContentBlock{Type: "image", Source: source})
+				}
 				continue
 			}
 			userBlocks = append(userBlocks, ContentBlock{Type: "text", Text: firstNonEmpty(stringValue(obj["text"]), extractText(obj["content"]))})
@@ -360,17 +385,21 @@ func parseCodex(path string, records []map[string]any) (Detail, bool) {
 		ts := timeValue(record["timestamp"])
 		payloadType := stringValue(payload["type"])
 
-		if payloadType == "function_call" {
+		if payloadType == "function_call" || payloadType == "custom_tool_call" {
 			callID := stringValue(payload["call_id"])
 			name := stringValue(payload["name"])
 			callNames[callID] = name
+			rawInput := stringValue(payload["arguments"])
+			if payloadType == "custom_tool_call" {
+				rawInput = stringValue(payload["input"])
+			}
 			var input any
-			if args := stringValue(payload["arguments"]); args != "" {
-				var parsed any
-				if json.Unmarshal([]byte(args), &parsed) == nil {
+			if rawInput != "" {
+				var parsed map[string]any
+				if json.Unmarshal([]byte(rawInput), &parsed) == nil && parsed != nil {
 					input = parsed
 				} else {
-					input = map[string]any{"raw": args}
+					input = map[string]any{"raw": rawInput}
 				}
 			}
 			block := ContentBlock{Type: "tool_use", ID: callID, Name: name, Input: input}
@@ -389,13 +418,38 @@ func parseCodex(path string, records []map[string]any) (Detail, bool) {
 			continue
 		}
 
-		if payloadType == "function_call_output" {
+		if payloadType == "reasoning" {
+			var summary []string
+			if items, ok := payload["summary"].([]any); ok {
+				for _, item := range items {
+					if obj, ok := item.(map[string]any); ok {
+						if text := stringValue(obj["text"]); text != "" {
+							summary = append(summary, text)
+						}
+					}
+				}
+			}
+			block := ContentBlock{Type: "thinking", Text: strings.Join(summary, "\n"), Signature: stringValue(payload["encrypted_content"])}
+			if n := len(detail.Messages); n > 0 && detail.Messages[n-1].Role == "assistant" {
+				detail.Messages[n-1].Content = append(detail.Messages[n-1].Content, block)
+			} else {
+				msgID := fmt.Sprintf("codex-%d", len(detail.Messages))
+				detail.Messages = append(detail.Messages, Message{
+					ID: msgID, ParentID: lastID, Role: "assistant",
+					Content: []ContentBlock{block}, Timestamp: ts,
+				})
+				updateTimeBounds(&detail, ts)
+				lastID = msgID
+			}
+			continue
+		}
+
+		if payloadType == "function_call_output" || payloadType == "custom_tool_call_output" {
 			callID := stringValue(payload["call_id"])
-			output := stringValue(payload["output"])
 			msgID := fmt.Sprintf("codex-%d", len(detail.Messages))
 			m := Message{
 				ID: msgID, ParentID: lastID, Role: "tool",
-				Content:   []ContentBlock{{Type: "text", Text: output}},
+				Result:    stringValue(payload["output"]),
 				Timestamp: ts, ToolUseID: callID, ToolName: callNames[callID],
 			}
 			detail.Messages = append(detail.Messages, m)
@@ -408,8 +462,11 @@ func parseCodex(path string, records []map[string]any) (Detail, bool) {
 			continue
 		}
 		role := stringValue(payload["role"])
-		if role != "user" && role != "assistant" {
+		if role != "user" && role != "assistant" && role != "developer" {
 			continue
+		}
+		if role == "developer" {
+			role = "system"
 		}
 		blocks := codexContentBlocks(payload["content"], role)
 		if len(blocks) == 0 {
@@ -479,20 +536,22 @@ func parsePi(path string, records []map[string]any) (Detail, bool) {
 		}
 		message, _ := record["message"].(map[string]any)
 		role := stringValue(message["role"])
-		ts := timeValue(message["timestamp"])
-		parentID := stringValue(message["parentId"])
+		// Pi stores the tree id/parentId and the ISO timestamp on the record; message.timestamp is epoch millis.
+		ts := firstNonEmpty(timeValue(record["timestamp"]), timeValue(message["timestamp"]))
+		parentID := stringValue(record["parentId"])
 		if parentID == "" {
 			parentID = lastID
 		}
+		recordID := stringValue(record["id"])
 
 		if role == "toolResult" {
 			toolCallID := stringValue(message["toolCallId"])
 			toolName := stringValue(message["toolName"])
-			msgID := fmt.Sprintf("pi-%d", len(detail.Messages))
+			msgID := firstNonEmpty(recordID, fmt.Sprintf("pi-%d", len(detail.Messages)))
 			isError, _ := message["isError"].(bool)
 			m := Message{
 				ID: msgID, ParentID: parentID, Role: "tool",
-				Content:   []ContentBlock{{Type: "text", Text: extractText(message["content"])}},
+				Result:    message["content"],
 				Timestamp: ts, ToolUseID: toolCallID, ToolName: toolName, IsError: isError,
 			}
 			detail.Messages = append(detail.Messages, m)
@@ -506,14 +565,12 @@ func parsePi(path string, records []map[string]any) (Detail, bool) {
 			if len(blocks) == 0 {
 				continue
 			}
-			msgID := stringValue(message["id"])
-			if msgID == "" {
-				msgID = fmt.Sprintf("pi-%d", len(detail.Messages))
-			}
+			msgID := firstNonEmpty(recordID, fmt.Sprintf("pi-%d", len(detail.Messages)))
 			m := Message{
 				ID: msgID, ParentID: parentID, Role: "assistant",
 				Content: blocks, Timestamp: ts,
-				Model: stringValue(message["model"]),
+				Model:      stringValue(message["model"]),
+				StopReason: stringValue(message["stopReason"]),
 			}
 			detail.Messages = append(detail.Messages, m)
 			updateTimeBounds(&detail, ts)
@@ -531,10 +588,7 @@ func parsePi(path string, records []map[string]any) (Detail, bool) {
 		if len(blocks) == 0 {
 			continue
 		}
-		msgID := stringValue(message["id"])
-		if msgID == "" {
-			msgID = fmt.Sprintf("pi-%d", len(detail.Messages))
-		}
+		msgID := firstNonEmpty(recordID, fmt.Sprintf("pi-%d", len(detail.Messages)))
 		m := Message{ID: msgID, ParentID: parentID, Role: "user", Content: blocks, Timestamp: ts}
 		detail.Messages = append(detail.Messages, m)
 		updateTimeBounds(&detail, ts)
@@ -628,7 +682,7 @@ func loadOpenCode(home string) ([]Detail, error) {
 					toolMsgID := fmt.Sprintf("oc-%d-tool", len(detail.Messages)+len(toolMessages))
 					toolMessages = append(toolMessages, Message{
 						ID: toolMsgID, Role: "tool",
-						Content:   []ContentBlock{{Type: "text", Text: tokenInfo}},
+						Result:    tokenInfo,
 						Timestamp: message.timestamp,
 						ToolUseID: stringValue(part["id"]), ToolName: "step",
 					})
@@ -784,6 +838,15 @@ func TextContent(blocks []ContentBlock) string {
 	return strings.Join(parts, "\n")
 }
 
+// MessageText returns the plain text of any message: block text for
+// conversational roles, the derived result text for tool messages.
+func MessageText(m Message) string {
+	if m.Role == "tool" {
+		return resultText(m.Result)
+	}
+	return TextContent(m.Content)
+}
+
 func textContent(blocks []ContentBlock) string {
 	return TextContent(blocks)
 }
@@ -893,22 +956,10 @@ func piAssistantBlocks(value any) []ContentBlock {
 			})
 		case "toolCall":
 			id := stringValue(obj["id"])
-			if id == "" {
-				id = stringValue(obj["toolCallId"])
-			}
 			name := stringValue(obj["name"])
-			if name == "" {
-				name = stringValue(obj["toolName"])
-			}
-			input := obj["arguments"]
-			if input == nil {
-				input = obj["input"]
-			}
-			if s, ok := input.(string); ok && s != "" {
-				var parsed any
-				if json.Unmarshal([]byte(s), &parsed) == nil {
-					input = parsed
-				}
+			var input any
+			if args, ok := obj["arguments"].(map[string]any); ok {
+				input = args
 			}
 			blocks = append(blocks, ContentBlock{
 				Type:  "tool_use",
@@ -1083,7 +1134,7 @@ func parseGeminiRecord(record map[string]any) (Detail, bool) {
 							fr, _ := resp["functionResponse"].(map[string]any)
 							toolMsg := Message{
 								ParentID: msgID, Role: "tool",
-								Content:   []ContentBlock{{Type: "text", Text: extractText(fr["response"])}},
+								Result:    extractText(fr["response"]),
 								Timestamp: ts, ToolUseID: callID, ToolName: callName,
 							}
 							toolMessages = append(toolMessages, toolMsg)

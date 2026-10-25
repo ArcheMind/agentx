@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -91,8 +92,8 @@ func testSerializeCodexRoundTrip(t *testing.T) {
 	if detail.Messages[2].ToolUseID != "fc-1" || detail.Messages[2].ToolName != "shell" {
 		t.Fatalf("tool message: useID=%q name=%q", detail.Messages[2].ToolUseID, detail.Messages[2].ToolName)
 	}
-	if textContent(detail.Messages[2].Content) != "file1.txt" {
-		t.Fatalf("tool output = %q", textContent(detail.Messages[2].Content))
+	if resultText(detail.Messages[2].Result) != "file1.txt" {
+		t.Fatalf("tool output = %q", resultText(detail.Messages[2].Result))
 	}
 }
 
@@ -143,8 +144,8 @@ func testSerializeGeminiRoundTrip(t *testing.T) {
 		}
 		if m.Role == "tool" && m.ToolUseID == "tc-1" {
 			foundToolResult = true
-			if textContent(m.Content) != "hello world" {
-				t.Fatalf("tool result text = %q", textContent(m.Content))
+			if resultText(m.Result) != "hello world" {
+				t.Fatalf("tool result text = %q", resultText(m.Result))
 			}
 		}
 	}
@@ -163,10 +164,10 @@ func testSerializePiRoundTrip(t *testing.T) {
 
 	writeFixture(t, filepath.Join(home, ".pi", "agent", "sessions", "p", "session.jsonl"), strings.Join([]string{
 		fmt.Sprintf(`{"type":"session","id":"pi1","cwd":%q,"timestamp":"2026-09-01T14:00:00Z"}`, workspace),
-		`{"type":"message","message":{"id":"m1","role":"user","timestamp":"2026-09-01T14:00:00Z","content":[{"type":"text","text":"run ls"}]}}`,
-		`{"type":"message","message":{"id":"m2","parentId":"m1","role":"assistant","timestamp":"2026-09-01T14:01:00Z","content":[{"type":"thinking","thinking":"reasoning","thinkingSignature":"sig-abc"},{"type":"text","text":"calling"},{"type":"toolCall","toolCallId":"pc-1","toolName":"shell","input":{"cmd":"ls"}}]}}`,
-		`{"type":"message","message":{"role":"toolResult","timestamp":"2026-09-01T14:02:00Z","toolCallId":"pc-1","toolName":"shell","content":"file1.txt"}}`,
-		`{"type":"message","message":{"id":"m4","parentId":"m2","role":"assistant","timestamp":"2026-09-01T14:03:00Z","content":[{"type":"text","text":"done"}]}}`,
+		`{"type":"message","id":"m1","parentId":null,"timestamp":"2026-09-01T14:00:00Z","message":{"role":"user","timestamp":1788271200000,"content":[{"type":"text","text":"run ls"}]}}`,
+		`{"type":"message","id":"m2","parentId":"m1","timestamp":"2026-09-01T14:01:00Z","message":{"role":"assistant","timestamp":1788271260000,"stopReason":"toolUse","content":[{"type":"thinking","thinking":"reasoning","thinkingSignature":"sig-abc"},{"type":"text","text":"calling"},{"type":"toolCall","id":"pc-1","name":"shell","arguments":{"cmd":"ls"}}]}}`,
+		`{"type":"message","id":"m3","parentId":"m2","timestamp":"2026-09-01T14:02:00Z","message":{"role":"toolResult","timestamp":1788271320000,"toolCallId":"pc-1","toolName":"shell","content":[{"type":"text","text":"file1.txt"}],"isError":false}}`,
+		`{"type":"message","id":"m4","parentId":"m3","timestamp":"2026-09-01T14:03:00Z","message":{"role":"assistant","timestamp":1788271380000,"stopReason":"stop","content":[{"type":"text","text":"done"}]}}`,
 	}, "\n"))
 
 	detail := parseAndSerializeRoundTrip(t, home, "pi1", "pi", func(detail Detail) string {
@@ -314,6 +315,12 @@ func assertMessagesEquivalent(t *testing.T, a, b []Message) {
 		if ma.ToolName != mb.ToolName {
 			t.Fatalf("message[%d] toolName: got %q, want %q", i, mb.ToolName, ma.ToolName)
 		}
+		if !reflect.DeepEqual(ma.Result, mb.Result) {
+			t.Fatalf("message[%d] result: got %#v, want %#v", i, mb.Result, ma.Result)
+		}
+		if ma.StopReason != mb.StopReason {
+			t.Fatalf("message[%d] stopReason: got %q, want %q", i, mb.StopReason, ma.StopReason)
+		}
 		if textContent(ma.Content) != textContent(mb.Content) {
 			t.Fatalf("message[%d] text: got %q, want %q", i, textContent(mb.Content), textContent(ma.Content))
 		}
@@ -328,6 +335,9 @@ func assertMessagesEquivalent(t *testing.T, a, b []Message) {
 			}
 			if ca.Text != cb.Text {
 				t.Fatalf("message[%d].content[%d] text: got %q, want %q", i, j, cb.Text, ca.Text)
+			}
+			if ca.Signature != cb.Signature || !reflect.DeepEqual(ca.Input, cb.Input) || !reflect.DeepEqual(ca.Source, cb.Source) {
+				t.Fatalf("message[%d].content[%d] signature/input/source mismatch: got %#v, want %#v", i, j, cb, ca)
 			}
 			if ca.Name != cb.Name {
 				t.Fatalf("message[%d].content[%d] name: got %q, want %q", i, j, cb.Name, ca.Name)
@@ -376,4 +386,139 @@ func blockTypes(blocks []ContentBlock) []string {
 		types[i] = b.Type
 	}
 	return types
+}
+
+// fidelityCase round-trips one native fixture through parse -> serialize -> parse
+// and hands back the first and second parse for provider-specific assertions.
+func fidelityRoundTrip(t *testing.T, provider, relPath, native string, serialize func(Detail) string) (Detail, Detail, string) {
+	t.Helper()
+	home := t.TempDir()
+	writeFixture(t, filepath.Join(home, relPath), native)
+	original, err := Service{HomeDir: home}.Info("fid", provider)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	out := serialize(original)
+	home2 := t.TempDir()
+	writeFixture(t, filepath.Join(home2, relPath), out)
+	again, err := Service{HomeDir: home2}.Info("fid", provider)
+	if err != nil {
+		t.Fatalf("re-parse: %v", err)
+	}
+	assertMessagesEquivalent(t, original.Messages, again.Messages)
+	return original, again, out
+}
+
+func TestClaudeFidelityRoundTrip(t *testing.T) {
+	native := strings.Join([]string{
+		`{"type":"user","sessionId":"fid","cwd":"/w","timestamp":"2026-09-01T10:00:00Z","uuid":"u1","message":{"role":"user","content":[{"type":"text","text":"look"},{"type":"image","source":{"type":"base64","media_type":"image/png","data":"AAAA"}}]}}`,
+		`{"type":"system","subtype":"informational","level":"warning","sessionId":"fid","timestamp":"2026-09-01T10:00:30Z","uuid":"s1","parentUuid":"u1","content":"Unknown command: /mocde"}`,
+		`{"type":"system","subtype":"turn_duration","sessionId":"fid","timestamp":"2026-09-01T10:00:40Z","uuid":"s2","parentUuid":"s1","durationMs":5}`,
+		`{"type":"assistant","sessionId":"fid","timestamp":"2026-09-01T10:01:00Z","uuid":"a1","parentUuid":"s1","message":{"role":"assistant","content":[{"type":"tool_use","id":"tu-1","name":"Read","input":{"p":"x"}}]}}`,
+		`{"type":"user","sessionId":"fid","timestamp":"2026-09-01T10:02:00Z","uuid":"r1","parentUuid":"a1","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tu-1","content":[{"type":"text","text":"hello"},{"type":"image","source":{"type":"base64","media_type":"image/png","data":"BBBB"}}]}]}}`,
+	}, "\n")
+	original, again, _ := fidelityRoundTrip(t, "claude", ".claude/projects/p/s.jsonl", native, func(d Detail) string { return marshalJSONL(t, SerializeClaude(d)) })
+	assertMessageRoles(t, original.Messages, []string{"user", "system", "assistant", "tool"})
+	if original.Messages[0].Content[1].Type != "image" || original.Messages[0].Content[1].Source.(map[string]any)["data"] != "AAAA" {
+		t.Fatalf("image block = %#v", original.Messages[0].Content)
+	}
+	if textContent(original.Messages[1].Content) != "Unknown command: /mocde" {
+		t.Fatalf("system text = %q", textContent(original.Messages[1].Content))
+	}
+	result, ok := again.Messages[3].Result.([]any)
+	if !ok || len(result) != 2 || result[1].(map[string]any)["type"] != "image" {
+		t.Fatalf("structured tool_result not preserved verbatim: %#v", again.Messages[3].Result)
+	}
+	if resultText(again.Messages[3].Result) != "hello" {
+		t.Fatalf("resultText = %q", resultText(again.Messages[3].Result))
+	}
+}
+
+func TestCodexFidelityRoundTrip(t *testing.T) {
+	native := strings.Join([]string{
+		`{"type":"session_meta","timestamp":"2026-09-01T11:00:00Z","payload":{"id":"fid","cwd":"/w","timestamp":"2026-09-01T11:00:00Z"}}`,
+		`{"type":"response_item","timestamp":"2026-09-01T11:00:10Z","payload":{"type":"message","role":"developer","content":[{"type":"input_text","text":"state index"}]}}`,
+		`{"type":"response_item","timestamp":"2026-09-01T11:01:00Z","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"go"}]}}`,
+		`{"type":"response_item","timestamp":"2026-09-01T11:02:00Z","payload":{"type":"reasoning","summary":[{"type":"summary_text","text":"plan it"}],"encrypted_content":"enc-1"}}`,
+		`{"type":"response_item","timestamp":"2026-09-01T11:02:01Z","payload":{"type":"reasoning","summary":[],"encrypted_content":"enc-2"}}`,
+		`{"type":"response_item","timestamp":"2026-09-01T11:03:00Z","payload":{"type":"custom_tool_call","call_id":"c1","name":"exec","input":"tools.exec_command({cmd:'ls'})"}}`,
+		`{"type":"response_item","timestamp":"2026-09-01T11:04:00Z","payload":{"type":"custom_tool_call_output","call_id":"c1","output":"file.txt"}}`,
+		`{"type":"response_item","timestamp":"2026-09-01T11:05:00Z","payload":{"type":"function_call","call_id":"c2","name":"send_message","arguments":"{\"to\":\"x\"}"}}`,
+		`{"type":"response_item","timestamp":"2026-09-01T11:06:00Z","payload":{"type":"function_call_output","call_id":"c2","output":"sent"}}`,
+	}, "\n")
+	original, again, out := fidelityRoundTrip(t, "codex", ".codex/sessions/2026/09/01/s.jsonl", native, func(d Detail) string { return marshalJSONL(t, SerializeCodex(d)) })
+	assertMessageRoles(t, original.Messages, []string{"system", "user", "assistant", "tool", "assistant", "tool"})
+	blocks := original.Messages[2].Content
+	assertBlockTypes(t, blocks, []string{"thinking", "thinking", "tool_use"})
+	if blocks[0].Text != "plan it" || blocks[0].Signature != "enc-1" || blocks[1].Text != "" || blocks[1].Signature != "enc-2" {
+		t.Fatalf("thinking blocks = %#v", blocks[:2])
+	}
+	if raw := blocks[2].Input.(map[string]any)["raw"]; raw != "tools.exec_command({cmd:'ls'})" {
+		t.Fatalf("custom tool input = %#v", blocks[2].Input)
+	}
+	if again.Messages[0].Role != "system" || textContent(again.Messages[0].Content) != "state index" {
+		t.Fatalf("developer message lost: %#v", again.Messages[0])
+	}
+	types := map[string]int{}
+	for _, line := range strings.Split(out, "\n") {
+		var rec struct {
+			Payload struct {
+				Type, Role, Input, Arguments string
+			}
+		}
+		if err := json.Unmarshal([]byte(line), &rec); err != nil {
+			t.Fatal(err)
+		}
+		types[rec.Payload.Type]++
+		if rec.Payload.Role == "developer" {
+			types["developer"]++
+		}
+		if rec.Payload.Type == "custom_tool_call" && rec.Payload.Input != "tools.exec_command({cmd:'ls'})" {
+			t.Fatalf("custom input rewritten: %q", rec.Payload.Input)
+		}
+	}
+	for typ, want := range map[string]int{"custom_tool_call": 1, "custom_tool_call_output": 1, "function_call": 1, "function_call_output": 1, "reasoning": 2, "developer": 1} {
+		if types[typ] != want {
+			t.Fatalf("record type %s count = %d, want %d (all: %v)", typ, types[typ], want, types)
+		}
+	}
+}
+
+func TestPiFidelityRoundTrip(t *testing.T) {
+	native := strings.Join([]string{
+		`{"type":"session","id":"fid","cwd":"/w","timestamp":"2026-09-01T14:00:00Z"}`,
+		`{"type":"message","id":"aaaa0001","parentId":null,"timestamp":"2026-09-01T14:00:00Z","message":{"role":"user","timestamp":1788271200000,"content":[{"type":"text","text":"go"}]}}`,
+		`{"type":"message","id":"aaaa0002","parentId":"aaaa0001","timestamp":"2026-09-01T14:01:00Z","message":{"role":"assistant","timestamp":1788271260000,"stopReason":"toolUse","content":[{"type":"toolCall","id":"call|fc_1","name":"bash","arguments":{"command":"ls","n":2}}]}}`,
+		`{"type":"message","id":"aaaa0003","parentId":"aaaa0002","timestamp":"2026-09-01T14:02:00Z","message":{"role":"toolResult","timestamp":1788271320000,"toolCallId":"call|fc_1","toolName":"bash","content":[{"type":"text","text":"out"}],"isError":false}}`,
+		`{"type":"message","id":"aaaa0004","parentId":"aaaa0003","timestamp":"2026-09-01T14:03:00Z","message":{"role":"assistant","timestamp":1788271380000,"stopReason":"stop","content":[{"type":"text","text":"done"}]}}`,
+	}, "\n")
+	original, again, out := fidelityRoundTrip(t, "pi", ".pi/agent/sessions/p/s.jsonl", native, func(d Detail) string { return marshalJSONL(t, SerializePi(d)) })
+	ids := []string{"aaaa0001", "aaaa0002", "aaaa0003", "aaaa0004"}
+	for i, m := range again.Messages {
+		if m.ID != ids[i] {
+			t.Fatalf("message[%d] id = %q, want %q", i, m.ID, ids[i])
+		}
+	}
+	if original.Messages[1].StopReason != "toolUse" || original.Messages[3].StopReason != "stop" || again.Messages[3].StopReason != "stop" {
+		t.Fatalf("stopReason not verbatim: %q / %q", original.Messages[1].StopReason, again.Messages[3].StopReason)
+	}
+	if again.Messages[3].ParentID != "aaaa0003" {
+		t.Fatalf("parentId = %q", again.Messages[3].ParentID)
+	}
+	if input, ok := again.Messages[1].Content[0].Input.(map[string]any); !ok || input["command"] != "ls" {
+		t.Fatalf("arguments = %#v", again.Messages[1].Content[0].Input)
+	}
+	var rec struct {
+		Message struct {
+			Content []struct {
+				Arguments any `json:"arguments"`
+			} `json:"content"`
+		} `json:"message"`
+	}
+	if err := json.Unmarshal([]byte(strings.Split(out, "\n")[2]), &rec); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := rec.Message.Content[0].Arguments.(map[string]any); !ok {
+		t.Fatalf("serialized arguments must be an object, got %#v", rec.Message.Content[0].Arguments)
+	}
 }

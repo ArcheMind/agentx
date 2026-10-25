@@ -5,7 +5,83 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"path/filepath"
+	"strings"
+	"time"
 )
+
+// codexCustomTools are the Codex built-ins that rollouts record as
+// custom_tool_call (freeform input) instead of function_call.
+var codexCustomTools = map[string]bool{"exec": true, "apply_patch": true}
+
+// resultText derives plain text from a tool Result: strings pass through,
+// block arrays contribute their text fields, anything else is compact JSON.
+func resultText(result any) string {
+	switch value := result.(type) {
+	case nil:
+		return ""
+	case string:
+		return value
+	case []any:
+		var parts []string
+		allBlocks := true
+		for _, item := range value {
+			obj, ok := item.(map[string]any)
+			if !ok {
+				allBlocks = false
+				break
+			}
+			if text, ok := obj["text"].(string); ok && text != "" {
+				parts = append(parts, text)
+			}
+		}
+		if allBlocks {
+			return strings.Join(parts, "\n")
+		}
+	}
+	data, _ := json.Marshal(result)
+	return string(data)
+}
+
+// toolInputString reverses the parsers' {"raw": ...} wrapper so unparseable
+// native input is written back byte for byte.
+func toolInputString(input any) string {
+	if input == nil {
+		return ""
+	}
+	if obj, ok := input.(map[string]any); ok && len(obj) == 1 {
+		if raw, ok := obj["raw"].(string); ok {
+			return raw
+		}
+	}
+	data, _ := json.Marshal(input)
+	return string(data)
+}
+
+func isPiBlockArray(result any) bool {
+	items, ok := result.([]any)
+	if !ok {
+		return false
+	}
+	for _, item := range items {
+		obj, ok := item.(map[string]any)
+		if !ok {
+			return false
+		}
+		switch obj["type"] {
+		case "text":
+			if _, ok := obj["text"].(string); !ok {
+				return false
+			}
+		case "image":
+			if _, ok := obj["data"]; !ok {
+				return false
+			}
+		default:
+			return false
+		}
+	}
+	return true
+}
 
 // FileEntry represents a file to be written for file-per-message serializers.
 type FileEntry struct {
@@ -69,7 +145,9 @@ func SerializeClaude(detail Detail) []map[string]any {
 			result := map[string]any{
 				"type":        "tool_result",
 				"tool_use_id": m.ToolUseID,
-				"content":     textContent(m.Content),
+			}
+			if m.Result != nil {
+				result["content"] = m.Result
 			}
 			if m.IsError {
 				result["is_error"] = true
@@ -80,25 +158,28 @@ func SerializeClaude(detail Detail) []map[string]any {
 				"content": []any{result},
 			}
 			records = append(records, rec)
+		case "system":
+			rec := claudeEnvelope("system", m.ID, m.ParentID, m.Timestamp)
+			rec["subtype"] = "informational"
+			rec["level"] = "info"
+			rec["content"] = textContent(m.Content)
+			records = append(records, rec)
 		}
 	}
 	return records
 }
 
 func claudeSerializeUserContent(blocks []ContentBlock) any {
-	var texts []string
-	for _, b := range blocks {
-		if b.Type == "text" {
-			texts = append(texts, b.Text)
-		}
-	}
-	if len(texts) == 1 {
-		return texts[0]
+	if len(blocks) == 1 && blocks[0].Type == "text" {
+		return blocks[0].Text
 	}
 	var result []any
 	for _, b := range blocks {
-		if b.Type == "text" {
+		switch b.Type {
+		case "text":
 			result = append(result, map[string]any{"type": "text", "text": b.Text})
+		case "image":
+			result = append(result, map[string]any{"type": "image", "source": b.Source})
 		}
 	}
 	return result
@@ -170,21 +251,11 @@ func SerializeCodex(detail Detail) []map[string]any {
 			}))
 		case "assistant":
 			var textBlocks []any
-			var toolBlocks []ContentBlock
 			var agentText string
-			for _, b := range m.Content {
-				switch b.Type {
-				case "text":
-					textBlocks = append(textBlocks, map[string]any{"type": "output_text", "text": b.Text})
-					if agentText != "" {
-						agentText += "\n"
-					}
-					agentText += b.Text
-				case "tool_use":
-					toolBlocks = append(toolBlocks, b)
+			flushText := func() {
+				if len(textBlocks) == 0 {
+					return
 				}
-			}
-			if len(textBlocks) > 0 {
 				records = append(records, map[string]any{
 					"type":      "response_item",
 					"timestamp": m.Timestamp,
@@ -198,32 +269,70 @@ func SerializeCodex(detail Detail) []map[string]any {
 				records = append(records, codexEvent(m.Timestamp, map[string]any{
 					"type": "agent_message", "message": agentText,
 				}))
+				textBlocks, agentText = nil, ""
 			}
-			for _, b := range toolBlocks {
-				args := ""
-				if b.Input != nil {
-					data, _ := json.Marshal(b.Input)
-					args = string(data)
+			// Blocks are emitted in order so reasoning, text and calls keep their native interleaving.
+			for _, b := range m.Content {
+				switch b.Type {
+				case "text":
+					textBlocks = append(textBlocks, map[string]any{"type": "output_text", "text": b.Text})
+					if agentText != "" {
+						agentText += "\n"
+					}
+					agentText += b.Text
+				case "thinking":
+					flushText()
+					summary := []any{}
+					if b.Text != "" {
+						summary = append(summary, map[string]any{"type": "summary_text", "text": b.Text})
+					}
+					payload := map[string]any{"type": "reasoning", "summary": summary}
+					if b.Signature != "" {
+						payload["encrypted_content"] = b.Signature
+					}
+					records = append(records, map[string]any{"type": "response_item", "timestamp": m.Timestamp, "payload": payload})
+				case "tool_use":
+					flushText()
+					payload := map[string]any{"call_id": b.ID, "name": b.Name}
+					if codexCustomTools[b.Name] {
+						payload["type"] = "custom_tool_call"
+						payload["input"] = toolInputString(b.Input)
+					} else {
+						payload["type"] = "function_call"
+						payload["arguments"] = toolInputString(b.Input)
+					}
+					records = append(records, map[string]any{"type": "response_item", "timestamp": m.Timestamp, "payload": payload})
 				}
-				records = append(records, map[string]any{
-					"type":      "response_item",
-					"timestamp": m.Timestamp,
-					"payload": map[string]any{
-						"type":      "function_call",
-						"name":      b.Name,
-						"arguments": args,
-						"call_id":   b.ID,
-					},
-				})
 			}
-		case "tool":
+			flushText()
+		case "system":
+			var content []any
+			for _, b := range m.Content {
+				if b.Type == "text" {
+					content = append(content, map[string]any{"type": "input_text", "text": b.Text})
+				}
+			}
 			records = append(records, map[string]any{
 				"type":      "response_item",
 				"timestamp": m.Timestamp,
 				"payload": map[string]any{
-					"type":    "function_call_output",
+					"type":    "message",
+					"role":    "developer",
+					"content": content,
+				},
+			})
+		case "tool":
+			outputType := "function_call_output"
+			if codexCustomTools[m.ToolName] {
+				outputType = "custom_tool_call_output"
+			}
+			records = append(records, map[string]any{
+				"type":      "response_item",
+				"timestamp": m.Timestamp,
+				"payload": map[string]any{
+					"type":    outputType,
 					"call_id": m.ToolUseID,
-					"output":  textContent(m.Content),
+					"output":  resultText(m.Result),
 				},
 			})
 		}
@@ -283,7 +392,7 @@ func SerializeGemini(detail Detail) map[string]any {
 							"id":   b.ID,
 							"name": b.Name,
 							"response": map[string]any{
-								"output": textContent(result.Content),
+								"output": resultText(result.Result),
 							},
 						},
 					}}
@@ -300,7 +409,7 @@ func SerializeGemini(detail Detail) map[string]any {
 			}
 			messages = append(messages, map[string]any{
 				"type":      "gemini",
-				"content":   textContent(m.Content),
+				"content":   resultText(m.Result),
 				"timestamp": m.Timestamp,
 			})
 		}
@@ -326,8 +435,8 @@ func SerializeGemini(detail Detail) map[string]any {
 }
 
 // SerializePi converts a unified Detail back to Pi's native JSONL records.
-// Fields (id, parentId, timestamp) are placed inside the "message" sub-object
-// to match where parsePi reads them.
+// Pi keeps id, parentId and the ISO timestamp on the record itself; the
+// message carries epoch-millis timestamps.
 func SerializePi(detail Detail) []map[string]any {
 	records := []map[string]any{{
 		"type":      "session",
@@ -335,6 +444,19 @@ func SerializePi(detail Detail) []map[string]any {
 		"cwd":       detail.Workspace,
 		"timestamp": detail.StartedAt,
 	}}
+	envelope := func(m Message, msg map[string]any) map[string]any {
+		var parent any
+		if m.ParentID != "" {
+			parent = m.ParentID
+		}
+		if parsed, err := time.Parse(time.RFC3339Nano, m.Timestamp); err == nil {
+			msg["timestamp"] = parsed.UnixMilli()
+		}
+		return map[string]any{
+			"type": "message", "id": m.ID, "parentId": parent,
+			"timestamp": m.Timestamp, "message": msg,
+		}
+	}
 	for _, m := range detail.Messages {
 		switch m.Role {
 		case "user":
@@ -344,19 +466,9 @@ func SerializePi(detail Detail) []map[string]any {
 					content = append(content, map[string]any{"type": "text", "text": b.Text})
 				}
 			}
-			records = append(records, map[string]any{
-				"type": "message",
-				"message": map[string]any{
-					"id":        m.ID,
-					"parentId":  m.ParentID,
-					"role":      "user",
-					"timestamp": m.Timestamp,
-					"content":   content,
-				},
-			})
+			records = append(records, envelope(m, map[string]any{"role": "user", "content": content}))
 		case "assistant":
 			var content []any
-			stopReason := "endTurn"
 			for _, b := range m.Content {
 				switch b.Type {
 				case "thinking":
@@ -368,28 +480,22 @@ func SerializePi(detail Detail) []map[string]any {
 				case "text":
 					content = append(content, map[string]any{"type": "text", "text": b.Text})
 				case "tool_use":
-					args := ""
-					if b.Input != nil {
-						data, _ := json.Marshal(b.Input)
-						args = string(data)
+					args := b.Input
+					if args == nil {
+						args = map[string]any{}
 					}
 					content = append(content, map[string]any{
 						"type": "toolCall", "id": b.ID, "name": b.Name, "arguments": args,
 					})
-					stopReason = "toolUse"
 				}
 			}
 			if content == nil {
 				content = []any{}
 			}
 			msg := map[string]any{
-				"id":            m.ID,
-				"parentId":      m.ParentID,
-				"role":          "assistant",
-				"timestamp":     m.Timestamp,
-				"content":       content,
-				"stopReason":    stopReason,
-				"rawStopReason": "completed",
+				"role":    "assistant",
+				"content": content,
+				// Zeroed usage only satisfies Pi's format; usage is not part of the transcript contract.
 				"usage": map[string]any{
 					"input": 0, "output": 0,
 					"cacheRead": 0, "cacheWrite": 0,
@@ -401,37 +507,27 @@ func SerializePi(detail Detail) []map[string]any {
 					},
 				},
 			}
+			if m.StopReason != "" {
+				msg["stopReason"] = m.StopReason
+			}
 			if m.Model != "" {
 				msg["model"] = m.Model
 			}
-			records = append(records, map[string]any{
-				"type":    "message",
-				"message": msg,
-			})
+			records = append(records, envelope(m, msg))
 		case "tool":
-			var content []any
-			for _, b := range m.Content {
-				if b.Type == "text" {
-					content = append(content, map[string]any{"type": "text", "text": b.Text})
-				}
+			var content any = []any{}
+			if isPiBlockArray(m.Result) {
+				content = m.Result
+			} else if text := resultText(m.Result); text != "" {
+				content = []any{map[string]any{"type": "text", "text": text}}
 			}
-			if content == nil {
-				content = []any{}
-			}
-			msg := map[string]any{
+			records = append(records, envelope(m, map[string]any{
 				"role":       "toolResult",
 				"toolCallId": m.ToolUseID,
 				"toolName":   m.ToolName,
-				"timestamp":  m.Timestamp,
 				"content":    content,
-			}
-			if m.IsError {
-				msg["isError"] = true
-			}
-			records = append(records, map[string]any{
-				"type":    "message",
-				"message": msg,
-			})
+				"isError":    m.IsError,
+			}))
 		}
 	}
 	return records
@@ -547,7 +643,7 @@ func SerializeOpenCode(detail Detail, basePath string) (map[string]any, []FileEn
 				"id": toolMsg.ToolUseID, "messageID": m.ID, "sessionID": detail.ID,
 				"type": "step-finish",
 			}
-			text := textContent(toolMsg.Content)
+			text := resultText(toolMsg.Result)
 			if text != "" {
 				var tokens map[string]any
 				if json.Unmarshal([]byte(text), &tokens) == nil {
