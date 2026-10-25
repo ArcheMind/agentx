@@ -558,9 +558,9 @@ func parsePi(path string, records []map[string]any) (Detail, bool) {
 			isError, _ := message["isError"].(bool)
 			m := Message{
 				ID: msgID, ParentID: parentID, Role: "tool",
-				Result:     message["content"],
-				Timestamp:  ts, RecordedAt: recordedAt,
-				ToolUseID:  toolCallID, ToolName: toolName, IsError: isError,
+				Result:    message["content"],
+				Timestamp: ts, RecordedAt: recordedAt,
+				ToolUseID: toolCallID, ToolName: toolName, IsError: isError,
 			}
 			detail.Messages = append(detail.Messages, m)
 			updateTimeBounds(&detail, ts)
