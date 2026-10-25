@@ -87,31 +87,18 @@ If a native agent is missing at start, AgentX shows the reason and offers to edi
 the profile or go back; it never substitutes another agent, model or effort.
 Native rejection of a model or effort is the native agent's error.
 
-### Register with Claude
+### Profiles and the AgentX server
 
 The profiles collection (`~/.agentx/profiles/`) is the whole configuration. There is no AgentX switch or
-permission file. Registering the MCP server belongs to Claude, through its own
-commands (use the absolute path of `ax`; Claude starts it as given):
+permission file. Agents launched through `ax` (`ax claude`, `ax codex`) get the
+AgentX MCP server and the ExternalSubagent tools automatically. A plain `claude` started without `ax` gets them only if you register the server yourself: `claude mcp add --scope user agentx -- "$(command -v ax)" mcp serve`.
 
 ```sh
-claude mcp add --scope user agentx -- "$(command -v ax)" mcp serve
-claude mcp remove --scope user agentx
 ax profile list
 ax profile show codex-review
 ax claude
 ```
 
-- Removing the entry means new Claude sessions do not start the AgentX server.
-  Connections already established keep running until their Claude session ends:
-  their ExternalSubagents can finish and report, and `StopExternalSubagent`
-  stays available there. Removing never cancels work and does not affect
-  Claude native subagents.
-- `ax claude` reads that registration. When Claude's user configuration
-  (`~/.claude.json`, or `$CLAUDE_CONFIG_DIR/.claude.json`) has an `agentx` entry
-  running this `ax` executable with `mcp serve`, `ax claude`
-  adds the MCP connection and the named channel opt-in (below);
-  `ax claude --subagents` requires it. An `agentx` entry running something else
-  is reported as a conflict and never replaced.
 - `ax profile list` shows the collection with static readiness, limits and
   invalid entries; `ax profile show <name>` shows a single profile's detail.
   Static checks do not verify login or model access; those are established per
@@ -140,9 +127,8 @@ migrate:
   rm ~/.config/agentx/subagents.json
   ```
 
-- A former `enabled: true` becomes the `claude mcp add` registration above (if
-  it is not registered already); the earlier `enable`/`disable` subcommands no
-  longer exist.
+- A former `enabled: true` needs no replacement: `ax claude` and `ax codex`
+  attach AgentX; the earlier `enable`/`disable` subcommands no longer exist.
 - A former grant's `bounded-write` with `writable_roots` becomes a per-call
   request (`write: true` with `writable_roots`, or `write: true` with
   `isolation: "worktree"`); see [Write scope and isolation](#write-scope-and-isolation).
@@ -236,12 +222,11 @@ model access. Session listing reports created objects, not profiles.
 A call result notes when profiles changed since initialization.
 Initialization instructions are a connection snapshot. After saving, renaming or
 deleting a profile, `ax` says whether running AgentX MCP connections still show
-the old list and to reconnect (`/mcp`) or restart Claude, or that AgentX is not
-registered with Claude. New calls always use the saved profile; a call
+the old list and to reconnect (`/mcp`) or restart Claude. New calls always use the saved profile; a call
 result notes when the collection changed since the connection initialized. A
 fresh `tools/list` reads the current collection.
 
-After registering, restart or reconnect the host for tool discovery. `ax claude`
+Restart or reconnect the host for tool discovery. `ax claude`
 adds the MCP connection and allows exactly the four AgentX tools for that session
 with `--allowedTools`; Claude's persistent `settings.json` is not modified.
 Background delivery additionally needs Claude's channel opt-in, which AgentX does
@@ -255,7 +240,7 @@ The channel path requires interactive Claude Code, first-party provider access,
 host feature approval, and organization approval where applicable. AgentX
 negotiates MCP `2024-11-05` (legacy); modern protocol revisions do not support
 this unsolicited path in Claude Code 2.1.296. Tool discovery alone does not prove
-channel delivery. `status` distinguishes the MCP registration, live MCP server
+channel delivery. `status` distinguishes live MCP server
 connections, static native prerequisites, and unverified host channel delivery.
 Each tool response and background report includes a connection ID. Match it to
 `status.connections` to identify the current host, its client name/version and

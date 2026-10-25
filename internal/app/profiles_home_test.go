@@ -171,7 +171,7 @@ func TestCreateWithManualModelSavesWithoutInference(t *testing.T) {
 		t.Fatalf("creation ran external commands: %#v", runner.plans)
 	}
 	output := stdout.String()
-	for _, want := range []string{"Claude Code is not installed, so its models cannot be listed", "Enter the exact model ID", "unverified for this model", "Error: Invalid name", "Your other entries are kept", "Review profile", "Effort       low (unverified for this model)", "Availability Execution not verified; Claude Code is not installed", "MCP          Not callable as MCP ExternalSubagent: claude executable unavailable", "Saving does not run inference.", "Save and start", "Saved ", "New sessions use the saved profiles now.", "MCP: AgentX is not registered with Claude", "› deep-review  Claude · opus-4 · low  Review complex changes\r\n"} {
+	for _, want := range []string{"Claude Code is not installed, so its models cannot be listed", "Enter the exact model ID", "unverified for this model", "Error: Invalid name", "Your other entries are kept", "Review profile", "Effort       low (unverified for this model)", "Availability Execution not verified; Claude Code is not installed", "MCP          Not callable as MCP ExternalSubagent: claude executable unavailable", "Saving does not run inference.", "Save and start", "Saved ", "New sessions use the saved profiles now.", "› deep-review  Claude · opus-4 · low  Review complex changes\r\n"} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("missing %q in %q", want, output)
 		}
@@ -293,7 +293,6 @@ func TestBrokenProfileIsLocatedWithoutBlockingOthers(t *testing.T) {
 func TestChangeNoteTellsUserToReconnectLiveMCP(t *testing.T) {
 	application, stdout, _ := profileApp(t, "")
 	home := application.Hooks.Home
-	registerAgentx(t, home)
 	application.profileChangeNote(home)
 	if !strings.Contains(stdout.String(), "no running AgentX MCP connection") {
 		t.Fatal(stdout.String())
@@ -356,18 +355,6 @@ func TestUnlistedModelEffortNoteIsHonest(t *testing.T) {
 	mustCreate(t, application.Hooks.Home, deepReview)
 	application.Run(context.Background(), nil)
 	if output := stdout.String(); !strings.Contains(output, "gpt-5.6-luna is not in the Codex CLI model list, so its levels were not confirmed") || !strings.Contains(output, "(unverified for this model)") {
-		t.Fatal(output)
-	}
-}
-
-func TestConfigurationErrorDoesNotOfferProfileEdit(t *testing.T) {
-	application, stdout, runner := profileApp(t, "\r"+"\r"+"q", "claude")
-	home := application.Hooks.Home
-	mustCreate(t, home, profiles.Profile{Name: "daily", Description: "Everyday", Agent: "claude", Model: "opus"})
-	os.WriteFile(filepath.Join(home, ".claude.json"), []byte(`{not json`), 0o600)
-	application.Run(context.Background(), nil)
-	output := stdout.String()
-	if len(runner.plans) != 0 || !strings.Contains(output, "read Claude user configuration") || strings.Contains(output, "Edit profile") {
 		t.Fatal(output)
 	}
 }

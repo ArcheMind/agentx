@@ -265,7 +265,7 @@ func (a App) startProfile(ctx context.Context, reader *bufio.Reader, home string
 		injectCodexAgentX(&request)
 	}
 	if agent.ID == "claude" {
-		if err := a.injectClaudeAgentX(&request, false); err != nil {
+		if err := a.injectClaudeAgentX(&request); err != nil {
 			return a.startFailure(ctx, reader, home, p, err.Error(), false)
 		}
 	}
@@ -864,16 +864,11 @@ func (a App) printAvailability(p profiles.Profile) {
 
 func (a App) profileChangeNote(home string) {
 	fmt.Fprintln(a.Stdout, "New sessions use the saved profiles now.")
-	registered, err := mcpRegistration(home)
 	count := len(subagents.Connections(home))
 	var note string
 	switch {
-	case err != nil:
-		note = "MCP: cannot read the Claude MCP registration: " + err.Error()
 	case count > 0:
 		note = fmt.Sprintf("MCP: %d running AgentX MCP connection(s) still show the profile list from when they connected. New ExternalSubagent calls already use the saved profiles; reconnect AgentX in Claude (/mcp) or restart Claude to refresh the list.", count)
-	case !registered:
-		note = "MCP: AgentX is not registered with Claude (claude mcp add --scope user agentx -- <absolute path of ax> mcp serve); nothing to refresh."
 	default:
 		note = "MCP: no running AgentX MCP connection; Claude sees this change when it next connects."
 	}

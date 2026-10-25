@@ -338,14 +338,11 @@ func (a App) runAgent(ctx context.Context, args []string) error {
 	}
 	request := runtime.RunRequest{}
 	dryRun := false
-	withSubagents := false
 	for index := 1; index < len(args); index++ {
 		switch args[index] {
 		case "--":
 			request.PassthroughArgs = append(request.PassthroughArgs, args[index+1:]...)
 			index = len(args)
-		case "--subagents":
-			withSubagents = true
 		case "--model":
 			index++
 			if index >= len(args) {
@@ -381,16 +378,11 @@ func (a App) runAgent(ctx context.Context, args []string) error {
 	if !info.IsDir() {
 		return fmt.Errorf("working directory %s is not a directory", request.Cwd)
 	}
-	if withSubagents {
-		if agent.ID != "claude" {
-			return fmt.Errorf("--subagents is only supported by Claude Code")
-		}
-	}
 	if agent.ID == "codex" {
 		injectCodexAgentX(&request)
 	}
 	if agent.ID == "claude" {
-		if err := a.injectClaudeAgentX(&request, withSubagents); err != nil {
+		if err := a.injectClaudeAgentX(&request); err != nil {
 			return err
 		}
 	}
@@ -1027,11 +1019,12 @@ Examples:
   # See every agent's recent work in one place
   ax
 
-  # Continue a Claude session in Codex
-  ax session resume codex <session-id> --source claude
+  # Continue a session in another agent: select it, press Enter, pick the agent
+  ax
 
-  # Let Claude call your other agents' profiles as subagents
-  claude mcp add --scope user agentx -- "$(command -v ax)" mcp serve
+  # From Codex, hand work to a Claude Code subagent (a profile with agent: claude)
+  ax codex
+  > Ask my claude-review profile to review this change.
 
 Running ax without arguments opens the interactive home: start a new session
 with a profile, create or manage profiles (m), continue a recent session, or

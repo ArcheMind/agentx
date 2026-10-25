@@ -13,43 +13,25 @@ import (
 	"github.com/ArcheMind/agentx/internal/runtime"
 )
 
-func TestSubagentLaunchDryRun(t *testing.T) {
+func TestClaudeLaunchAttachesAgentXWithoutRegistration(t *testing.T) {
 	var output bytes.Buffer
 	app := New(false, strings.NewReader(""), &output, &bytes.Buffer{})
 	app.Hooks.Home = t.TempDir()
 	app.Hooks.Project = t.TempDir()
 	t.Setenv("AX_SUBAGENT_HOME", "")
 	t.Setenv("CLAUDE_CONFIG_DIR", "")
-	if err := app.Run(context.Background(), []string{"--json", "claude", "--cwd", app.Hooks.Project, "--subagents", "--dry-run"}); err == nil || !strings.Contains(err.Error(), "claude mcp add --scope user agentx -- ") {
-		t.Fatal("unregistered AgentX treated as enabled", err)
-	}
-	registerAgentx(t, app.Hooks.Home)
-	output.Reset()
-	if err := app.Run(context.Background(), []string{"--json", "claude", "--cwd", app.Hooks.Project, "--subagents", "--dry-run"}); err != nil {
+	if err := app.Run(context.Background(), []string{"--json", "claude", "--cwd", app.Hooks.Project, "--dry-run"}); err != nil {
 		t.Fatal(err)
 	}
 	var plan runtime.CommandPlan
 	if err := json.Unmarshal(output.Bytes(), &plan); err != nil {
 		t.Fatal(err)
 	}
-	if len(plan.Args) != 7 || plan.Args[0] != "--mcp-config" || plan.Args[2] != "--allowedTools" || plan.Args[3] != "mcp__agentx__ExternalSubagent" {
+	if len(plan.Args) != 7 || plan.Args[0] != "--mcp-config" || !strings.Contains(plan.Args[1], `"agentx"`) || plan.Args[2] != "--allowedTools" || plan.Args[3] != "mcp__agentx__ExternalSubagent" {
 		t.Fatalf("plan = %#v", plan)
 	}
 	if err := app.Run(context.Background(), []string{"codex", "--subagents", "--dry-run"}); err == nil {
-		t.Fatal("accepted Claude flag for Codex")
-	}
-}
-
-// registerAgentx writes the entry exactly as claude mcp add --scope user agentx -- <ax> mcp serve does.
-func registerAgentx(t *testing.T, home string) {
-	t.Helper()
-	executable, err := os.Executable()
-	if err != nil {
-		t.Fatal(err)
-	}
-	data, _ := json.Marshal(map[string]any{"mcpServers": map[string]any{"agentx": map[string]any{"type": "stdio", "command": executable, "args": []string{"mcp", "serve"}, "env": map[string]string{}}}})
-	if err := os.WriteFile(filepath.Join(home, ".claude.json"), data, 0o600); err != nil {
-		t.Fatal(err)
+		t.Fatal("--subagents still accepted")
 	}
 }
 

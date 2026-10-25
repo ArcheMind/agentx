@@ -31,7 +31,7 @@ const create=ax('\r'+'j\r'+'smoke-model\n'+'jjj\r'+'smoke review\n'+'smoke-revie
 const profileFile=join(home,'.agentx','profiles','smoke-review','PROFILE.md')
 const saved=await readFile(profileFile,'utf8')
 assert(saved==='---\nagent: codex\nmodel: smoke-model\neffort: low\n---\n\nSmoke review profile for deterministic acceptance\n','saved file '+saved)
-assert(create.output.includes('Model list unavailable')&&create.output.includes('unverified for this model')&&create.output.includes('Error: Invalid name')&&create.output.includes('Saving does not run inference.')&&create.output.includes('MCP: AgentX is not registered with Claude'),'P05/P07/P08 create output: '+create.output)
+assert(create.output.includes('Model list unavailable')&&create.output.includes('unverified for this model')&&create.output.includes('Error: Invalid name')&&create.output.includes('Saving does not run inference.'),'P05/P07/P08 create output: '+create.output)
 const afterCreate=await argvFiles()
 assert(afterCreate.length===1&&JSON.parse(await readFile(join(home,afterCreate[0]),'utf8')).argv[0]==='app-server','P16: creation ran something besides model listing')
 evidence.P05='created via TUI; PROFILE.md written; home lists it; no other configuration file exists or is needed';evidence.P08='fake codex model list failure shown honestly, manual ID accepted';evidence.P16='only app-server model listing ran during creation'

@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
-	"reflect"
 
 	"github.com/ArcheMind/agentx/internal/profiles"
 	"github.com/ArcheMind/agentx/internal/runtime"
@@ -113,50 +111,6 @@ func (a App) profileShow(home string, name string) error {
 	return nil
 }
 
-func claudeConfigPath(home string) string {
-	if dir := os.Getenv("CLAUDE_CONFIG_DIR"); dir != "" {
-		return filepath.Join(dir, ".claude.json")
-	}
-	return filepath.Join(home, ".claude.json")
-}
-
-// mcpRegistration reports whether Claude's user configuration has an agentx entry that runs this
-// executable as the AgentX server (claude mcp add also writes an empty env); any other agentx entry
-// is a conflict and is never replaced.
-func mcpRegistration(home string) (bool, error) {
-	executable, err := os.Executable()
-	if err != nil {
-		return false, err
-	}
-	var root struct {
-		MCPServers map[string]json.RawMessage `json:"mcpServers"`
-	}
-	data, err := os.ReadFile(claudeConfigPath(home))
-	if os.IsNotExist(err) {
-		return false, nil
-	}
-	if err != nil {
-		return false, err
-	}
-	if err := json.Unmarshal(data, &root); err != nil {
-		return false, fmt.Errorf("read Claude user configuration %s: %w", claudeConfigPath(home), err)
-	}
-	existing, ok := root.MCPServers["agentx"]
-	if !ok {
-		return false, nil
-	}
-	var entry struct {
-		Type    string            `json:"type"`
-		Command string            `json:"command"`
-		Args    []string          `json:"args"`
-		Env     map[string]string `json:"env"`
-	}
-	if err := json.Unmarshal(existing, &entry); err != nil || (entry.Type != "" && entry.Type != "stdio") || entry.Command != executable || !reflect.DeepEqual(entry.Args, []string{"mcp", "serve"}) || len(entry.Env) != 0 {
-		return false, fmt.Errorf("Claude user MCP entry agentx in %s does not run %s mcp serve; AgentX does not use or change it. Resolve the conflict explicitly", claudeConfigPath(home), executable)
-	}
-	return true, nil
-}
-
 func (a App) profileHome() string {
 	if override := os.Getenv("AX_SUBAGENT_HOME"); override != "" {
 		return override
@@ -164,17 +118,7 @@ func (a App) profileHome() string {
 	return a.Hooks.Home
 }
 
-func (a App) injectClaudeAgentX(request *runtime.RunRequest, explicit bool) error {
-	registered, err := mcpRegistration(a.profileHome())
-	if err != nil {
-		return err
-	}
-	if !registered {
-		if explicit {
-			return fmt.Errorf("AgentX is not registered with Claude; run: claude mcp add --scope user agentx -- %s mcp serve", executableOrAx())
-		}
-		return nil
-	}
+func (a App) injectClaudeAgentX(request *runtime.RunRequest) error {
 	executable, err := os.Executable()
 	if err != nil {
 		return err
@@ -201,11 +145,4 @@ func injectCodexAgentX(request *runtime.RunRequest) {
 			"-c", fmt.Sprintf("mcp_servers.agentx.env.AX_SUBAGENT_HOME=%q", subHome),
 		)
 	}
-}
-
-func executableOrAx() string {
-	if executable, err := os.Executable(); err == nil {
-		return executable
-	}
-	return "ax"
 }

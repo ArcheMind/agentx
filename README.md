@@ -88,20 +88,16 @@ ax --resume work.json                  # import and resume interactively in one 
 
 ## Call another agent's profile from inside yours
 
-A profile saves agent, model, effort, and when to use it. The same collection feeds `ax` and the MCP tools, so Claude can run your Codex or Pi profiles directly:
+A profile saves agent, model, effort, and when to use it. The same collection feeds `ax` and the MCP tools, so an agent launched through `ax` (for example `ax claude` or `ax codex`) gets the ExternalSubagent tools automatically and can run your other profiles directly:
 
 ```console
 $ ax profile list
-codex-review         codex      static requirements satisfied; login and model access verified per execution
+claude-review        claude     static requirements satisfied; login and model access verified per execution
 pi-review            pi         static requirements satisfied; login and model access verified per execution
 
-$ claude mcp add --scope user agentx -- "$(command -v ax)" mcp serve
+$ ax codex
+> Ask my claude-review profile to review this change.
 ```
-
-Then, inside Claude:
-
-> Use my codex-review and pi-review profiles to review this change independently,
-> then compare their findings.
 
 Each call runs the profile's own native agent in its own session. No relay inference call, no per-task registration. Calls are read-only unless they ask for `write`; `isolation: "worktree"` runs the subagent in a fresh git worktree that is its only writable root.
 
