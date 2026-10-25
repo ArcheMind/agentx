@@ -4,6 +4,20 @@ All notable changes to AgentX are documented here. The format follows [Keep a Ch
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-25
+
+### Changed
+
+- `ax preset serve` is now `ax mcp serve`; `ax mcp` gains `serve` beside `list` and `show`.
+- `preset` is now `profile`: `ax profile list|show`, `~/.agentx/profiles/<name>/PROFILE.md`, and the matching interactive home, MCP instructions, and tool descriptions.
+- `provider` is now `agent` in `--source <agent>`, the `session list` output and `--sort agent`, the exported filename `<agent>-<title>-<id8>.json`, and the hook `__dispatch --agent` flag.
+- The unified transcript field `provider` is now `agent` (agentx-protocol `go/v0.2.0`, module `github.com/ArcheMind/agentx-protocol/go`); transcripts exported by earlier versions no longer import.
+- `ax list` is now `ax status`.
+
+### Removed
+
+- `ax convert`.
+
 ## [0.5.0] - 2026-10-23
 
 ### Added
