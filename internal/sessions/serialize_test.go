@@ -442,7 +442,7 @@ func TestCodexFidelityRoundTrip(t *testing.T) {
 		`{"type":"response_item","timestamp":"2026-09-01T11:02:00Z","payload":{"type":"reasoning","summary":[{"type":"summary_text","text":"plan it"}],"encrypted_content":"enc-1"}}`,
 		`{"type":"response_item","timestamp":"2026-09-01T11:02:01Z","payload":{"type":"reasoning","summary":[],"encrypted_content":"enc-2"}}`,
 		`{"type":"response_item","timestamp":"2026-09-01T11:03:00Z","payload":{"type":"custom_tool_call","call_id":"c1","name":"exec","input":"tools.exec_command({cmd:'ls'})"}}`,
-		`{"type":"response_item","timestamp":"2026-09-01T11:04:00Z","payload":{"type":"custom_tool_call_output","call_id":"c1","output":"file.txt"}}`,
+		`{"type":"response_item","timestamp":"2026-09-01T11:04:00Z","payload":{"type":"custom_tool_call_output","call_id":"c1","output":[{"type":"input_text","text":"Script completed\nOutput:\n"},{"type":"input_text","text":"{\"exit_code\":0}"}]}}`,
 		`{"type":"response_item","timestamp":"2026-09-01T11:05:00Z","payload":{"type":"function_call","call_id":"c2","name":"send_message","arguments":"{\"to\":\"x\"}"}}`,
 		`{"type":"response_item","timestamp":"2026-09-01T11:06:00Z","payload":{"type":"function_call_output","call_id":"c2","output":"sent"}}`,
 	}, "\n")
@@ -455,6 +455,13 @@ func TestCodexFidelityRoundTrip(t *testing.T) {
 	}
 	if raw := blocks[2].Input.(map[string]any)["raw"]; raw != "tools.exec_command({cmd:'ls'})" {
 		t.Fatalf("custom tool input = %#v", blocks[2].Input)
+	}
+	wantOut := []any{
+		map[string]any{"type": "input_text", "text": "Script completed\nOutput:\n"},
+		map[string]any{"type": "input_text", "text": "{\"exit_code\":0}"},
+	}
+	if !reflect.DeepEqual(original.Messages[3].Result, wantOut) || !reflect.DeepEqual(again.Messages[3].Result, wantOut) {
+		t.Fatalf("array output not verbatim: %#v / %#v", original.Messages[3].Result, again.Messages[3].Result)
 	}
 	if again.Messages[0].Role != "system" || textContent(again.Messages[0].Content) != "state index" {
 		t.Fatalf("developer message lost: %#v", again.Messages[0])
@@ -488,7 +495,7 @@ func TestPiFidelityRoundTrip(t *testing.T) {
 	native := strings.Join([]string{
 		`{"type":"session","id":"fid","cwd":"/w","timestamp":"2026-09-01T14:00:00Z"}`,
 		`{"type":"message","id":"aaaa0001","parentId":null,"timestamp":"2026-09-01T14:00:00Z","message":{"role":"user","timestamp":1788271200000,"content":[{"type":"text","text":"go"}]}}`,
-		`{"type":"message","id":"aaaa0002","parentId":"aaaa0001","timestamp":"2026-09-01T14:01:00Z","message":{"role":"assistant","timestamp":1788271260000,"stopReason":"toolUse","content":[{"type":"toolCall","id":"call|fc_1","name":"bash","arguments":{"command":"ls","n":2}}]}}`,
+		`{"type":"message","id":"aaaa0002","parentId":"aaaa0001","timestamp":"2026-09-01T14:01:00.972Z","message":{"role":"assistant","timestamp":1788271260118,"stopReason":"toolUse","content":[{"type":"toolCall","id":"call|fc_1","name":"bash","arguments":{"command":"ls","n":2}}]}}`,
 		`{"type":"message","id":"aaaa0003","parentId":"aaaa0002","timestamp":"2026-09-01T14:02:00Z","message":{"role":"toolResult","timestamp":1788271320000,"toolCallId":"call|fc_1","toolName":"bash","content":[{"type":"text","text":"out"}],"isError":false}}`,
 		`{"type":"message","id":"aaaa0004","parentId":"aaaa0003","timestamp":"2026-09-01T14:03:00Z","message":{"role":"assistant","timestamp":1788271380000,"stopReason":"stop","content":[{"type":"text","text":"done"}]}}`,
 	}, "\n")
@@ -501,6 +508,12 @@ func TestPiFidelityRoundTrip(t *testing.T) {
 	}
 	if original.Messages[1].StopReason != "toolUse" || original.Messages[3].StopReason != "stop" || again.Messages[3].StopReason != "stop" {
 		t.Fatalf("stopReason not verbatim: %q / %q", original.Messages[1].StopReason, again.Messages[3].StopReason)
+	}
+	if got := again.Messages[1].Timestamp; got != "2026-09-01T14:01:00.118Z" {
+		t.Fatalf("message timestamp = %q", got)
+	}
+	if !strings.Contains(out, `"timestamp":1788271260118`) {
+		t.Fatalf("epoch millis not preserved in output: %s", out)
 	}
 	if again.Messages[3].ParentID != "aaaa0003" {
 		t.Fatalf("parentId = %q", again.Messages[3].ParentID)

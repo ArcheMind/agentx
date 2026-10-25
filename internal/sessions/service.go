@@ -449,7 +449,7 @@ func parseCodex(path string, records []map[string]any) (Detail, bool) {
 			msgID := fmt.Sprintf("codex-%d", len(detail.Messages))
 			m := Message{
 				ID: msgID, ParentID: lastID, Role: "tool",
-				Result:    stringValue(payload["output"]),
+				Result:    payload["output"],
 				Timestamp: ts, ToolUseID: callID, ToolName: callNames[callID],
 			}
 			detail.Messages = append(detail.Messages, m)
@@ -536,8 +536,9 @@ func parsePi(path string, records []map[string]any) (Detail, bool) {
 		}
 		message, _ := record["message"].(map[string]any)
 		role := stringValue(message["role"])
-		// Pi stores the tree id/parentId and the ISO timestamp on the record; message.timestamp is epoch millis.
-		ts := firstNonEmpty(timeValue(record["timestamp"]), timeValue(message["timestamp"]))
+		// Pi stores the tree id/parentId on the record. The record timestamp is write time and
+		// differs from the message's own epoch-millis timestamp, which is the event time we keep.
+		ts := firstNonEmpty(timeValue(message["timestamp"]), timeValue(record["timestamp"]))
 		parentID := stringValue(record["parentId"])
 		if parentID == "" {
 			parentID = lastID

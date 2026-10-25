@@ -57,6 +57,28 @@ func toolInputString(input any) string {
 	return string(data)
 }
 
+// codexOutput passes strings and Codex content-item arrays through verbatim;
+// results from other providers are flattened because Codex rejects foreign block types.
+func codexOutput(result any) any {
+	if items, ok := result.([]any); ok {
+		native := true
+		for _, item := range items {
+			obj, isObj := item.(map[string]any)
+			if !isObj || (obj["type"] != "input_text" && obj["type"] != "input_image") {
+				native = false
+				break
+			}
+		}
+		if native {
+			return result
+		}
+	}
+	if s, ok := result.(string); ok {
+		return s
+	}
+	return resultText(result)
+}
+
 func isPiBlockArray(result any) bool {
 	items, ok := result.([]any)
 	if !ok {
@@ -332,7 +354,7 @@ func SerializeCodex(detail Detail) []map[string]any {
 				"payload": map[string]any{
 					"type":    outputType,
 					"call_id": m.ToolUseID,
-					"output":  resultText(m.Result),
+					"output":  codexOutput(m.Result),
 				},
 			})
 		}
