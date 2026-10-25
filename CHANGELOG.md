@@ -4,6 +4,12 @@ All notable changes to AgentX are documented here. The format follows [Keep a Ch
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-10-25
+
+### Changed
+
+- `ax help` lists each command once and ends with examples for the three main uses: one list of every agent's work, continuing a session in another agent, and calling other agents' profiles from Claude.
+
 ## [0.6.0] - 2026-10-25
 
 ### Changed
