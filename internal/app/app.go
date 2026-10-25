@@ -1018,12 +1018,20 @@ Usage:
   ax [--json|--yaml] hook list
   ax [--json|--yaml] mcp <list|show|serve> [args...]
   ax [--json|--yaml] profile <list|show> [args...]
-  ax mcp serve   (register: claude mcp add --scope user agentx -- <ax> mcp serve)
-  ax claude [-- <native args...>]
 
   ax agent exec <codex|pi|gemini> [--model <model>] [--resume <session-id>] [--cwd <path>] [--dry-run] < prompt.txt
 
   ax version
+
+Examples:
+  # See every agent's recent work in one place
+  ax
+
+  # Continue a Claude session in Codex
+  ax session resume codex <session-id> --source claude
+
+  # Let Claude call your other agents' profiles as subagents
+  claude mcp add --scope user agentx -- "$(command -v ax)" mcp serve
 
 Running ax without arguments opens the interactive home: start a new session
 with a profile, create or manage profiles (m), continue a recent session, or
