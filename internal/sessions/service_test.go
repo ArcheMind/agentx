@@ -81,7 +81,7 @@ func TestNativeSessionReaders(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if detail.Agent != test.agent || detail.MessageCount == 0 || !strings.Contains(textContent(detail.Messages[0].Content), test.content) {
+			if detail.Provider != test.agent || detail.MessageCount == 0 || !strings.Contains(textContent(detail.Messages[0].Content), test.content) {
 				t.Fatalf("detail = %#v", detail)
 			}
 		})
@@ -266,8 +266,8 @@ func TestStructuredContentPreservesToolCalls(t *testing.T) {
 	// Pi: assistant with toolCall, toolResult
 	writeFixture(t, filepath.Join(home, ".pi", "agent", "sessions", "p", "tc.jsonl"), strings.Join([]string{
 		fmt.Sprintf(`{"type":"session","id":"tc-pi","cwd":%q,"timestamp":"2026-09-01T14:00:00Z"}`, workspace),
-		`{"type":"message","message":{"role":"assistant","timestamp":1788271200000,"content":[{"type":"text","text":"running"},{"type":"toolCall","toolCallId":"pc-1","toolName":"shell","input":{"cmd":"ls"}}]}}`,
-		`{"type":"message","message":{"role":"toolResult","timestamp":1788271260000,"toolCallId":"pc-1","toolName":"shell","content":"done"}}`,
+		`{"type":"message","id":"a1","parentId":null,"timestamp":"2026-09-01T14:00:00Z","message":{"role":"assistant","timestamp":1788271200000,"content":[{"type":"text","text":"running"},{"type":"toolCall","id":"pc-1","name":"shell","arguments":{"cmd":"ls"}}]}}`,
+		`{"type":"message","id":"a2","parentId":"a1","timestamp":"2026-09-01T14:01:00Z","message":{"role":"toolResult","timestamp":1788271260000,"toolCallId":"pc-1","toolName":"shell","content":[{"type":"text","text":"done"}]}}`,
 	}, "\n"))
 
 	service := Service{HomeDir: home}

@@ -117,6 +117,8 @@ func (a App) Run(ctx context.Context, args []string) error {
 		return a.hook(ctx, args[1:])
 	case "profile":
 		return a.profile(ctx, args[1:])
+	case "convert":
+		return a.convert(args[1:])
 	default:
 		if _, err := a.Registry.Get(args[0]); err == nil {
 			return a.runAgent(ctx, args)
@@ -703,7 +705,7 @@ func (a App) sessionInfo(args []string) error {
 	if a.Output != OutputText {
 		return writeStructured(a.Stdout, detail, a.Output)
 	}
-	fmt.Fprintf(a.Stdout, "ID: %s\nAgent: %s\n", detail.ID, detail.Agent)
+	fmt.Fprintf(a.Stdout, "ID: %s\nAgent: %s\n", detail.ID, detail.Provider)
 	if detail.Title != "" {
 		fmt.Fprintf(a.Stdout, "Title: %s\n", detail.Title)
 	}
@@ -717,7 +719,7 @@ func (a App) sessionInfo(args []string) error {
 	if peekLines > 0 {
 		fmt.Fprintln(a.Stdout, "\nTranscript tail:")
 		for _, message := range detail.Messages[len(detail.Messages)-peekLines:] {
-			fmt.Fprintf(a.Stdout, "[%s] %s\n", message.Role, singleLine(sessions.TextContent(message.Content), 200))
+			fmt.Fprintf(a.Stdout, "[%s] %s\n", message.Role, singleLine(sessions.MessageText(message), 200))
 		}
 	}
 	return nil
@@ -869,7 +871,7 @@ func transcriptFileName(detail sessions.Detail) string {
 	if runes := []rune(id); len(runes) > 8 {
 		id = string(runes[:8])
 	}
-	parts := []string{detail.Agent}
+	parts := []string{detail.Provider}
 	if mapped != "" {
 		parts = append(parts, mapped)
 	}
@@ -899,7 +901,7 @@ func (a App) resumeSession(ctx context.Context, agent runtime.Agent, detail sess
 		return fmt.Errorf("session workspace %s is not an accessible directory", workspace)
 	}
 	var resumeToken string
-	if detail.Agent == agent.ID {
+	if detail.Provider == agent.ID {
 		resumeToken = detail.ID
 	} else {
 		stateDir := filepath.Join(a.Sessions.HomeDir, ".local", "state", "agentx", "resume")
@@ -1038,6 +1040,115 @@ Agents: claude, codex, dsh, gemini, opencode, pi
 Set AX_LOG=debug or pass --verbose before the command to log raw external input,
 output, and errors as JSON on stderr.
 `)
+}
+
+var convertProviders = []string{"claude", "codex", "gemini", "opencode", "pi"}
+
+func isConvertProvider(id string) bool {
+	for _, p := range convertProviders {
+		if p == id {
+			return true
+		}
+	}
+	return false
+}
+
+func (a App) convert(args []string) error {
+	if len(args) < 2 {
+		return fmt.Errorf("usage: ax [--json|--yaml] convert <to|from> <provider>")
+	}
+	switch args[0] {
+	case "to":
+		return a.convertTo(args[1])
+	case "from":
+		return a.convertFrom(args[1])
+	default:
+		return fmt.Errorf("usage: ax [--json|--yaml] convert <to|from> <provider>")
+	}
+}
+
+func (a App) convertTo(provider string) error {
+	if !isConvertProvider(provider) {
+		return fmt.Errorf("unknown convert provider %q; supported: %s", provider, strings.Join(convertProviders, ", "))
+	}
+	data, err := io.ReadAll(a.Stdin)
+	if err != nil {
+		return fmt.Errorf("read stdin: %w", err)
+	}
+	var detail sessions.Detail
+	if err := json.Unmarshal(data, &detail); err != nil {
+		return fmt.Errorf("parse unified JSON from stdin: %w", err)
+	}
+
+	switch provider {
+	case "claude":
+		return writeJSONL(a.Stdout, sessions.SerializeClaude(detail))
+	case "codex":
+		return writeJSONL(a.Stdout, sessions.SerializeCodex(detail))
+	case "pi":
+		return writeJSONL(a.Stdout, sessions.SerializePi(detail))
+	case "gemini":
+		encoder := json.NewEncoder(a.Stdout)
+		encoder.SetIndent("", "  ")
+		return encoder.Encode(sessions.SerializeGemini(detail))
+	case "opencode":
+		return fmt.Errorf("opencode requires a directory target; use session resume instead")
+	}
+	return nil
+}
+
+func (a App) convertFrom(provider string) error {
+	if !isConvertProvider(provider) {
+		return fmt.Errorf("unknown convert provider %q; supported: %s", provider, strings.Join(convertProviders, ", "))
+	}
+	data, err := io.ReadAll(a.Stdin)
+	if err != nil {
+		return fmt.Errorf("read stdin: %w", err)
+	}
+
+	var records []map[string]any
+	switch provider {
+	case "gemini":
+		var single map[string]any
+		if err := json.Unmarshal(data, &single); err != nil {
+			return fmt.Errorf("parse %s JSON from stdin: %w", provider, err)
+		}
+		records = []map[string]any{single}
+	default:
+		lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+		for _, line := range lines {
+			line = strings.TrimSpace(line)
+			if line == "" {
+				continue
+			}
+			var record map[string]any
+			if err := json.Unmarshal([]byte(line), &record); err != nil {
+				return fmt.Errorf("parse %s JSONL from stdin: %w", provider, err)
+			}
+			records = append(records, record)
+		}
+	}
+
+	detail, ok := sessions.ParseRecords(provider, records)
+	if !ok {
+		return fmt.Errorf("no valid session found in %s input", provider)
+	}
+
+	output := a.Output
+	if output == OutputText {
+		output = OutputJSON
+	}
+	return writeStructured(a.Stdout, detail, output)
+}
+
+func writeJSONL(writer io.Writer, records []map[string]any) error {
+	encoder := json.NewEncoder(writer)
+	for _, record := range records {
+		if err := encoder.Encode(record); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 type ExitError struct {

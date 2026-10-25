@@ -712,7 +712,7 @@ func TestSessionInfoUsesGlobalYAMLOutput(t *testing.T) {
 	if err := application.Run(context.Background(), []string{"--yaml", "session", "show", "session-id", "--source", "claude"}); err != nil {
 		t.Fatal(err)
 	}
-	for _, expected := range []string{"id: session-id", "agent: claude", "text: continue work"} {
+	for _, expected := range []string{"id: session-id", "provider: claude", "text: continue work"} {
 		if !strings.Contains(stdout.String(), expected) {
 			t.Fatalf("YAML %q does not contain %q", stdout.String(), expected)
 		}
@@ -803,7 +803,7 @@ func TestSessionExportStreamsUnifiedJSON(t *testing.T) {
 	if err := application.Run(context.Background(), []string{"session", "export", "session-id", "--source", "claude"}); err != nil {
 		t.Fatal(err)
 	}
-	for _, expected := range []string{`"id": "session-id"`, `"agent": "claude"`, `"text": "continue work"`} {
+	for _, expected := range []string{`"id": "session-id"`, `"provider": "claude"`, `"text": "continue work"`} {
 		if !strings.Contains(stdout.String(), expected) {
 			t.Fatalf("export output %q does not contain %q", stdout.String(), expected)
 		}
@@ -862,15 +862,15 @@ func TestResumeFlagValidation(t *testing.T) {
 }
 
 func TestTranscriptFileName(t *testing.T) {
-	name := transcriptFileName(sessions.Detail{ID: "abcdef1234567890", Agent: "claude", Title: "Fix Login Bug!"})
+	name := transcriptFileName(sessions.Detail{ID: "abcdef1234567890", Provider: "claude", Title: "Fix Login Bug!"})
 	if name != "claude-fix-login-bug-abcdef12.json" {
 		t.Fatalf("name = %q", name)
 	}
-	name = transcriptFileName(sessions.Detail{ID: "x1", Agent: "codex", Title: "修复 登录"})
+	name = transcriptFileName(sessions.Detail{ID: "x1", Provider: "codex", Title: "修复 登录"})
 	if name != "codex-修复-登录-x1.json" {
 		t.Fatalf("unicode name = %q", name)
 	}
-	if name = transcriptFileName(sessions.Detail{Agent: "pi"}); name != "pi.json" {
+	if name = transcriptFileName(sessions.Detail{Provider: "pi"}); name != "pi.json" {
 		t.Fatalf("bare name = %q", name)
 	}
 }
@@ -920,7 +920,7 @@ func TestExportChosenSessionWritesMeaningfulFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, expected := range []string{`"id": "cx1"`, `"agent": "codex"`, `"text": "hello work"`} {
+	for _, expected := range []string{`"id": "cx1"`, `"provider": "codex"`, `"text": "hello work"`} {
 		if !strings.Contains(string(data), expected) {
 			t.Fatalf("exported transcript %q does not contain %q", string(data), expected)
 		}

@@ -1,5 +1,5 @@
-github.com/ArcheMind/agentx-protocol/go v0.2.0 h1:vNXqe15tSAJpoU9nq5yHk9WDfomDWLHtKMlsqyvSy2g=
-github.com/ArcheMind/agentx-protocol/go v0.2.0/go.mod h1:yGo19hX0fTGyz+i8mdmsFx5a26CF/HKbxjbqpMBtJAM=
+github.com/ArcheMind/agentx-protocol/go v0.3.0 h1:TjwG707QMigEjRzydM7a5VVREvLvPNQUMoeYXTd25Ic=
+github.com/ArcheMind/agentx-protocol/go v0.3.0/go.mod h1:yGo19hX0fTGyz+i8mdmsFx5a26CF/HKbxjbqpMBtJAM=
 github.com/google/go-cmp v0.5.8 h1:e6P7q2lk1O+qJJb4BtCQXlK8vWEO8V1ZeuEdJNOqZyg=
 github.com/google/go-cmp v0.5.8/go.mod h1:17dUlkBOakJ0+DkrSSNjCkIjxS6bF9zb3elmeNGIjoY=
 github.com/pelletier/go-toml/v2 v2.2.4 h1:mye9XuhQ6gvn5h28+VilKrrPoQVanw5PMw/TB0t5Ec4=

@@ -57,7 +57,7 @@ func conversionContractCases() []conversionContractCase {
 				`{"type":"user","sessionId":"claude-contract","timestamp":"2026-09-01T10:02:00Z","uuid":"c3","parentUuid":"c2","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"ct1","content":"file.txt","is_error":true}]}}`,
 			}, "\n"),
 			unified: Detail{
-				ID: "claude-contract", Agent: "claude", Workspace: "/work", Title: "run ls",
+				ID: "claude-contract", Provider: "claude", Workspace: "/work", Title: "run ls",
 				StartedAt: "2026-09-01T10:00:00Z", UpdatedAt: "2026-09-01T10:02:00Z", MessageCount: 3,
 				Messages: []Message{
 					{ID: "c1", Role: "user", Content: []ContentBlock{{Type: "text", Text: "run ls"}}, Timestamp: "2026-09-01T10:00:00Z"},
@@ -66,7 +66,7 @@ func conversionContractCases() []conversionContractCase {
 						{Type: "text", Text: "checking"},
 						{Type: "tool_use", ID: "ct1", Name: "shell", Input: map[string]any{"cmd": "ls"}},
 					}, Timestamp: "2026-09-01T10:01:00Z", Model: "claude-4", StopReason: "tool_use"},
-					{ID: "claude-2", ParentID: "c2", Role: "tool", Content: []ContentBlock{{Type: "text", Text: "file.txt"}}, Timestamp: "2026-09-01T10:02:00Z", ToolUseID: "ct1", ToolName: "shell", IsError: true},
+					{ID: "claude-2", ParentID: "c2", Role: "tool", Result: "file.txt", Timestamp: "2026-09-01T10:02:00Z", ToolUseID: "ct1", ToolName: "shell", IsError: true},
 				},
 			},
 		},
@@ -80,7 +80,7 @@ func conversionContractCases() []conversionContractCase {
 				`{"type":"response_item","timestamp":"2026-09-01T11:04:00Z","payload":{"type":"function_call_output","call_id":"xt1","output":"file.txt"}}`,
 			}, "\n"),
 			unified: Detail{
-				ID: "codex-contract", Agent: "codex", IsSubagent: true, Workspace: "/work", Title: "run ls",
+				ID: "codex-contract", Provider: "codex", IsSubagent: true, Workspace: "/work", Title: "run ls",
 				StartedAt: "2026-09-01T11:00:00Z", UpdatedAt: "2026-09-01T11:04:00Z", MessageCount: 3,
 				Messages: []Message{
 					{ID: "codex-0", Role: "user", Content: []ContentBlock{{Type: "text", Text: "run ls"}}, Timestamp: "2026-09-01T11:01:00Z"},
@@ -88,7 +88,7 @@ func conversionContractCases() []conversionContractCase {
 						{Type: "text", Text: "checking"},
 						{Type: "tool_use", ID: "xt1", Name: "shell", Input: map[string]any{"cmd": "ls"}},
 					}, Timestamp: "2026-09-01T11:02:00Z"},
-					{ID: "codex-2", ParentID: "x2", Role: "tool", Content: []ContentBlock{{Type: "text", Text: "file.txt"}}, Timestamp: "2026-09-01T11:04:00Z", ToolUseID: "xt1", ToolName: "shell"},
+					{ID: "codex-2", ParentID: "x2", Role: "tool", Result: "file.txt", Timestamp: "2026-09-01T11:04:00Z", ToolUseID: "xt1", ToolName: "shell"},
 				},
 			},
 		},
@@ -96,7 +96,7 @@ func conversionContractCases() []conversionContractCase {
 			agent:  "gemini",
 			native: `{"sessionId":"gemini-contract","kind":"subagent","summary":"Inspect file","startTime":"2026-09-01T12:00:00Z","lastUpdated":"2026-09-01T12:02:00Z","messages":[{"type":"user","content":"run ls","timestamp":"2026-09-01T12:00:00Z"},{"type":"gemini","content":"checking","toolCalls":[{"id":"gt1","name":"read_file","args":{"path":"file.txt"},"status":"success","result":[{"functionResponse":{"id":"gt1","name":"read_file","response":{"output":"contents"}}}]}],"timestamp":"2026-09-01T12:01:00Z"}]}`,
 			unified: Detail{
-				ID: "gemini-contract", Agent: "gemini", IsSubagent: true, Title: "Inspect file",
+				ID: "gemini-contract", Provider: "gemini", IsSubagent: true, Title: "Inspect file",
 				StartedAt: "2026-09-01T12:00:00Z", UpdatedAt: "2026-09-01T12:02:00Z", MessageCount: 3,
 				Messages: []Message{
 					{ID: "gemini-0", Role: "user", Content: []ContentBlock{{Type: "text", Text: "run ls"}}, Timestamp: "2026-09-01T12:00:00Z"},
@@ -104,7 +104,7 @@ func conversionContractCases() []conversionContractCase {
 						{Type: "text", Text: "checking"},
 						{Type: "tool_use", ID: "gt1", Name: "read_file", Input: map[string]any{"path": "file.txt"}},
 					}, Timestamp: "2026-09-01T12:01:00Z"},
-					{ID: "gemini-2", ParentID: "gemini-1", Role: "tool", Content: []ContentBlock{{Type: "text", Text: "contents"}}, Timestamp: "2026-09-01T12:01:00Z", ToolUseID: "gt1", ToolName: "read_file"},
+					{ID: "gemini-2", ParentID: "gemini-1", Role: "tool", Result: "contents", Timestamp: "2026-09-01T12:01:00Z", ToolUseID: "gt1", ToolName: "read_file"},
 				},
 			},
 		},
@@ -112,12 +112,12 @@ func conversionContractCases() []conversionContractCase {
 			agent: "pi",
 			native: strings.Join([]string{
 				`{"type":"session","id":"pi-contract","cwd":"/work","timestamp":"2026-09-01T13:00:00Z"}`,
-				`{"type":"message","message":{"id":"p1","role":"user","timestamp":"2026-09-01T13:00:00Z","content":[{"type":"text","text":"run ls"}]}}`,
-				`{"type":"message","message":{"id":"p2","parentId":"p1","role":"assistant","timestamp":"2026-09-01T13:01:00Z","model":"pi-model","content":[{"type":"thinking","thinking":"inspect","thinkingSignature":"sig-pi"},{"type":"text","text":"checking"},{"type":"toolCall","toolCallId":"pt1","toolName":"shell","input":{"cmd":"ls"}}]}}`,
-				`{"type":"message","message":{"role":"toolResult","timestamp":"2026-09-01T13:02:00Z","toolCallId":"pt1","toolName":"shell","content":[{"type":"text","text":"file.txt"}],"isError":true}}`,
+				`{"type":"message","id":"p1","parentId":null,"timestamp":"2026-09-01T13:00:00Z","message":{"role":"user","timestamp":1788267600000,"content":[{"type":"text","text":"run ls"}]}}`,
+				`{"type":"message","id":"p2","parentId":"p1","timestamp":"2026-09-01T13:01:00Z","message":{"role":"assistant","timestamp":1788267660000,"model":"pi-model","stopReason":"toolUse","content":[{"type":"thinking","thinking":"inspect","thinkingSignature":"sig-pi"},{"type":"text","text":"checking"},{"type":"toolCall","id":"pt1","name":"shell","arguments":{"cmd":"ls"}}]}}`,
+				`{"type":"message","id":"p3","parentId":"p2","timestamp":"2026-09-01T13:02:00Z","message":{"role":"toolResult","timestamp":1788267720000,"toolCallId":"pt1","toolName":"shell","content":[{"type":"text","text":"file.txt"}],"isError":true}}`,
 			}, "\n"),
 			unified: Detail{
-				ID: "pi-contract", Agent: "pi", Workspace: "/work", Title: "run ls",
+				ID: "pi-contract", Provider: "pi", Workspace: "/work", Title: "run ls",
 				StartedAt: "2026-09-01T13:00:00Z", UpdatedAt: "2026-09-01T13:02:00Z", MessageCount: 3,
 				Messages: []Message{
 					{ID: "p1", Role: "user", Content: []ContentBlock{{Type: "text", Text: "run ls"}}, Timestamp: "2026-09-01T13:00:00Z"},
@@ -125,8 +125,8 @@ func conversionContractCases() []conversionContractCase {
 						{Type: "thinking", Text: "inspect", Signature: "sig-pi"},
 						{Type: "text", Text: "checking"},
 						{Type: "tool_use", ID: "pt1", Name: "shell", Input: map[string]any{"cmd": "ls"}},
-					}, Timestamp: "2026-09-01T13:01:00Z", Model: "pi-model"},
-					{ID: "pi-2", ParentID: "p2", Role: "tool", Content: []ContentBlock{{Type: "text", Text: "file.txt"}}, Timestamp: "2026-09-01T13:02:00Z", ToolUseID: "pt1", ToolName: "shell", IsError: true},
+					}, Timestamp: "2026-09-01T13:01:00Z", Model: "pi-model", StopReason: "toolUse"},
+					{ID: "p3", ParentID: "p2", Role: "tool", Result: []any{map[string]any{"type": "text", "text": "file.txt"}}, Timestamp: "2026-09-01T13:02:00Z", ToolUseID: "pt1", ToolName: "shell", IsError: true},
 				},
 			},
 		},

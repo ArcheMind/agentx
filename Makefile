@@ -1,7 +1,10 @@
 .PHONY: fmt check test test-subagents smoke-subagents smoke-subagents-live audit build install smoke smoke-live smoke-clean smoke-hooks-live smoke-skills-clean smoke-skills-live verify clean
 .PHONY: smoke-mcp-management smoke-mcp-live smoke-mcp-channel smoke-mcp-host-live verify-mcp-host-evidence test-mcp-race test-mcp-syntax
-.PHONY: smoke-mcp-contract
+.PHONY: smoke-mcp-contract smoke-transcript-fidelity smoke-transcript-cross
 .PHONY: smoke-mcp-profiles smoke-profiles smoke-mcp-policy-live smoke-mcp-effort-live smoke-mcp-isolation-live
+
+# Schema validation reuses the protocol module's ajv; empty when the module dir is unresolvable, and the smoke reports it skipped.
+AGENTX_PROTOCOL_DIR ?= $(shell go list -m -f '{{.Dir}}' github.com/ArcheMind/agentx-protocol 2>/dev/null)
 
 fmt:
 	gofmt -w cmd internal
@@ -54,6 +57,12 @@ smoke-mcp-profiles: build
 smoke-profiles: build
 	node test/smoke/profiles.mjs "$(CURDIR)/bin/ax"
 
+smoke-transcript-fidelity: build
+	node test/smoke/transcript-fidelity.mjs "$(CURDIR)/bin/ax" "$(AGENTX_PROTOCOL_DIR)"
+
+smoke-transcript-cross: build
+	node test/smoke/transcript-cross.mjs "$(CURDIR)/bin/ax"
+
 smoke-mcp-policy-live: build
 	node test/smoke/mcp-policy-live.mjs "$(CURDIR)/bin/ax"
 
@@ -80,6 +89,9 @@ smoke: build
 	./bin/ax agent install codex --dry-run >/dev/null
 	./bin/ax --yaml auth login codex --dry-run >/dev/null
 	./bin/ax agent run codex --model smoke-test --dry-run >/dev/null
+	echo '{"summary":{"id":"test","provider":"claude","message_count":0},"messages":[]}' | ./bin/ax convert to claude >/dev/null
+	node test/smoke/transcript-fidelity.mjs "$(CURDIR)/bin/ax" "$(AGENTX_PROTOCOL_DIR)" >/dev/null
+	node test/smoke/transcript-cross.mjs "$(CURDIR)/bin/ax" >/dev/null
 
 smoke-live: build
 	./bin/ax --json agent models codex >/dev/null
