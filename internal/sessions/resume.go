@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-func WriteSessionFile(detail Detail, agentID, dir, homeDir string) (string, error) {
+func WriteSessionFile(detail Session, agentID, dir, homeDir string) (string, error) {
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return "", fmt.Errorf("create resume directory: %w", err)
 	}

@@ -31,7 +31,7 @@ func testSerializeClaudeRoundTrip(t *testing.T) {
 		`{"type":"assistant","sessionId":"s1","timestamp":"2026-09-01T10:03:00Z","uuid":"u4","parentUuid":"u3","message":{"role":"assistant","model":"claude-4","stop_reason":"end_turn","content":[{"type":"text","text":"done listing"}]}}`,
 	}, "\n"))
 
-	detail := parseAndSerializeRoundTrip(t, home, "s1", "claude", func(detail Detail) string {
+	detail := parseAndSerializeRoundTrip(t, home, "s1", "claude", func(detail Session) string {
 		records := SerializeClaude(detail)
 		return marshalJSONL(t, records)
 	}, func(home2 string, content string) {
@@ -71,7 +71,7 @@ func testSerializeCodexRoundTrip(t *testing.T) {
 		`{"type":"response_item","timestamp":"2026-09-01T11:05:00Z","payload":{"type":"message","role":"assistant","id":"a2","content":[{"type":"output_text","text":"done"}]}}`,
 	}, "\n"))
 
-	detail := parseAndSerializeRoundTrip(t, home, "cx1", "codex", func(detail Detail) string {
+	detail := parseAndSerializeRoundTrip(t, home, "cx1", "codex", func(detail Session) string {
 		records := SerializeCodex(detail)
 		return marshalJSONL(t, records)
 	}, func(home2 string, content string) {
@@ -170,7 +170,7 @@ func testSerializePiRoundTrip(t *testing.T) {
 		`{"type":"message","id":"m4","parentId":"m3","timestamp":"2026-09-01T14:03:00Z","message":{"role":"assistant","timestamp":1788271380000,"stopReason":"stop","content":[{"type":"text","text":"done"}]}}`,
 	}, "\n"))
 
-	detail := parseAndSerializeRoundTrip(t, home, "pi1", "pi", func(detail Detail) string {
+	detail := parseAndSerializeRoundTrip(t, home, "pi1", "pi", func(detail Session) string {
 		records := SerializePi(detail)
 		return marshalJSONL(t, records)
 	}, func(home2 string, content string) {
@@ -263,9 +263,9 @@ func testSerializeOpenCodeRoundTrip(t *testing.T) {
 func parseAndSerializeRoundTrip(
 	t *testing.T,
 	home, id, agent string,
-	serialize func(Detail) string,
+	serialize func(Session) string,
 	writeBack func(home2 string, content string),
-) Detail {
+) Session {
 	t.Helper()
 	service := Service{HomeDir: home}
 	original, err := service.Info(id, agent)
@@ -390,7 +390,7 @@ func blockTypes(blocks []ContentBlock) []string {
 
 // fidelityCase round-trips one native fixture through parse -> serialize -> parse
 // and hands back the first and second parse for provider-specific assertions.
-func fidelityRoundTrip(t *testing.T, provider, relPath, native string, serialize func(Detail) string) (Detail, Detail, string) {
+func fidelityRoundTrip(t *testing.T, provider, relPath, native string, serialize func(Session) string) (Session, Session, string) {
 	t.Helper()
 	home := t.TempDir()
 	writeFixture(t, filepath.Join(home, relPath), native)
@@ -417,7 +417,7 @@ func TestClaudeFidelityRoundTrip(t *testing.T) {
 		`{"type":"assistant","sessionId":"fid","timestamp":"2026-09-01T10:01:00Z","uuid":"a1","parentUuid":"s1","message":{"role":"assistant","content":[{"type":"tool_use","id":"tu-1","name":"Read","input":{"p":"x"}}]}}`,
 		`{"type":"user","sessionId":"fid","timestamp":"2026-09-01T10:02:00Z","uuid":"r1","parentUuid":"a1","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tu-1","content":[{"type":"text","text":"hello"},{"type":"image","source":{"type":"base64","media_type":"image/png","data":"BBBB"}}]}]}}`,
 	}, "\n")
-	original, again, _ := fidelityRoundTrip(t, "claude", ".claude/projects/p/s.jsonl", native, func(d Detail) string { return marshalJSONL(t, SerializeClaude(d)) })
+	original, again, _ := fidelityRoundTrip(t, "claude", ".claude/projects/p/s.jsonl", native, func(d Session) string { return marshalJSONL(t, SerializeClaude(d)) })
 	assertMessageRoles(t, original.Messages, []string{"user", "system", "assistant", "tool"})
 	if original.Messages[0].Content[1].Type != "image" || original.Messages[0].Content[1].Source.(map[string]any)["data"] != "AAAA" {
 		t.Fatalf("image block = %#v", original.Messages[0].Content)
@@ -446,7 +446,7 @@ func TestCodexFidelityRoundTrip(t *testing.T) {
 		`{"type":"response_item","timestamp":"2026-09-01T11:05:00Z","payload":{"type":"function_call","call_id":"c2","name":"send_message","arguments":"{\"to\":\"x\"}"}}`,
 		`{"type":"response_item","timestamp":"2026-09-01T11:06:00Z","payload":{"type":"function_call_output","call_id":"c2","output":"sent"}}`,
 	}, "\n")
-	original, again, out := fidelityRoundTrip(t, "codex", ".codex/sessions/2026/09/01/s.jsonl", native, func(d Detail) string { return marshalJSONL(t, SerializeCodex(d)) })
+	original, again, out := fidelityRoundTrip(t, "codex", ".codex/sessions/2026/09/01/s.jsonl", native, func(d Session) string { return marshalJSONL(t, SerializeCodex(d)) })
 	assertMessageRoles(t, original.Messages, []string{"system", "user", "assistant", "tool", "assistant", "tool"})
 	blocks := original.Messages[2].Content
 	assertBlockTypes(t, blocks, []string{"thinking", "thinking", "tool_use"})
@@ -499,7 +499,7 @@ func TestPiFidelityRoundTrip(t *testing.T) {
 		`{"type":"message","id":"aaaa0003","parentId":"aaaa0002","timestamp":"2026-09-01T14:02:00Z","message":{"role":"toolResult","timestamp":1788271320000,"toolCallId":"call|fc_1","toolName":"bash","content":[{"type":"text","text":"out"}],"isError":false}}`,
 		`{"type":"message","id":"aaaa0004","parentId":"aaaa0003","timestamp":"2026-09-01T14:03:00Z","message":{"role":"assistant","timestamp":1788271380000,"stopReason":"stop","content":[{"type":"text","text":"done"}]}}`,
 	}, "\n")
-	original, again, out := fidelityRoundTrip(t, "pi", ".pi/agent/sessions/p/s.jsonl", native, func(d Detail) string { return marshalJSONL(t, SerializePi(d)) })
+	original, again, out := fidelityRoundTrip(t, "pi", ".pi/agent/sessions/p/s.jsonl", native, func(d Session) string { return marshalJSONL(t, SerializePi(d)) })
 	ids := []string{"aaaa0001", "aaaa0002", "aaaa0003", "aaaa0004"}
 	for i, m := range again.Messages {
 		if m.ID != ids[i] {

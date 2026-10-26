@@ -44,7 +44,7 @@ func TestUnifiedTranscriptToNativeFormats(t *testing.T) {
 type conversionContractCase struct {
 	agent   string
 	native  string
-	unified Detail
+	unified Session
 }
 
 func conversionContractCases() []conversionContractCase {
@@ -56,7 +56,7 @@ func conversionContractCases() []conversionContractCase {
 				`{"type":"assistant","sessionId":"claude-contract","timestamp":"2026-09-01T10:01:00Z","uuid":"c2","parentUuid":"c1","message":{"role":"assistant","model":"claude-4","stop_reason":"tool_use","content":[{"type":"thinking","thinking":"inspect","signature":"sig-claude"},{"type":"text","text":"checking"},{"type":"tool_use","id":"ct1","name":"shell","input":{"cmd":"ls"}}]}}`,
 				`{"type":"user","sessionId":"claude-contract","timestamp":"2026-09-01T10:02:00Z","uuid":"c3","parentUuid":"c2","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"ct1","content":"file.txt","is_error":true}]}}`,
 			}, "\n"),
-			unified: Detail{
+			unified: Session{
 				ID: "claude-contract", Provider: "claude", Workspace: "/work", Title: "run ls",
 				StartedAt: "2026-09-01T10:00:00Z", UpdatedAt: "2026-09-01T10:02:00Z", MessageCount: 3,
 				Messages: []Message{
@@ -79,7 +79,7 @@ func conversionContractCases() []conversionContractCase {
 				`{"type":"response_item","timestamp":"2026-09-01T11:03:00Z","payload":{"type":"function_call","call_id":"xt1","name":"shell","arguments":"{\"cmd\":\"ls\"}"}}`,
 				`{"type":"response_item","timestamp":"2026-09-01T11:04:00Z","payload":{"type":"function_call_output","call_id":"xt1","output":"file.txt"}}`,
 			}, "\n"),
-			unified: Detail{
+			unified: Session{
 				ID: "codex-contract", Provider: "codex", IsSubagent: true, Workspace: "/work", Title: "run ls",
 				StartedAt: "2026-09-01T11:00:00Z", UpdatedAt: "2026-09-01T11:04:00Z", MessageCount: 3,
 				Messages: []Message{
@@ -95,7 +95,7 @@ func conversionContractCases() []conversionContractCase {
 		{
 			agent:  "gemini",
 			native: `{"sessionId":"gemini-contract","kind":"subagent","summary":"Inspect file","startTime":"2026-09-01T12:00:00Z","lastUpdated":"2026-09-01T12:02:00Z","messages":[{"type":"user","content":"run ls","timestamp":"2026-09-01T12:00:00Z"},{"type":"gemini","content":"checking","toolCalls":[{"id":"gt1","name":"read_file","args":{"path":"file.txt"},"status":"success","result":[{"functionResponse":{"id":"gt1","name":"read_file","response":{"output":"contents"}}}]}],"timestamp":"2026-09-01T12:01:00Z"}]}`,
-			unified: Detail{
+			unified: Session{
 				ID: "gemini-contract", Provider: "gemini", IsSubagent: true, Title: "Inspect file",
 				StartedAt: "2026-09-01T12:00:00Z", UpdatedAt: "2026-09-01T12:02:00Z", MessageCount: 3,
 				Messages: []Message{
@@ -116,7 +116,7 @@ func conversionContractCases() []conversionContractCase {
 				`{"type":"message","id":"p2","parentId":"p1","timestamp":"2026-09-01T13:01:00Z","message":{"role":"assistant","timestamp":1788267660000,"model":"pi-model","stopReason":"toolUse","content":[{"type":"thinking","thinking":"inspect","thinkingSignature":"sig-pi"},{"type":"text","text":"checking"},{"type":"toolCall","id":"pt1","name":"shell","arguments":{"cmd":"ls"}}]}}`,
 				`{"type":"message","id":"p3","parentId":"p2","timestamp":"2026-09-01T13:02:00Z","message":{"role":"toolResult","timestamp":1788267720000,"toolCallId":"pt1","toolName":"shell","content":[{"type":"text","text":"file.txt"}],"isError":true}}`,
 			}, "\n"),
-			unified: Detail{
+			unified: Session{
 				ID: "pi-contract", Provider: "pi", Workspace: "/work", Title: "run ls",
 				StartedAt: "2026-09-01T13:00:00Z", UpdatedAt: "2026-09-01T13:02:00Z", MessageCount: 3,
 				Messages: []Message{
@@ -133,7 +133,7 @@ func conversionContractCases() []conversionContractCase {
 	}
 }
 
-func parseNativeContract(t *testing.T, agent, native string) Detail {
+func parseNativeContract(t *testing.T, agent, native string) Session {
 	t.Helper()
 	var records []map[string]any
 	if agent == "gemini" {
@@ -158,7 +158,7 @@ func parseNativeContract(t *testing.T, agent, native string) Detail {
 	return detail
 }
 
-func assertSessionContract(t *testing.T, got, want Detail) {
+func assertSessionContract(t *testing.T, got, want Session) {
 	t.Helper()
 	got.Source = ""
 	if !reflect.DeepEqual(got, want) {

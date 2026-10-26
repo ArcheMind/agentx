@@ -111,9 +111,9 @@ type FileEntry struct {
 	Content map[string]any `json:"content"`
 }
 
-// SerializeClaude converts a unified Detail back to Claude Code's native JSONL records.
+// SerializeClaude converts a unified Session back to Claude Code's native JSONL records.
 // See docs/native-rollout-protocols/ for the wire format reference.
-func SerializeClaude(detail Detail) []map[string]any {
+func SerializeClaude(detail Session) []map[string]any {
 	var records []map[string]any
 	claudeEnvelope := func(recType, uuid, parentUuid, ts string) map[string]any {
 		return map[string]any{
@@ -228,10 +228,10 @@ func claudeSerializeUserContent(blocks []ContentBlock) any {
 	return result
 }
 
-// SerializeCodex converts a unified Detail back to Codex CLI's native JSONL records.
+// SerializeCodex converts a unified Session back to Codex CLI's native JSONL records.
 // It emits both ResponseItem records (model context) and EventMsg records (TUI display)
 // per docs/native-rollout-protocols/codex-0.163.0/PROTOCOL.md.
-func SerializeCodex(detail Detail) []map[string]any {
+func SerializeCodex(detail Session) []map[string]any {
 	meta := map[string]any{
 		"id":          detail.ID,
 		"session_id":  detail.ID,
@@ -389,8 +389,8 @@ func SerializeCodex(detail Detail) []map[string]any {
 	return records
 }
 
-// SerializeGemini converts a unified Detail back to Gemini CLI's native JSON format.
-func SerializeGemini(detail Detail) map[string]any {
+// SerializeGemini converts a unified Session back to Gemini CLI's native JSON format.
+func SerializeGemini(detail Session) map[string]any {
 	toolResults := map[string]Message{}
 	consumed := map[string]bool{}
 	for _, m := range detail.Messages {
@@ -482,10 +482,10 @@ func SerializeGemini(detail Detail) map[string]any {
 	return result
 }
 
-// SerializePi converts a unified Detail back to Pi's native JSONL records.
+// SerializePi converts a unified Session back to Pi's native JSONL records.
 // Pi keeps id, parentId and the ISO timestamp on the record itself; the
 // message carries epoch-millis timestamps.
-func SerializePi(detail Detail) []map[string]any {
+func SerializePi(detail Session) []map[string]any {
 	records := []map[string]any{{
 		"type":      "session",
 		"version":   3,
@@ -588,10 +588,10 @@ func SerializePi(detail Detail) []map[string]any {
 	return records
 }
 
-// SerializeOpenCode converts a unified Detail to OpenCode's file-per-message-per-part layout.
+// SerializeOpenCode converts a unified Session to OpenCode's file-per-message-per-part layout.
 // Returns the session info object and a flat list of file entries to write.
 // basePath is the session storage root (e.g. .../storage/session/).
-func SerializeOpenCode(detail Detail, basePath string) (map[string]any, []FileEntry) {
+func SerializeOpenCode(detail Session, basePath string) (map[string]any, []FileEntry) {
 	info := map[string]any{
 		"id":    detail.ID,
 		"title": detail.Title,

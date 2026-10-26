@@ -819,23 +819,23 @@ func (a App) sessionImport(args []string) error {
 	return nil
 }
 
-func (a App) readTranscript(path string) (sessions.Detail, error) {
+func (a App) readTranscript(path string) (sessions.Session, error) {
 	var data []byte
 	var err error
 	if path == "" || path == "-" {
 		data, err = io.ReadAll(a.Stdin)
 		if err != nil {
-			return sessions.Detail{}, fmt.Errorf("read stdin: %w", err)
+			return sessions.Session{}, fmt.Errorf("read stdin: %w", err)
 		}
 	} else {
 		data, err = os.ReadFile(path)
 		if err != nil {
-			return sessions.Detail{}, fmt.Errorf("read transcript file: %w", err)
+			return sessions.Session{}, fmt.Errorf("read transcript file: %w", err)
 		}
 	}
-	var detail sessions.Detail
+	var detail sessions.Session
 	if err := json.Unmarshal(data, &detail); err != nil {
-		return sessions.Detail{}, fmt.Errorf("parse unified transcript JSON: %w", err)
+		return sessions.Session{}, fmt.Errorf("parse unified transcript JSON: %w", err)
 	}
 	return detail, nil
 }
@@ -853,10 +853,10 @@ func (a App) resumeTranscriptFile(ctx context.Context, path string) error {
 		}
 	}
 	reader := bufio.NewReader(a.Stdin)
-	return a.resumeDetailInteractive(ctx, reader, detail)
+	return a.resumeSessionInteractive(ctx, reader, detail)
 }
 
-func transcriptFileName(detail sessions.Detail) string {
+func transcriptFileName(detail sessions.Session) string {
 	mapped := strings.Map(func(r rune) rune {
 		if unicode.IsLetter(r) || unicode.IsDigit(r) {
 			return unicode.ToLower(r)
@@ -881,7 +881,7 @@ func transcriptFileName(detail sessions.Detail) string {
 	return strings.Join(parts, "-") + ".json"
 }
 
-func (a App) resumeSession(ctx context.Context, agent runtime.Agent, detail sessions.Detail, workspace, model string, dryRun bool) error {
+func (a App) resumeSession(ctx context.Context, agent runtime.Agent, detail sessions.Session, workspace, model string, dryRun bool) error {
 	var err error
 	if workspace == "" {
 		workspace = detail.Workspace
@@ -1075,7 +1075,7 @@ func (a App) convertTo(provider string) error {
 	if err != nil {
 		return fmt.Errorf("read stdin: %w", err)
 	}
-	var detail sessions.Detail
+	var detail sessions.Session
 	if err := json.Unmarshal(data, &detail); err != nil {
 		return fmt.Errorf("parse unified JSON from stdin: %w", err)
 	}

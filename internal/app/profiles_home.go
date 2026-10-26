@@ -190,7 +190,7 @@ func (a App) resumeChosenSession(ctx context.Context, reader *bufio.Reader, sele
 	if err != nil {
 		return err
 	}
-	return a.resumeDetailInteractive(ctx, reader, detail)
+	return a.resumeSessionInteractive(ctx, reader, detail)
 }
 
 func (a App) exportChosenSession(selected sessions.Summary) error {
@@ -211,7 +211,7 @@ func (a App) exportChosenSession(selected sessions.Summary) error {
 	return nil
 }
 
-func (a App) resumeDetailInteractive(ctx context.Context, reader *bufio.Reader, detail sessions.Detail) error {
+func (a App) resumeSessionInteractive(ctx context.Context, reader *bufio.Reader, detail sessions.Session) error {
 	agents := make([]runtime.Agent, 0)
 	for _, agent := range a.Registry.All() {
 		if _, err := exec.LookPath(agent.Binary); err == nil {

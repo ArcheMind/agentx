@@ -862,15 +862,15 @@ func TestResumeFlagValidation(t *testing.T) {
 }
 
 func TestTranscriptFileName(t *testing.T) {
-	name := transcriptFileName(sessions.Detail{ID: "abcdef1234567890", Provider: "claude", Title: "Fix Login Bug!"})
+	name := transcriptFileName(sessions.Session{ID: "abcdef1234567890", Provider: "claude", Title: "Fix Login Bug!"})
 	if name != "claude-fix-login-bug-abcdef12.json" {
 		t.Fatalf("name = %q", name)
 	}
-	name = transcriptFileName(sessions.Detail{ID: "x1", Provider: "codex", Title: "修复 登录"})
+	name = transcriptFileName(sessions.Session{ID: "x1", Provider: "codex", Title: "修复 登录"})
 	if name != "codex-修复-登录-x1.json" {
 		t.Fatalf("unicode name = %q", name)
 	}
-	if name = transcriptFileName(sessions.Detail{Provider: "pi"}); name != "pi.json" {
+	if name = transcriptFileName(sessions.Session{Provider: "pi"}); name != "pi.json" {
 		t.Fatalf("bare name = %q", name)
 	}
 }

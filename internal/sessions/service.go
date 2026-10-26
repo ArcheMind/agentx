@@ -29,7 +29,7 @@ type Agent struct {
 type (
 	ContentBlock = transcript.ContentBlock
 	Message      = transcript.Message
-	Detail       = transcript.Session
+	Session      = transcript.Session
 )
 
 type Summary struct {
@@ -44,7 +44,7 @@ type Summary struct {
 	Source       string `json:"source" yaml:"source"`
 }
 
-func summaryOf(detail Detail) Summary {
+func summaryOf(detail Session) Summary {
 	return Summary{
 		ID: detail.ID, Agent: detail.Provider, IsSubagent: detail.IsSubagent,
 		Workspace: detail.Workspace, Title: detail.Title,
@@ -157,21 +157,21 @@ func (s Service) List(options ListOptions) ([]Summary, error) {
 	return limited, nil
 }
 
-func (s Service) Info(id, source string) (Detail, error) {
+func (s Service) Info(id, source string) (Session, error) {
 	if id == "" {
-		return Detail{}, errors.New("session ID is required")
+		return Session{}, errors.New("session ID is required")
 	}
 	if source != "" && agentSpecByID(source) == nil {
-		return Detail{}, fmt.Errorf("unknown session agent %q", source)
+		return Session{}, fmt.Errorf("unknown session agent %q", source)
 	}
-	var matches []Detail
+	var matches []Session
 	for _, spec := range agentSpecs {
 		if source != "" && spec.id != source {
 			continue
 		}
 		details, err := spec.load(s.HomeDir)
 		if err != nil {
-			return Detail{}, fmt.Errorf("load %s sessions: %w", spec.id, err)
+			return Session{}, fmt.Errorf("load %s sessions: %w", spec.id, err)
 		}
 		for _, detail := range details {
 			if detail.ID == id || strings.HasPrefix(detail.ID, id) {
@@ -180,10 +180,10 @@ func (s Service) Info(id, source string) (Detail, error) {
 		}
 	}
 	if len(matches) == 0 {
-		return Detail{}, fmt.Errorf("session %q was not found", id)
+		return Session{}, fmt.Errorf("session %q was not found", id)
 	}
 	if len(matches) > 1 {
-		return Detail{}, fmt.Errorf("session ID %q is ambiguous; pass --source <agent>", id)
+		return Session{}, fmt.Errorf("session ID %q is ambiguous; pass --source <agent>", id)
 	}
 	return matches[0], nil
 }
@@ -200,7 +200,7 @@ type agentSpec struct {
 	name   string
 	binary string
 	root   func(string) string
-	load   func(string) ([]Detail, error)
+	load   func(string) ([]Session, error)
 }
 
 var agentSpecs = []agentSpec{
@@ -220,7 +220,7 @@ func agentSpecByID(id string) *agentSpec {
 	return nil
 }
 
-func loadClaude(home string) ([]Detail, error) {
+func loadClaude(home string) ([]Session, error) {
 	root, err := loadJSONLGlob(filepath.Join(home, ".claude", "projects", "*", "*.jsonl"), parseClaude)
 	if err != nil {
 		return nil, err
@@ -234,7 +234,7 @@ func loadClaude(home string) ([]Detail, error) {
 	return details, nil
 }
 
-func parseClaude(path string, records []map[string]any) (Detail, bool) {
+func parseClaude(path string, records []map[string]any) (Session, bool) {
 	detail := newDetail("claude", path)
 	var lastID string
 	for _, record := range records {
@@ -357,12 +357,12 @@ func parseClaude(path string, records []map[string]any) (Detail, bool) {
 	return finishDetail(detail)
 }
 
-func loadCodex(home string) ([]Detail, error) {
+func loadCodex(home string) ([]Session, error) {
 	pattern := filepath.Join(home, ".codex", "sessions", "*", "*", "*", "*.jsonl")
 	return loadJSONLGlob(pattern, parseCodex)
 }
 
-func parseCodex(path string, records []map[string]any) (Detail, bool) {
+func parseCodex(path string, records []map[string]any) (Session, bool) {
 	detail := newDetail("codex", path)
 	// Track function_call names by call_id for tool result messages
 	callNames := map[string]string{}
@@ -484,13 +484,13 @@ func parseCodex(path string, records []map[string]any) (Detail, bool) {
 	return finishDetail(detail)
 }
 
-func loadGemini(home string) ([]Detail, error) {
+func loadGemini(home string) ([]Session, error) {
 	pattern := filepath.Join(home, ".gemini", "tmp", "*", "chats", "session-*.json")
 	paths, err := filepath.Glob(pattern)
 	if err != nil {
 		return nil, err
 	}
-	var details []Detail
+	var details []Session
 	for _, path := range paths {
 		data, err := os.ReadFile(path)
 		if err != nil {
@@ -515,12 +515,12 @@ func loadGemini(home string) ([]Detail, error) {
 	return details, nil
 }
 
-func loadPi(home string) ([]Detail, error) {
+func loadPi(home string) ([]Session, error) {
 	pattern := filepath.Join(home, ".pi", "agent", "sessions", "*", "*.jsonl")
 	return loadJSONLGlob(pattern, parsePi)
 }
 
-func parsePi(path string, records []map[string]any) (Detail, bool) {
+func parsePi(path string, records []map[string]any) (Session, bool) {
 	detail := newDetail("pi", path)
 	var lastID string
 	for _, record := range records {
@@ -621,13 +621,13 @@ func parsePi(path string, records []map[string]any) (Detail, bool) {
 	return finishDetail(detail)
 }
 
-func loadOpenCode(home string) ([]Detail, error) {
+func loadOpenCode(home string) ([]Session, error) {
 	pattern := filepath.Join(home, ".local", "share", "opencode", "project", "*", "storage", "session", "info", "*.json")
 	paths, err := filepath.Glob(pattern)
 	if err != nil {
 		return nil, err
 	}
-	var details []Detail
+	var details []Session
 	for _, path := range paths {
 		data, err := os.ReadFile(path)
 		if err != nil {
@@ -750,12 +750,12 @@ func loadOpenCode(home string) ([]Detail, error) {
 	return details, nil
 }
 
-func loadJSONLGlob(pattern string, parse func(string, []map[string]any) (Detail, bool)) ([]Detail, error) {
+func loadJSONLGlob(pattern string, parse func(string, []map[string]any) (Session, bool)) ([]Session, error) {
 	paths, err := filepath.Glob(pattern)
 	if err != nil {
 		return nil, err
 	}
-	var details []Detail
+	var details []Session
 	for _, path := range paths {
 		records, err := readJSONL(path)
 		if err != nil {
@@ -791,8 +791,8 @@ func readJSONL(path string) ([]map[string]any, error) {
 	return records, nil
 }
 
-func newDetail(agent, source string) Detail {
-	return Detail{Provider: agent, Source: source}
+func newDetail(agent, source string) Session {
+	return Session{Provider: agent, Source: source}
 }
 
 func codexSubagentSource(value any) bool {
@@ -801,7 +801,7 @@ func codexSubagentSource(value any) bool {
 	return ok
 }
 
-func updateTimeBounds(detail *Detail, timestamp string) {
+func updateTimeBounds(detail *Session, timestamp string) {
 	if detail.StartedAt == "" || timestamp != "" && timestamp < detail.StartedAt {
 		detail.StartedAt = timestamp
 	}
@@ -810,9 +810,9 @@ func updateTimeBounds(detail *Detail, timestamp string) {
 	}
 }
 
-func finishDetail(detail Detail) (Detail, bool) {
+func finishDetail(detail Session) (Session, bool) {
 	if detail.ID == "" {
-		return Detail{}, false
+		return Session{}, false
 	}
 	detail.MessageCount = len(detail.Messages)
 	if detail.Title == "" {
@@ -918,7 +918,7 @@ func mapContentBlocks(value any) []ContentBlock {
 	return blocks
 }
 
-func claudeToolNameByID(detail *Detail, toolUseID string) string {
+func claudeToolNameByID(detail *Session, toolUseID string) string {
 	for i := len(detail.Messages) - 1; i >= 0; i-- {
 		for _, b := range detail.Messages[i].Content {
 			if b.Type == "tool_use" && b.ID == toolUseID {
@@ -1077,7 +1077,7 @@ func timeValue(value any) string {
 	}
 }
 
-func sortDetails(details []Detail) {
+func sortDetails(details []Session) {
 	sort.SliceStable(details, func(i, j int) bool { return details[i].UpdatedAt > details[j].UpdatedAt })
 }
 
@@ -1092,7 +1092,7 @@ func cleanPath(path string) string {
 	return filepath.Clean(absolute)
 }
 
-func matchesWorkspace(detail Detail, workspace string) bool {
+func matchesWorkspace(detail Session, workspace string) bool {
 	if cleanPath(detail.Workspace) == workspace {
 		return true
 	}
@@ -1136,11 +1136,11 @@ func nonEmpty(values []string) []string {
 	return result
 }
 
-// ParseRecords parses raw records from a native agent format into a unified Detail.
+// ParseRecords parses raw records from a native agent format into a unified Session.
 // For JSONL agents (claude, codex, pi), records is the list of parsed JSON objects.
 // For JSON agents (gemini), records should contain a single top-level object.
 // For opencode, this returns false since opencode uses a file-per-message layout.
-func ParseRecords(agent string, records []map[string]any) (Detail, bool) {
+func ParseRecords(agent string, records []map[string]any) (Session, bool) {
 	switch agent {
 	case "claude":
 		return parseClaude("stdin", records)
@@ -1150,15 +1150,15 @@ func ParseRecords(agent string, records []map[string]any) (Detail, bool) {
 		return parsePi("stdin", records)
 	case "gemini":
 		if len(records) == 0 {
-			return Detail{}, false
+			return Session{}, false
 		}
 		return parseGeminiRecord(records[0])
 	default:
-		return Detail{}, false
+		return Session{}, false
 	}
 }
 
-func parseGeminiRecord(record map[string]any) (Detail, bool) {
+func parseGeminiRecord(record map[string]any) (Session, bool) {
 	detail := newDetail("gemini", "stdin")
 	detail.ID = stringValue(record["sessionId"])
 	detail.IsSubagent = stringValue(record["kind"]) == "subagent"
