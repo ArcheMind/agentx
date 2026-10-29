@@ -325,6 +325,7 @@ func SerializeCodex(detail Session) []map[string]any {
 					"payload": map[string]any{
 						"type":    "message",
 						"role":    "assistant",
+						"id":      m.ID,
 						"content": textBlocks,
 					},
 				})
@@ -349,6 +350,9 @@ func SerializeCodex(detail Session) []map[string]any {
 						summary = append(summary, map[string]any{"type": "summary_text", "text": b.Text})
 					}
 					payload := map[string]any{"type": "reasoning", "summary": summary}
+					if b.Signature != "" {
+						payload["encrypted_content"] = b.Signature
+					}
 					records = append(records, map[string]any{"type": "response_item", "timestamp": m.Timestamp, "payload": payload})
 				case "tool_use":
 					flushText()
