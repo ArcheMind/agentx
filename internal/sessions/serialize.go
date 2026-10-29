@@ -2,27 +2,12 @@ package sessions
 
 import (
 	"crypto/rand"
-	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"path/filepath"
 	"strings"
 	"time"
 )
-
-// codexCallIDMax is the maximum call_id length accepted by the OpenAI Responses API.
-const codexCallIDMax = 64
-
-// codexCallID returns id unchanged when it fits within codexCallIDMax, otherwise
-// deterministically shortens it with a SHA-256 prefix so that the same source id
-// always maps to the same shortened call_id within a session.
-func codexCallID(id string) string {
-	if len(id) <= codexCallIDMax {
-		return id
-	}
-	h := sha256.Sum256([]byte(id))
-	return "ax_" + hex.EncodeToString(h[:])[:codexCallIDMax-3]
-}
 
 // codexCustomTools are the Codex built-ins that rollouts record as
 // custom_tool_call (freeform input) instead of function_call.
@@ -356,7 +341,7 @@ func SerializeCodex(detail Session) []map[string]any {
 					records = append(records, map[string]any{"type": "response_item", "timestamp": m.Timestamp, "payload": payload})
 				case "tool_use":
 					flushText()
-					payload := map[string]any{"call_id": codexCallID(b.ID), "name": b.Name}
+					payload := map[string]any{"call_id": b.ID, "name": b.Name}
 					if codexCustomTools[b.Name] {
 						payload["type"] = "custom_tool_call"
 						payload["input"] = toolInputString(b.Input)
@@ -394,7 +379,7 @@ func SerializeCodex(detail Session) []map[string]any {
 				"timestamp": m.Timestamp,
 				"payload": map[string]any{
 					"type":    outputType,
-					"call_id": codexCallID(m.ToolUseID),
+					"call_id": m.ToolUseID,
 					"output":  codexOutput(m.Result),
 				},
 			})
