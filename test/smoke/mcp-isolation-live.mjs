@@ -20,9 +20,6 @@ function snapshot(){const files={};const walk=dir=>{for(const name of readdirSyn
 const before=snapshot()
 const codexHome=process.env.AX_MCP_CODEX_HOME??join(homedir(),'.codex'),piAgentDir=process.env.AX_MCP_PI_AGENT_DIR??join(homedir(),'.pi','agent')
 const codexModel=process.env.AX_MCP_CODEX_MODEL??'gpt-5.6-luna',piModel=process.env.AX_MCP_PI_MODEL??'openai-codex/gpt-5.6-luna'
-// Under isolation the only writable root is the worktree AgentX creates: no caller path string, such
-// as a case-variant spelling of the repository (same directory on default macOS APFS), reaches the sandbox.
-const repoAlias=join(base,'REPO')
 const profiles={'iso':['codex',codexModel],'iso-pi':['pi',piModel],'iso-badmodel':['codex','agentx-no-such-model']}
 for(const [name,[agent,model]] of Object.entries(profiles)){const dir=join(home,'.agentx','profiles',name);await mkdir(dir,{recursive:true});await writeFile(join(dir,'PROFILE.md'),`---\nagent: ${agent}\nmodel: ${model}\n${agent==='codex'?'effort: low\n':''}---\n\nIsolation acceptance ${name}\n`)}
 const child=spawn(binary,['mcp','serve'],{cwd,env:{...process.env,AX_SUBAGENT_HOME:home,AX_LOG:'debug',CODEX_HOME:codexHome,PI_CODING_AGENT_DIR:piAgentDir},stdio:['pipe','pipe','pipe']})
@@ -47,48 +44,29 @@ const shell=(cmd,marker)=>`Authorized isolation acceptance test ${marker}. Using
 const results={}
 try{
  const init=await rpc('initialize',{protocolVersion:'2024-11-05',capabilities:{},clientInfo:{name:'agentx-isolation-live-smoke',version:'1'}})
- assert(init.instructions.includes('Isolation: worktree supported')&&!/remote/i.test(init.instructions),'initialization does not expose isolation support or still mentions remote')
+ assert(init.instructions.includes('Isolation: worktree creates a new git worktree')&&!/remote/i.test(init.instructions),'initialization does not expose isolation support or still mentions remote')
  const tools=await rpc('tools/list')
  assert(JSON.stringify(tools.tools[0].inputSchema.properties.isolation.enum)===JSON.stringify(['worktree'])&&!/remote/i.test(JSON.stringify(tools.tools)),'tool schema offers more than worktree isolation or mentions remote')
- const probe=async(id,model,cmd,write)=>{const marker=`[isolation ${id} ${randomUUID()}]`;const report=await call('ExternalSubagent',{description:`isolation ${id}`,prompt:shell(cmd,marker),model,isolation:'worktree',...(write?{write:true}:{}),run_in_background:false});const thread=threadFor(marker);assert(thread,`${id}: no native thread: ${report.text}`);const path=rollout(thread);const attempts=toolCalls(path).filter(c=>c.input.includes('printf'));assert(attempts.length>=1,`${id}: rollout ${path} shows no attempt`);return {report,thread,rollout:path,attempt:attempts[0].input.slice(0,300),output:attempts.map(a=>a.output).join('\n').slice(0,400),wt:worktreeOf(report.text),native:nativeRun(marker)}}
- const escapeTarget=join(cwd,'escape.txt'),variantTarget=join(repoAlias,'sub','variant-escape.txt')
- assert(existsSync(join(repoAlias,'sub','tracked.txt')),'case-variant spelling does not name the repository on this filesystem')
- const [write,escape,readonly,remote,failure,variant,dotgit]=await Promise.all([
-  probe('write','iso','printf isolated > agent.txt',true),
-  probe('escape','iso',`printf escaped > ${escapeTarget}`,true),
-  probe('read-only','iso','printf readonly > ro.txt',false),
+ // Isolation only chooses where the agent works; yolo makes the write deterministic regardless of the user's native sandbox config.
+ const probe=async(id,model,cmd,mode)=>{const marker=`[isolation ${id} ${randomUUID()}]`;const report=await call('ExternalSubagent',{description:`isolation ${id}`,prompt:shell(cmd,marker),model,isolation:'worktree',...(mode?{mode}:{}),run_in_background:false});const thread=threadFor(marker);assert(thread,`${id}: no native thread: ${report.text}`);const path=rollout(thread);const attempts=toolCalls(path).filter(c=>c.input.includes('printf'));assert(attempts.length>=1,`${id}: rollout ${path} shows no attempt`);return {report,thread,rollout:path,attempt:attempts[0].input.slice(0,300),output:attempts.map(a=>a.output).join('\n').slice(0,400),wt:worktreeOf(report.text),native:nativeRun(marker)}}
+ const [write,normal,remote,failure]=await Promise.all([
+  probe('write','iso','printf isolated > agent.txt','yolo'),
+  probe('normal','iso','printf normal > normal.txt',null),
   call('ExternalSubagent',{description:'unknown isolation',prompt:'Reply ok',model:'iso',isolation:'remote',run_in_background:false}),
   call('ExternalSubagent',{description:'failure retention',prompt:'Reply ok',model:'iso-badmodel',isolation:'worktree',run_in_background:false}),
-  probe('variant','iso',`printf escaped > ${variantTarget}`,true),
-  probe('dotgit','iso','printf broken > ../.git',true),
  ])
- const rejectedRoots=await call('ExternalSubagent',{description:'roots with isolation',prompt:'Reply ok',model:'iso',isolation:'worktree',write:true,writable_roots:[repoAlias]})
- assert(rejectedRoots.failed&&rejectedRoots.text.includes('the worktree is the only writable root'),`caller roots accepted with isolation: ${rejectedRoots.text}`)
- results.callerRootsWithIsolation=rejectedRoots.text
- // Success: the write lands in the worktree, the Codex sandbox roots are the worktree, the original is untouched.
- assert(!write.report.failed&&write.wt,`write: ${write.report.text}`)
+ // Success: the write lands in the worktree and the original is untouched.
+ assert(!write.report.failed&&write.wt&&write.report.text.includes('Mode: yolo\n'),`write: ${write.report.text}`)
  const wtPath=write.wt[1]
  assert(read(join(wtPath,'sub','agent.txt'))==='isolated'&&read(join(cwd,'agent.txt'))===null,'write: file not in worktree only')
- assert(!write.output.includes('operation not permitted'),`write: denied ${write.output}`)
- assert(write.native.input.cwd===join(wtPath,'sub')&&write.native.input.args.join(' ').includes(`writable_roots=["${wtPath}"]`)&&!write.native.input.args.join(' ').includes(`"${repo}"`),`write: sandbox not bound to worktree: ${JSON.stringify(write.native.input)}`)
+ assert(write.native.input.cwd===join(wtPath,'sub')&&write.native.input.args.join(' ').includes('sandbox_mode="danger-full-access"'),`write: not run in worktree with yolo: ${JSON.stringify(write.native.input)}`)
  assert(write.report.text.includes('?? sub/agent.txt')&&write.report.text.includes('kept after completion, failure and cancellation'),`write: report lacks remaining state: ${write.report.text}`)
  assert(git(wtPath,'branch','--show-current')===write.wt[2],'write: branch mismatch')
  results.success={worktree:wtPath,branch:write.wt[2],base:write.wt[3],thread:write.thread,rollout:write.rollout,attempt:write.attempt,runtimeOutput:write.output,nativeCwd:write.native.input.cwd,filesystem:read(join(wtPath,'sub','agent.txt'))}
- // The original checkout is outside the sandbox: an absolute write there is an OS denial.
- assert(!escape.report.failed&&escape.output.includes('operation not permitted')&&read(escapeTarget)===null,`escape: ${escape.output}`)
- results.escapeToOriginal={target:escapeTarget,thread:escape.thread,rollout:escape.rollout,attempt:escape.attempt,runtimeOutput:escape.output,filesystem:null}
- const variantArgs=variant.native.input.args.join(' ')
- const rootsArg=variantArgs.match(/sandbox_workspace_write\.writable_roots=(\[[^\]]*\])/)
- assert(!variant.report.failed&&rootsArg&&JSON.stringify(JSON.parse(rootsArg[1]))===JSON.stringify([variant.wt[1]])&&!variantArgs.toLowerCase().includes(repo.toLowerCase()),`variant: sandbox args carry more than the worktree: ${variantArgs}`)
- assert(variant.report.text.includes(`Write scope: worktree only ["${variant.wt[1]}"]`),`variant: report ${variant.report.text}`)
- assert(variant.output.includes('operation not permitted')&&read(join(cwd,'variant-escape.txt'))===null,`variant: ${variant.output}`)
- // The worktree's own .git file stays protected by Codex inside the writable root.
- const dotgitFile=join(dotgit.wt[1],'.git')
- assert(!dotgit.report.failed&&dotgit.output.includes('operation not permitted')&&read(dotgitFile).startsWith('gitdir: '),`dotgit: ${dotgit.output}`)
- results.worktreeDotGit={target:dotgitFile,thread:dotgit.thread,rollout:dotgit.rollout,attempt:dotgit.attempt,runtimeOutput:dotgit.output,filesystem:read(dotgitFile).trim()}
- results.caseVariantTarget={sandboxRoots:JSON.parse(rootsArg[1]),target:variantTarget,thread:variant.thread,rollout:variant.rollout,attempt:variant.attempt,runtimeOutput:variant.output,filesystem:null}
- assert(!readonly.report.failed&&readonly.output.includes('operation not permitted')&&read(join(readonly.wt[1],'sub','ro.txt'))===null,`read-only: ${readonly.output}`)
- results.readOnlyWorktree={worktree:readonly.wt[1],thread:readonly.thread,rollout:readonly.rollout,runtimeOutput:readonly.output}
+ // Normal mode under isolation injects no sandbox flags; the outcome is whatever the native config allows.
+ assert(!normal.report.failed&&normal.wt&&normal.report.text.includes('Mode: normal\n')&&normal.native.input.cwd===join(normal.wt[1],'sub')&&!normal.native.input.args.join(' ').includes('sandbox_mode'),`normal: ${normal.report.text} ${JSON.stringify(normal.native?.input)}`)
+ assert(read(join(cwd,'normal.txt'))===null,'normal: file landed in the original checkout')
+ results.normalWorktree={worktree:normal.wt[1],thread:normal.thread,rollout:normal.rollout,runtimeOutput:normal.output,filesystem:read(join(normal.wt[1],'sub','normal.txt'))}
  // Any isolation value other than worktree is rejected like an unknown value, before any work.
  assert(remote.failed&&remote.text.includes('isolation "remote" unsupported; supported: worktree; no task started'),remote.text)
  results.unknownIsolation=remote.text
@@ -98,7 +76,7 @@ try{
  results.failure={worktree:failed[1],report:failure.text.slice(0,1500)}
  // Cancellation after partial output keeps the worktree and its uncommitted file.
  const marker=`[isolation cancel ${randomUUID()}]`
- const started=await call('ExternalSubagent',{description:'cancel retention',prompt:shell('printf partial > partial.txt && sleep 240',marker),model:'iso',isolation:'worktree',write:true,name:'cancel-me'})
+ const started=await call('ExternalSubagent',{description:'cancel retention',prompt:shell('printf partial > partial.txt && sleep 240',marker),model:'iso',isolation:'worktree',mode:'yolo',name:'cancel-me'})
  const cancelWt=worktreeOf(started.text)
  assert(!started.failed&&cancelWt,started.text)
  const partial=join(cancelWt[1],'sub','partial.txt')
@@ -107,7 +85,7 @@ try{
  const stopped=await call('StopExternalSubagent',{task_id:'cancel-me'})
  assert(!stopped.failed&&stopped.text.includes(': cancelled;')&&stopped.text.includes('?? sub/partial.txt')&&read(partial)==='partial',`cancel: ${stopped.text}`)
  results.cancellation={worktree:cancelWt[1],report:stopped.text.slice(0,1500),filesystem:read(partial)}
- // Pi read-only: only the working directory changes.
+ // Pi: only the working directory changes.
  const piMarker=`[isolation pi ${randomUUID()}]`
  const pi=await call('ExternalSubagent',{description:'pi isolation',prompt:`Isolation acceptance ${piMarker}. Use ls on your current directory and list the file names you see. Do not write anything.`,model:'iso-pi',isolation:'worktree',run_in_background:false})
  const piWt=worktreeOf(pi.text)
@@ -122,5 +100,5 @@ try{
 }finally{clearTimeout(timer);child.stdin.end();await new Promise(r=>child.on('close',r));await writeFile(join(base,'server-debug.log'),stderr)}
 const list=git(repo,'worktree','list','--porcelain')
 results.worktreesAfterServerExit=list.split('\n').filter(l=>l.startsWith('worktree ')).map(l=>l.slice(9))
-assert(results.worktreesAfterServerExit.length===9,`worktrees not all retained: ${list}`)
-console.log(JSON.stringify({passed:true,versions:{codex:spawnSync('codex',['--version'],{encoding:'utf8'}).stdout.trim(),pi:spawnSync('pi',['--version'],{encoding:'utf8'}).stdout.trim(),git:spawnSync('git',['--version'],{encoding:'utf8'}).stdout.trim()},scope:'real Codex/Pi through AgentX MCP with isolation=worktree; dirty original checkout snapshotted before/after; attempts and denials read from Codex rollouts; worktree filesystem state checked',results,evidence:base},null,2))
+assert(results.worktreesAfterServerExit.length===6,`worktrees not all retained: ${list}`)
+console.log(JSON.stringify({passed:true,versions:{codex:spawnSync('codex',['--version'],{encoding:'utf8'}).stdout.trim(),pi:spawnSync('pi',['--version'],{encoding:'utf8'}).stdout.trim(),git:spawnSync('git',['--version'],{encoding:'utf8'}).stdout.trim()},scope:'real Codex/Pi through AgentX MCP with isolation=worktree; dirty original checkout snapshotted before/after; attempts read from Codex rollouts; worktree filesystem state checked',results,evidence:base},null,2))

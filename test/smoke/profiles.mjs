@@ -1,5 +1,5 @@
 import {spawn,spawnSync} from 'node:child_process'
-import {mkdtemp,mkdir,writeFile,readFile,readdir,realpath} from 'node:fs/promises'
+import {mkdtemp,mkdir,writeFile,readFile,readdir} from 'node:fs/promises'
 import {tmpdir} from 'node:os'
 import {join,resolve} from 'node:path'
 
@@ -53,18 +53,20 @@ try{
  await mkdir(join(home,'.agentx','profiles','broken'))
  await writeFile(join(home,'.agentx','profiles','broken','PROFILE.md'),'---\nagent: codex\n---\nmissing model\n')
  const refreshed=(await rpc('tools/list')).result.tools[0]
- assert(refreshed.description.includes('- profile smoke-review: codex "smoke-model" effort=low; callable; "Hand-edited description"')&&refreshed.description.includes('- profile broken: invalid (')&&refreshed.description.includes('model is required')&&refreshed.description.includes('- profile smoke-review-pi: codex')&&refreshed.description.length<4096&&JSON.stringify(refreshed.inputSchema.properties.model.enum)===JSON.stringify(['smoke-review','smoke-review-pi'])&&refreshed.inputSchema.properties.write.type==='boolean'&&refreshed.inputSchema.properties.writable_roots.type==='array','P14 MCP sees edited and broken items: '+refreshed.description)
+ assert(refreshed.description.includes('- profile smoke-review: codex "smoke-model" effort=low; callable; "Hand-edited description"')&&refreshed.description.includes('- profile broken: invalid (')&&refreshed.description.includes('model is required')&&refreshed.description.includes('- profile smoke-review-pi: codex')&&refreshed.description.length<4096&&JSON.stringify(refreshed.inputSchema.properties.model.enum)===JSON.stringify(['smoke-review','smoke-review-pi'])&&refreshed.inputSchema.properties.mode.default==='normal'&&refreshed.inputSchema.properties.write===undefined,'P14 MCP sees edited and broken items: '+refreshed.description)
  const report=await call('ExternalSubagent',{description:'smoke',prompt:'check',model:'smoke-review',run_in_background:false})
- assert(report.includes('profile=smoke-review; agent=codex; actual model=smoke-model; effort=low')&&report.includes('Write scope: read-only (no write requested)')&&report.includes(`Auth (discovered by preflight for this turn): CODEX_HOME=${JSON.stringify(codexHome)} (chatgpt)`)&&report.includes('FAKE_REPORT check')&&report.includes('reconnect AgentX MCP to refresh the profile list'),'P10/P15 call: '+report)
+ assert(report.includes('profile=smoke-review; agent=codex; actual model=smoke-model; effort=low')&&report.includes('Mode: normal\n')&&report.includes(`Auth (discovered by preflight for this turn): CODEX_HOME=${JSON.stringify(codexHome)} (chatgpt)`)&&report.includes('FAKE_REPORT check')&&report.includes('reconnect AgentX MCP to refresh the profile list'),'P10/P15 call: '+report)
  const override=await call('ExternalSubagent',{description:'smoke',prompt:'check',model:'smoke-review',effort:'high',run_in_background:false})
  assert(override.includes('unknown field "effort"'),'per-call effort override accepted: '+override)
  const argvBefore=(await argvFiles()).length
- const unscoped=await call('ExternalSubagent',{description:'smoke',prompt:'check',model:'smoke-review',write:true,run_in_background:false})
- assert(unscoped.includes('write without isolation requires writable_roots')&&(await argvFiles()).length===argvBefore,'write without scope accepted: '+unscoped)
- const scoped=await call('ExternalSubagent',{description:'smoke',prompt:'check',model:'smoke-review',write:true,writable_roots:[workspace],run_in_background:false})
- const scopedArgv=JSON.parse(await readFile(join(home,(await argvFiles()).at(-1)),'utf8')).argv.join(' ')
- assert(scoped.includes('Write scope: working directory')&&scoped.includes('In write mode the MCP working directory is always writable as well (native Codex behavior)')&&scopedArgv.includes('sandbox_mode="workspace-write"')&&scopedArgv.includes(`writable_roots=${JSON.stringify([await realpath(workspace)])}`),'call-time write scope: '+scoped+scopedArgv)
- evidence.W01='write is per call: no write is read-only, write without roots is rejected before any native run, write with writable_roots reaches the Codex sandbox resolved'
+ const normalArgv=JSON.parse(await readFile(join(home,(await argvFiles()).at(-1)),'utf8')).argv.join(' ')
+ assert(!normalArgv.includes('sandbox_mode')&&normalArgv.includes('approval_policy="never"'),'normal mode injected sandbox flags: '+normalArgv)
+ const removed=await call('ExternalSubagent',{description:'smoke',prompt:'check',model:'smoke-review',write:true,run_in_background:false})
+ assert(removed.includes('unknown field "write"')&&(await argvFiles()).length===argvBefore,'removed write parameter accepted: '+removed)
+ const yolo=await call('ExternalSubagent',{description:'smoke',prompt:'check',model:'smoke-review',mode:'yolo',run_in_background:false})
+ const yoloArgv=JSON.parse(await readFile(join(home,(await argvFiles()).at(-1)),'utf8')).argv.join(' ')
+ assert(yolo.includes('Mode: yolo\n')&&yoloArgv.includes('-c sandbox_mode="danger-full-access" -c approval_policy="never"'),'yolo mode: '+yolo+yoloArgv)
+ evidence.W01='mode is per call: normal passes no sandbox flags (approval never only), removed write is rejected before any native run, yolo reaches Codex as danger-full-access'
  evidence.P10='initialize, tools/list enum and ExternalSubagent use ~/.agentx/profiles; report names profile, agent, model, effort'
  evidence.P15='TUI reports live MCP connection must reconnect; call result notes stale snapshot'
 }finally{mcp.stdin.end();await new Promise(done=>mcp.once('close',done))}

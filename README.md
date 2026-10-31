@@ -99,7 +99,7 @@ $ ax codex
 > Ask my claude-review profile to review this change.
 ```
 
-Each call runs the profile's own native agent in its own session. No relay inference call, no per-task registration. Calls are read-only unless they ask for `write`; `isolation: "worktree"` runs the subagent in a fresh git worktree that is its only writable root.
+Each call runs the profile's own native agent in its own session. No relay inference call, no per-task registration. AgentX passes no permission flags by default (`mode: "normal"`), so each agent's own configuration decides what it may do; `mode: "yolo"` bypasses the agent's permission checks and sandbox. `isolation: "worktree"` runs the subagent in a fresh git worktree; it only changes where the agent works.
 
 ```text
 ExternalSubagent · SendExternalSubagentMessage · StopExternalSubagent · listExternalSubagentSessions

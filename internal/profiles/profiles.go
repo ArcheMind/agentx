@@ -28,14 +28,13 @@ type Profile struct {
 	Agent       string   `json:"agent" yaml:"agent"`
 	Model       string   `json:"model" yaml:"model"`
 	Effort      string   `json:"effort,omitempty" yaml:"effort,omitempty"`
-	Sandbox     *bool    `json:"sandbox,omitempty" yaml:"sandbox,omitempty"`
 	UserConfig  *bool    `json:"user_config,omitempty" yaml:"user_config,omitempty"`
 	Flags       []string `json:"flags,omitempty" yaml:"flags,omitempty"`
 }
 
 func (p Profile) Equal(o Profile) bool {
 	return p.Name == o.Name && p.Description == o.Description && p.Agent == o.Agent && p.Model == o.Model && p.Effort == o.Effort &&
-		boolEqual(p.Sandbox, o.Sandbox) && boolEqual(p.UserConfig, o.UserConfig) && slices.Equal(p.Flags, o.Flags)
+		boolEqual(p.UserConfig, o.UserConfig) && slices.Equal(p.Flags, o.Flags)
 }
 
 func boolEqual(a, b *bool) bool {
@@ -54,14 +53,14 @@ type Problem struct {
 type AgentRule struct {
 	Name string
 	// Efforts are the explicit levels the native CLI accepts; per-model support may still differ.
-	Efforts      []string
-	EffortNote   string
-	WriteCapable bool
+	Efforts    []string
+	EffortNote string
+	Bypassable bool
 }
 
 var Agents = map[string]AgentRule{
-	"claude":   {Name: "Claude", Efforts: []string{"low", "medium", "high", "xhigh", "max"}, EffortNote: "Claude Code --effort levels; per-model support is not verified locally", WriteCapable: true},
-	"codex":    {Name: "Codex", Efforts: []string{"none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"}, EffortNote: "Codex reports supported levels per model", WriteCapable: true},
+	"claude":   {Name: "Claude", Efforts: []string{"low", "medium", "high", "xhigh", "max"}, EffortNote: "Claude Code --effort levels; per-model support is not verified locally", Bypassable: true},
+	"codex":    {Name: "Codex", Efforts: []string{"none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"}, EffortNote: "Codex reports supported levels per model", Bypassable: true},
 	"gemini":   {Name: "Gemini", EffortNote: "Gemini CLI exposes no verified effort control"},
 	"opencode": {Name: "OpenCode", EffortNote: "OpenCode exposes no verified effort control"},
 	"pi":       {Name: "Pi", Efforts: []string{"low", "medium", "high", "xhigh", "max"}, EffortNote: "Pi --thinking levels; ExternalSubagent execution fails unless Pi's provider request carries exactly this level (Pi silently clamps or remaps unsupported levels). off and minimal are not offered: for Codex-backed models Pi sends no effort for off (the server default applies) and sends low for minimal"},
@@ -195,13 +194,13 @@ func Parse(name string, data []byte) (Profile, error) {
 			if !ok {
 				return p, fmt.Errorf("%s field %q must be a string", FileName, key)
 			}
-		case "sandbox", "user_config", "flags":
+		case "user_config", "flags":
 		case "name":
 			return p, fmt.Errorf("%s must not set name; the directory name is the profile name", FileName)
 		case "description":
 			return p, fmt.Errorf("%s must not set description in front matter; write it below the front matter", FileName)
 		default:
-			return p, fmt.Errorf("%s has unknown field %q; allowed: agent, model, effort, sandbox, user_config, flags", FileName, key)
+			return p, fmt.Errorf("%s has unknown field %q; allowed: agent, model, effort, user_config, flags", FileName, key)
 		}
 		switch key {
 		case "agent":
@@ -210,12 +209,6 @@ func Parse(name string, data []byte) (Profile, error) {
 			p.Model = value
 		case "effort":
 			p.Effort = value
-		case "sandbox":
-			b, ok := fields[key].(bool)
-			if !ok {
-				return p, fmt.Errorf("%s field %q must be a boolean", FileName, key)
-			}
-			p.Sandbox = &b
 		case "user_config":
 			b, ok := fields[key].(bool)
 			if !ok {

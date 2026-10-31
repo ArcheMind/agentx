@@ -70,30 +70,24 @@ func dirtyRepoNamed(t *testing.T, s *Server, name string) string {
 	return repo
 }
 
-func TestWorktreeWriteScopeIsOnlyTheWorktree(t *testing.T) {
+func TestWorktreeIsolationIsIndependentOfMode(t *testing.T) {
 	r := &gitRunner{testRunner: &testRunner{}}
 	s := testServer(t, r)
-	repo := dirtyRepo(t, s)
-	_, err := s.call("ExternalSubagent", []byte(`{"description":"x","prompt":"x","model":"review","isolation":"worktree","write":true,"writable_roots":["`+repo+`"]}`))
-	if err == nil || !strings.Contains(err.Error(), "the worktree is the only writable root") {
-		t.Fatal("writable_roots accepted with isolation", err)
-	}
-	if strings.Contains(gitCmd(t, repo, "worktree", "list"), "agentx/") || len(s.agents) != 0 {
-		t.Fatal("rejected call created a worktree or agent")
-	}
-	text := callTest(t, s, "ExternalSubagent", map[string]any{"description": "x", "prompt": "x", "name": "v", "model": "review", "isolation": "worktree", "write": true, "run_in_background": false})
-	callTest(t, s, "ExternalSubagent", map[string]any{"description": "x", "prompt": "x", "name": "ro", "model": "review", "isolation": "worktree", "run_in_background": false})
+	dirtyRepo(t, s)
+	text := callTest(t, s, "ExternalSubagent", map[string]any{"description": "x", "prompt": "x", "name": "n", "model": "review", "isolation": "worktree", "run_in_background": false})
+	callTest(t, s, "ExternalSubagent", map[string]any{"description": "x", "prompt": "x", "name": "y", "model": "review", "isolation": "worktree", "mode": "yolo", "run_in_background": false})
 	s.mu.Lock()
-	a, _ := s.target("v")
+	n, _ := s.target("n")
+	y, _ := s.target("y")
 	s.mu.Unlock()
 	r.mu.Lock()
-	writeArgs, readArgs := strings.Join(r.plans[0].Args, " "), strings.Join(r.plans[1].Args, " ")
-	r.mu.Unlock()
-	if !strings.Contains(writeArgs, `writable_roots=["`+a.Worktree.Path+`"] `) || strings.Contains(writeArgs, repo) || !strings.Contains(text, "Write scope: worktree only [\""+a.Worktree.Path+"\"]") {
-		t.Fatal("isolated sandbox carries more than the worktree:", writeArgs, text)
+	defer r.mu.Unlock()
+	normalArgs, yoloArgs := strings.Join(r.plans[0].Args, " "), strings.Join(r.plans[1].Args, " ")
+	if r.plans[0].Cwd != filepath.Join(n.Worktree.Path, "sub") || strings.Contains(normalArgs, "sandbox") || !strings.Contains(text, "Mode: normal\n") {
+		t.Fatal("normal isolated run injected permission flags or ran outside the worktree:", r.plans[0].Cwd, normalArgs, text)
 	}
-	if !strings.Contains(readArgs, `sandbox_mode="read-only"`) || strings.Contains(readArgs, "writable_roots") {
-		t.Fatal("isolation without write was writable:", readArgs)
+	if r.plans[1].Cwd != filepath.Join(y.Worktree.Path, "sub") || !strings.Contains(yoloArgs, `sandbox_mode="danger-full-access"`) {
+		t.Fatal("yolo isolated run wrong:", r.plans[1].Cwd, yoloArgs)
 	}
 }
 
@@ -102,7 +96,7 @@ func TestWorktreeIsolationRunsInWorktreeAndKeepsOriginalChanges(t *testing.T) {
 	s := testServer(t, r)
 	repo := dirtyRepo(t, s)
 	before := gitCmd(t, repo, "status", "--porcelain")
-	text := callTest(t, s, "ExternalSubagent", map[string]any{"description": "write", "prompt": "edit", "name": "iso", "model": "review", "isolation": "worktree", "write": true, "run_in_background": false})
+	text := callTest(t, s, "ExternalSubagent", map[string]any{"description": "write", "prompt": "edit", "name": "iso", "model": "review", "isolation": "worktree", "run_in_background": false})
 	s.mu.Lock()
 	a, _ := s.target("iso")
 	w := a.Worktree
@@ -113,9 +107,8 @@ func TestWorktreeIsolationRunsInWorktreeAndKeepsOriginalChanges(t *testing.T) {
 	r.mu.Lock()
 	plan := r.plans[0]
 	r.mu.Unlock()
-	args := strings.Join(plan.Args, " ")
-	if plan.Cwd != filepath.Join(w.Path, "sub") || !strings.Contains(args, `writable_roots=["`+w.Path+`"] `) || strings.Contains(args, `"`+repo+`"`) {
-		t.Fatalf("sandbox not bound to worktree: cwd=%s args=%s", plan.Cwd, args)
+	if plan.Cwd != filepath.Join(w.Path, "sub") {
+		t.Fatalf("agent not run in worktree: cwd=%s", plan.Cwd)
 	}
 	if after := gitCmd(t, repo, "status", "--porcelain"); after != before {
 		t.Fatalf("original checkout changed:\n%s\n---\n%s", before, after)
@@ -129,7 +122,7 @@ func TestWorktreeIsolationRunsInWorktreeAndKeepsOriginalChanges(t *testing.T) {
 	if data, _ := os.ReadFile(filepath.Join(w.Path, "sub", "tracked.txt")); string(data) != "committed\n" {
 		t.Fatal("worktree not at HEAD")
 	}
-	for _, want := range []string{"Isolation: worktree path=", w.Path, "branch=agentx/" + a.ID, "is not modified", "kept after completion, failure and cancellation", "?? sub/agent.txt", "worktree remove", "Write scope: worktree only"} {
+	for _, want := range []string{"Isolation: worktree path=", w.Path, "branch=agentx/" + a.ID, "is not modified", "kept after completion, failure and cancellation", "?? sub/agent.txt", "worktree remove", "Mode: normal"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("report missing %q:\n%s", want, text)
 		}
@@ -141,7 +134,7 @@ func TestWorktreeIsolationRunsInWorktreeAndKeepsOriginalChanges(t *testing.T) {
 	callTest(t, s, "SendExternalSubagentMessage", map[string]any{"to": "iso", "message": "again"})
 	waitAgent(t, s, "iso")
 	r.mu.Lock()
-	if r.plans[1].Cwd != plan.Cwd || !strings.Contains(strings.Join(r.plans[1].Args, " "), w.Path) {
+	if r.plans[1].Cwd != plan.Cwd {
 		t.Fatal("continuation rebound workspace", r.plans[1])
 	}
 	r.mu.Unlock()
@@ -222,7 +215,7 @@ func TestPiWorktreeIsolationChangesOnlyWorkingDirectory(t *testing.T) {
 	s.mu.Unlock()
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if a == nil || a.Worktree == nil || len(r.plans) != 1 || r.plans[0].Cwd != filepath.Join(a.Worktree.Path, "sub") || !strings.Contains(strings.Join(r.plans[0].Args, " "), "read,grep,find,ls") || a.Worktree.Roots != nil {
+	if a == nil || a.Worktree == nil || len(r.plans) != 1 || r.plans[0].Cwd != filepath.Join(a.Worktree.Path, "sub") || !strings.Contains(strings.Join(r.plans[0].Args, " "), "read,grep,find,ls") {
 		t.Fatal("Pi worktree plan wrong", r.plans)
 	}
 }

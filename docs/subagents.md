@@ -129,59 +129,42 @@ migrate:
 
 - A former `enabled: true` needs no replacement: `ax claude` and `ax codex`
   attach AgentX; the earlier `enable`/`disable` subcommands no longer exist.
-- A former grant's `bounded-write` with `writable_roots` becomes a per-call
-  request (`write: true` with `writable_roots`, or `write: true` with
-  `isolation: "worktree"`); see [Write scope and isolation](#write-scope-and-isolation).
+- A former grant's `bounded-write` with `writable_roots` has no replacement:
+  what an agent may write is decided by its own native configuration, or
+  bypassed per call with `mode: "yolo"`; see
+  [Permission mode and isolation](#permission-mode-and-isolation).
   Its `approval` has no replacement because `never` was the only value.
 - A former grant's `auth.path` becomes the native agent's own variable
   (`CODEX_HOME`, `PI_CODING_AGENT_DIR`) in the environment AgentX runs in, or
   nothing when it was the default directory.
 
-## Write scope and isolation
+## Permission mode and isolation
 
-Write access is chosen by each `ExternalSubagent` call, not configured. The
-scope is fixed for that ExternalSubagent: `SendExternalSubagentMessage` and
-queued work reuse it and cannot widen it.
+Permissions belong to the native agent, not to AgentX. Each `ExternalSubagent`
+call picks one `mode`, fixed for that ExternalSubagent:
+`SendExternalSubagentMessage` and queued work reuse it and cannot change it.
 
-| Call | Codex sandbox | Pi |
-| --- | --- | --- |
-| no `write` (default) | `sandbox_mode="read-only"`: no file writes | Read-only tool allowlist |
-| `write: true`, `isolation: "worktree"` | `workspace-write` with `writable_roots=[<worktree>]`, the path AgentX created; `writable_roots` in the call is rejected | Rejected |
-| `write: true`, `writable_roots: [...]` (no isolation) | `workspace-write`: in write mode the MCP working directory is always writable as well (native Codex behavior); `writable_roots` grants additional directories, symlinks resolved | Rejected |
+| `mode` | Claude | Codex | Pi |
+| --- | --- | --- | --- |
+| `normal` (default, also when omitted) | No permission flags: Claude's own settings decide | Only `approval_policy="never"`: the sandbox is whatever the user's Codex configuration sets | Read-only tool allowlist |
+| `yolo` | `--dangerously-skip-permissions` | `sandbox_mode="danger-full-access"` plus `approval_policy="never"` | Rejected before any work starts |
 
-- Without isolation, `writable_roots` must be absolute existing directories,
-  not `/`. AgentX resolves symlinks and hands the result to the Codex OS
-  sandbox, which is the only enforcer. AgentX does not compare path strings
-  and does not require the working directory to be inside a root. In write
-  mode the MCP working directory is always writable as well (native Codex
-  behavior, the same as a native subagent writing its own working directory);
-  the field description, limits and every report say so.
-- Under isolation no caller path string reaches the sandbox, so spellings of
-  the original checkout (case, Unicode NFC/NFD, symlink, firmlink) cannot
-  reopen it.
-- In every writable scope `/tmp`, `$TMPDIR` and network access from commands
-  are excluded; Codex keeps `.git` inside the roots read-only (verified); other
-  Codex-protected paths are not separately verified. Reads are not
-  path-restricted.
-- Pi write requests are rejected before any work starts: Pi has no runtime
-  sandbox, and an allowlist that adds `bash`/`edit`/`write` could not bound side
-  effects. That gap stays open until Pi, or AgentX around it, provides a real
-  boundary.
-- `writable_roots` without `write: true`, `write: true` without a scope, and
-  invalid roots are rejected before any work starts.
+- `normal` is a passthrough. AgentX injects no sandbox, approval or permission
+  flag, except `approval_policy="never"` for Codex: a headless run cannot answer
+  an approval prompt. Claude in print mode refuses tools its settings do not
+  allow; that refusal is Claude's own behavior.
+- `yolo` bypasses the agent's permission checks and sandbox entirely. Use it
+  only where the agent may do anything the user could.
+- Pi has no runtime permission boundary to bypass, so `yolo` is rejected for
+  Pi profiles. Pi always runs with its read-only tool allowlist.
+- `isolation` is independent of `mode`: it only chooses where the agent works.
+  See [Isolation](#isolation).
 
-Out-of-scope operations are refused and the refusal is returned to the agent, in
-one of two layers. Shell commands fail in Codex's OS sandbox (`operation not
-permitted`). `apply_patch` outside the roots is rejected earlier by Codex's
-application-level patch approval (`rejected by user approval settings`). Codex
-runs with `approval_policy="never"`: no human is asked, and Claude's permission
-mode or approvals do not apply. There is no approval path (004 A03 stays open).
-
-Codex runs with `--ignore-user-config --ignore-rules --disable hooks`. MCP
-servers, hooks and `notify` programs from the user's `config.toml` run outside
-Codex's sandbox and would silently widen the write scope, so they are not
-loaded. User-config defaults such as model effort, personality and service tier
-therefore also do not apply. Codex's built-in web search remains available.
+The profile's `user_config` and `flags` are passed through unchanged. With
+`user_config: false` Codex runs with `--ignore-user-config --ignore-rules
+--disable hooks`, so MCP servers, hooks and `notify` programs from the user's
+`config.toml` are not loaded; user-config defaults such as model effort,
+personality and service tier then also do not apply.
 
 ### Authentication
 
@@ -209,8 +192,8 @@ within the same `CODEX_HOME` or Pi agent directory is not detected.
 
 MCP initialization includes a profile DATA catalog read from the collection:
 names, execution agents, exact models, effort, the user's descriptions, whether
-each profile is callable as ExternalSubagent, its write and auth behavior with
-the enforcing layer, static prerequisites, and invalid entries with their
+each profile is callable as ExternalSubagent, its mode and auth behavior,
+static prerequisites, and invalid entries with their
 location. The same collection supplies the selectable `model` values (callable
 profiles only). `ExternalSubagent` tool metadata
 carries only a compact index (one line per profile: agent, model,
@@ -260,7 +243,7 @@ notification themselves; background push in other hosts is not claimed.
 ExternalSubagent({"description":"Review authentication", "prompt":"Review token refresh logic",
        "model":"codex-review", "name":"reviewer", "run_in_background":true})
 ExternalSubagent({"description":"Fix the flaky test", "prompt":"Fix and run the test",
-       "model":"codex-review", "isolation":"worktree", "write":true})
+       "model":"codex-review", "isolation":"worktree", "mode":"yolo"})
 SendExternalSubagentMessage({"to":"reviewer", "message":"Now inspect logout handling", "summary":"Check logout"})
 StopExternalSubagent({"task_id":"reviewer"})
 listExternalSubagentSessions({})
@@ -272,15 +255,14 @@ fixes agent, model and effort; there is no `effort` parameter and no per-call
 override. Reports name the profile, agent, actual model and effort, and a
 `Native evidence:` line states the executed effort that the
 native records show for that turn. `isolation` accepts only `worktree` (see
-below); any other value is rejected before any work starts. `write` (boolean, default false) and `writable_roots`
-(absolute directories) request write access for this ExternalSubagent; see
-[Write scope and isolation](#write-scope-and-isolation). Reports carry a
-`Write scope:` line and the discovered `Auth` line. Names start with an ASCII
+below); any other value is rejected before any work starts. `mode` is
+`normal` (default) or `yolo`; see
+[Permission mode and isolation](#permission-mode-and-isolation). Reports carry a
+`Mode:` line and the discovered `Auth` line. Names start with an ASCII
 letter or digit and contain 1–64 ASCII letters, digits, `_`, or `-`.
-Deprecated `team_name` and native `mode` values (`acceptEdits`, `auto`,
-`bypassPermissions`, `default`, `dontAsk`, `plan`) are accepted and ignored;
-they do not grant permissions. Unknown properties, nulls, wrong types, and
-unsupported values are rejected.
+Deprecated `team_name` is accepted and ignored. Unknown properties (including
+the removed `write` and `writable_roots`), nulls, wrong types, and unsupported
+values are rejected.
 
 Omitted/true `run_in_background` returns a task identity immediately and pushes
 its terminal result. False waits for a terminal result; failure/cancellation is
@@ -307,15 +289,19 @@ mismatch is failure, not retry.
 
 ## Isolation
 
-`isolation:"worktree"` runs the ExternalSubagent in a new git worktree:
+`isolation:"worktree"` runs the ExternalSubagent in a new git worktree. It
+only chooses the working directory; it grants and restricts nothing, and works
+the same in either `mode`:
 
 - **What is created.** The repository is the one containing the MCP server's
   working directory, and the worktree starts at its `HEAD` commit. It lives at
   `~/.local/state/agentx/worktrees/<id>` on branch `agentx/<id>`, where `<id>`
   is the ExternalSubagent ID. The native agent's working directory is the
   matching path inside the worktree.
-- **The original checkout.** Its files are never modified. Its uncommitted and
-  untracked changes are not copied into the worktree. The original repository
+- **The original checkout.** AgentX never modifies its files. Its uncommitted
+  and untracked changes are not copied into the worktree. Whether the agent
+  itself can reach the original by absolute path is decided by the agent's
+  native configuration (`normal`) or not restricted at all (`yolo`). The original repository
   does gain branch `agentx/<id>` and git's worktree metadata under
   `.git/worktrees/`.
 - **Rejections.** The call is rejected before any work starts in three cases:
@@ -331,26 +317,12 @@ mismatch is failure, not retry.
 - **Why the worktree is outside the repository.** A nested worktree would show
   up as an untracked entry in the original checkout, and `git add -A` there
   would record it as an embedded repository.
-- **Writes.** With `write: true` the only writable root is the worktree path
-  AgentX created; `writable_roots` is rejected together with isolation, so no
-  caller-written path string reaches an isolated sandbox. Passing such strings
-  is what once reopened the original: an earlier mapping took a root spelled
-  `/x/REPO` as unrelated on case-insensitive APFS and made the original
-  checkout writable. Codex therefore cannot write the original checkout: an
-  absolute write there fails with `operation not permitted`. Codex still
-  protects the worktree's own `.git` file inside that root (verified). Reads
-  are not path-restricted, so the original stays readable.
-- **No commits.** The repository's `.git` lies outside the roots, so the agent
-  cannot commit. Its work stays as uncommitted changes in the worktree.
-- **Read-only.** Without `write` the sandbox is read-only and has no writable
-  root.
 - **Concurrent creation.** Worktree creation is serialized within one AgentX
   process, because concurrent `git worktree add` in one repository fails
   (git 2.39 reads another worktree's half-written metadata). Separate AgentX
   processes on the same repository can still hit this; the call then fails
   explicitly with no task started.
-- **Pi.** Pi never writes (a write request is rejected), so for Pi a worktree
-  changes only the working directory. No OS boundary is added.
+- **Pi.** For Pi a worktree changes only the working directory.
 
 The worktree is fixed for the ExternalSubagent's lifetime. Continuation reuses
 it and cannot rebind it. If the worktree has been removed, continuation fails
@@ -361,7 +333,7 @@ or was cancelled, and including after the MCP connection ends. This includes a
 task whose auth preflight failed: the worktree was already created, no native
 execution ran, and the failure report names the worktree path. Continuation
 needs the worktree, and any uncommitted work in it belongs to the user. Every
-report names the path, branch, base commit and write scope. After
+report names the path, branch, base commit and mode. After
 each task, the report also records the state: whether `HEAD` moved, plus
 `git status --porcelain`. It ends with the cleanup command:
 `git -C <repo> worktree remove <path>` (which refuses while changes remain; add
@@ -400,10 +372,9 @@ the ability to delegate subtasks to other agents without user configuration.
 - **Foreground only.** Nested hosts (Codex exec) have no channel delivery, so
   `run_in_background` is forced to false regardless of the caller's request.
   The dispatched agent waits for each sub-agent to complete before continuing.
-- **Independent write scope.** Each nested ExternalSubagent's write scope is
-  enforced by its own Codex OS sandbox at call time, the same as a top-level
-  call. A read-only parent does not prevent a writable nested call (same as
-  how Claude Code orchestrates top-level calls).
+- **Independent mode.** Each nested ExternalSubagent call picks its own
+  `mode`, the same as a top-level call. A `normal` parent does not prevent a
+  `yolo` nested call (same as how Claude Code orchestrates top-level calls).
 - **Independent auth.** The nested AgentX discovers credentials per execution
   through the same `CODEX_HOME` / `PI_CODING_AGENT_DIR` mechanism. Credential
   environment variables are stripped as usual.
@@ -414,8 +385,9 @@ the ability to delegate subtasks to other agents without user configuration.
 
 | Adapter | Boundary | Native continuation | Effort |
 | --- | --- | --- | --- |
-| Codex | Call-time write scope as native OS sandbox (`read-only`, or `workspace-write` + roots), `approval_policy="never"`, user config/rules/hooks not loaded, discovered `CODEX_HOME` | Exact thread UUID | Profile effort via `model_reasoning_effort`, or native default; each turn checked against `response.completed` telemetry; native errors remain errors |
-| Pi | Read-only only: `--tools read,grep,find,ls --no-extensions --no-skills --no-prompt-templates --no-approve`, discovered `PI_CODING_AGENT_DIR`; with an explicit effort, only AgentX's observer extension is added (`--extension`) | Dedicated exact session path and pinned native ID | Profile effort via `--thinking` (`low`..`max`), or native default; each turn checked against the session thinking level and every provider request |
+| Claude | `normal`: no permission flags (Claude's own settings); `yolo`: `--dangerously-skip-permissions`; native auth | Exact session UUID (`--resume`) | Profile effort via `--effort`, or native default |
+| Codex | `normal`: only `approval_policy="never"` (sandbox from the user's Codex config); `yolo`: `sandbox_mode="danger-full-access"` plus `approval_policy="never"`; `user_config: false` skips user config/rules/hooks; discovered `CODEX_HOME` | Exact thread UUID | Profile effort via `model_reasoning_effort`, or native default; each turn checked against `response.completed` telemetry; native errors remain errors |
+| Pi | Read-only only, `yolo` rejected: `--tools read,grep,find,ls --no-extensions --no-skills --no-prompt-templates --no-approve`, discovered `PI_CODING_AGENT_DIR`; with an explicit effort, only AgentX's observer extension is added (`--extension`) | Dedicated exact session path and pinned native ID | Profile effort via `--thinking` (`low`..`max`), or native default; each turn checked against the session thinking level and every provider request |
 
 ### Effort verification
 
@@ -458,11 +430,11 @@ them in advance.
 
 Pi's allowlist is an application-level tool filter, not an OS sandbox.
 Native project context (for example AGENTS.md) still applies. Credentials
-and policies are not inherited from Claude. AgentX does not widen permissions for deprecated `mode`. Other
+and policies are not inherited from Claude. Other
 agents (including Gemini) remain available for ordinary AgentX launch/exec but
 are not delivered MCP combinations in this integration.
 
-Reports identify profile, execution agent, actual selected model, effort, write scope, discovered auth, ExternalSubagent/task
+Reports identify profile, execution agent, actual selected model, effort, mode, discovered auth, ExternalSubagent/task
 IDs, status, failure reason, and continuation/cancellation instructions. Reports
 and channels are labelled untrusted ExternalSubagent content and never user
 authorization. Available native usage is shown as backend-reported external
@@ -485,7 +457,6 @@ make smoke-profiles
 make smoke-mcp-live
 make smoke-mcp-channel
 make smoke-mcp-host-live
-make smoke-mcp-policy-live
 make smoke-mcp-effort-live
 make smoke-mcp-isolation-live
 ```
@@ -500,16 +471,9 @@ assistant transcript containing a token absent from its prompt. This separates
 host-consumption evidence from actual-backend evidence. Neither fixture tests
 nor a server notification alone prove native execution or host delivery.
 
-`smoke-mcp-policy-live` runs real Codex and Pi through AgentX MCP. It covers
-Codex with call-time `write`/`writable_roots` (allowed roots, the implicitly
-writable working directory, outside paths, `.git`, `/tmp`, `apply_patch`) and
-without write, read-only Pi, a rejected Pi write request, and a second server
-whose `CODEX_HOME`/`PI_CODING_AGENT_DIR` are empty, where auth fails before any
-native run. Each Codex probe is one command in its own ExternalSubagent. Codex code
-mode keeps nested shell and patch calls out of `exec --json`, so the smoke reads
-each probe's rollout (`$CODEX_HOME/sessions/**/rollout-*-<thread>.jsonl`). From
-it, the smoke asserts the attempt and the runtime's denial, then checks
-filesystem state. Override `AX_MCP_CODEX_HOME` and `AX_MCP_PI_AGENT_DIR` to
+Live smokes that read Codex rollouts (`$CODEX_HOME/sessions/**/rollout-*-<thread>.jsonl`)
+do so because Codex code mode keeps nested shell and patch calls out of
+`exec --json`. Override `AX_MCP_CODEX_HOME` and `AX_MCP_PI_AGENT_DIR` to
 select the credential directories the live smokes pass to the server as
 `CODEX_HOME`/`PI_CODING_AGENT_DIR` (defaults: `~/.codex`, `~/.pi/agent`).
 
@@ -520,18 +484,12 @@ must be in the same Pi agent directory), and direct Pi `off`/`minimal` runs with
 stay rejected. Evidence is written to `evidence.json` in the printed directory.
 
 `smoke-mcp-isolation-live` starts from a dirty original checkout and runs real
-Codex and Pi with `isolation:"worktree"`. It checks five Codex cases: a write
-inside the worktree, an absolute write to the original (OS-denied per rollout),
-read-only in a worktree, native failure, and cancellation after partial output.
-It also checks Pi's working directory and that an isolation value other than
-`worktree` is rejected. A sixth
-Codex case writes through a case-variant spelling of the repository: the
-sandbox arguments must contain exactly the worktree and no repository path,
-and the write must be OS-denied per rollout. A call passing `writable_roots`
-together with isolation must be rejected. A seventh case writes the worktree's
-own `.git` file and must be denied. Finally it
-asserts that the original checkout's status and file contents are byte-identical
-and that every worktree is kept.
+Codex and Pi with `isolation:"worktree"`. It checks a `yolo` write inside the
+worktree, a `normal` run in a worktree that carries no sandbox flag, native
+failure, and cancellation after partial output. It also checks Pi's working
+directory and that an isolation value other than `worktree` is rejected.
+Finally it asserts that the original checkout's status and file contents are
+byte-identical and that every worktree is kept.
 
 See [acceptance evidence](subagents-acceptance.md) for scenarios and limitations.
 
