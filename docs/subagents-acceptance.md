@@ -80,12 +80,16 @@ results. It is superseded.
 
 | ID | Status | Observation |
 | --- | --- | --- |
-| A01 | Pass (Codex); Pi write gap open | Codex `bounded-write` (roots `root`, `extra`): rollouts show both `printf` writes executed with exit 0, and `root/in.txt` / `extra/extra.txt` contain the requested content. Codex `read-only` in the same directory: the rollout shows the write executed and failing with `operation not permitted`, and `root/ro.txt` is absent. Pi `read-only` left `root/pi.txt` absent; Pi reported no write tool. Every report carried its actual `Grant:` line. Pi `bounded-write` is rejected at configuration time. |
-| A02 | Pass (Codex) | Shell writes, OS layer: in each rollout the write was executed and failed with `operation not permitted`. Targets: new `outside/out.txt` (absent afterwards), overwrite of `outside/existing.txt` (still `original`), the `/tmp` probe (absent), and the explicitly denied target `root/.git/agentx-denied.txt` (Codex-protected inside a writable root; absent). Patch, application layer: `apply_patch` adding `outside/patched.txt` was rejected by Codex's patch approval check (`patch rejected: writing outside of the project; rejected by user approval settings`) before any write; the file is absent. This rejection is not the OS sandbox. User-configurable deny subpaths are not offered because no runtime enforcement was established. |
-| A03 | Partial | Covered: the no-approver scenario (`approval:"never"`), observed above with the denial returned to the agent in both layers. Out-of-scope shell writes fail in the OS sandbox (`operation not permitted`). Out-of-scope `apply_patch` is rejected by Codex's application-level patch approval with no one asked (`rejected by user approval settings`). Pending: approve and deny scenarios. Non-interactive Codex/Pi execution has no approval route to a human, and AgentX does not forward runtime approval requests to Claude. Non-`never` values are rejected rather than claimed. Pi's boundary is described everywhere as a tool allowlist, not an OS sandbox. |
+| A01 | Historical (superseded by 015): Pass (Codex); Pi write gap open | Codex `bounded-write` (roots `root`, `extra`): rollouts show both `printf` writes executed with exit 0, and `root/in.txt` / `extra/extra.txt` contain the requested content. Codex `read-only` in the same directory: the rollout shows the write executed and failing with `operation not permitted`, and `root/ro.txt` is absent. Pi `read-only` left `root/pi.txt` absent; Pi reported no write tool. Every report carried its actual `Grant:` line. Pi `bounded-write` is rejected at configuration time. |
+| A02 | Historical (superseded by 015): Pass (Codex) | Shell writes, OS layer: in each rollout the write was executed and failed with `operation not permitted`. Targets: new `outside/out.txt` (absent afterwards), overwrite of `outside/existing.txt` (still `original`), the `/tmp` probe (absent), and the explicitly denied target `root/.git/agentx-denied.txt` (Codex-protected inside a writable root; absent). Patch, application layer: `apply_patch` adding `outside/patched.txt` was rejected by Codex's patch approval check (`patch rejected: writing outside of the project; rejected by user approval settings`) before any write; the file is absent. This rejection is not the OS sandbox. User-configurable deny subpaths are not offered because no runtime enforcement was established. |
+| A03 | Historical (superseded by 015): Partial | Covered: the no-approver scenario (`approval:"never"`), observed above with the denial returned to the agent in both layers. Out-of-scope shell writes fail in the OS sandbox (`operation not permitted`). Out-of-scope `apply_patch` is rejected by Codex's application-level patch approval with no one asked (`rejected by user approval settings`). Pending: approve and deny scenarios. Non-interactive Codex/Pi execution has no approval route to a human, and AgentX does not forward runtime approval requests to Claude. Non-`never` values are rejected rather than claimed. Pi's boundary is described everywhere as a tool allowlist, not an OS sandbox. |
 | A04 | Pass | Configured sources: `CODEX_HOME=~/.codex` (chatgpt) and `PI_CODING_AGENT_DIR=~/.pi/agent` (oauth), visible in reports, catalog and `status`. An empty `CODEX_HOME` failed with `Not logged in; no fallback identity`. A method mismatch (configured `api-key`, actual ChatGPT) failed. An empty Pi dir failed with `credentials_not_configured; no fallback identity`. None of these started native execution (debug log). Twelve inherited credential-like variables were removed. Seven credential values (from `OPENAI_API_KEY` and both `auth.json` files) appeared in neither debug logs nor reports. Direct check: `PI_CODING_AGENT_DIR=<empty> pi auth check --model openai/gpt-5` is `ready` via the inherited `OPENAI_API_KEY`, and `not_ready` once it is removed. This is the implicit fallback AgentX now blocks. Identity here means source directory plus login method; the account inside a source is not verified, so switching accounts within the same `CODEX_HOME` is not detected. |
 
-What each runtime actually enforces:
+Historical (backlog 004 write-scope model, superseded by backlog 015): what
+each runtime enforced under AgentX's former sandbox injection. Current
+behavior: see [Permission mode](#permission-mode-backlog-015); in `normal` mode
+Codex writes, network and patch rules come from the user's own Codex
+configuration, and in `yolo` mode they are not restricted.
 
 | Restriction | Codex | Pi |
 | --- | --- | --- |
@@ -97,8 +101,8 @@ What each runtime actually enforces:
 | Approval | `approval_policy="never"`; no human path | None exists |
 | Auth source | `CODEX_HOME` + `codex login status` preflight (method only, not account) | `PI_CODING_AGENT_DIR` + `pi auth check` preflight (provider and auth type, not account) |
 
-Deterministic coverage (`go test ./internal/subagents ./internal/runtime`) adds
-the following:
+Historical deterministic coverage (`go test ./internal/subagents ./internal/runtime`,
+grant model; these tests were since replaced) added the following:
 - Grant validation rejects missing or orphan grants, unknown or empty policies,
   non-`never` approval, bad roots, Pi `bounded-write`, and wrong auth sources or
   methods.
@@ -120,9 +124,10 @@ Note (2026-10-21, later the same day): the user removed the grants model and
 `subagents.json` altogether (integrate/wave-2, commit 6d474f7 "Replace
 subagents.json and grants with call-time write scope"). The profiles and roles
 collections are the only configuration; enable/disable is the Claude user MCP
-registration; write scope is requested per `ExternalSubagent` call (`write`,
-`writable_roots`, or `write` with `isolation:"worktree"`, where the worktree is
-the only writable root); `approval` no longer exists as a setting (Codex still
+registration; write scope was requested per `ExternalSubagent` call (`write`,
+`writable_roots`, or `write` with `isolation:"worktree"`, where the worktree was
+the only writable root; this call-time write scope was itself removed by
+backlog 015 in favor of `mode`); `approval` no longer exists as a setting (Codex still
 runs with `approval_policy="never"`); auth is discovered per turn from
 `CODEX_HOME`/`PI_CODING_AGENT_DIR` or the native default and reported, not
 declared. Every grant, `bounded-write`, `approval` and auth-method statement in
@@ -229,11 +234,12 @@ G01–G03 section. Evidence directory (with `server-debug.log` and
 
 | ID | Status | Observation |
 | --- | --- | --- |
-| A06 | Pass (Codex, Pi read-only) | Success: bounded-write grant with root = the repository. The native plan ran in `<worktree>/sub` with `writable_roots=["<worktree>"]` and without the repository path. Rollout `…/rollout-2026-10-21T05-10-57-01a15e5f-2a8d-7350-8b22-eda5b9b39f0b.jsonl` shows `printf isolated > agent.txt` with exit 0. The file exists only in the worktree, and the report names path, branch `agentx/<id>`, base commit and `?? sub/agent.txt`. Escape: an absolute write to the original `repo/sub/escape.txt` failed with `operation not permitted` (rollout `…-01a15e5f-2a8e-7902-a74b-7305306ed11a.jsonl`), and the file is absent. Read-only Codex in a worktree: `printf readonly > ro.txt` failed with `operation not permitted`. Failure: a nonexistent model failed natively; the report named the kept worktree. Cancellation: the agent wrote `partial.txt`, then `StopExternalSubagent` confirmed `cancelled`; the report listed `?? sub/partial.txt` and the file was still present. Pi read-only ran with its working directory inside the worktree. The original snapshot was identical afterwards (`M sub/tracked.txt`, `?? draft.txt`, edit intact). All six worktrees remained in `git worktree list` after the server exited. |
+| A06 | Historical (superseded by 015): Pass (Codex, Pi read-only) | Success: bounded-write grant with root = the repository. The native plan ran in `<worktree>/sub` with `writable_roots=["<worktree>"]` and without the repository path. Rollout `…/rollout-2026-10-21T05-10-57-01a15e5f-2a8d-7350-8b22-eda5b9b39f0b.jsonl` shows `printf isolated > agent.txt` with exit 0. The file exists only in the worktree, and the report names path, branch `agentx/<id>`, base commit and `?? sub/agent.txt`. Escape: an absolute write to the original `repo/sub/escape.txt` failed with `operation not permitted` (rollout `…-01a15e5f-2a8e-7902-a74b-7305306ed11a.jsonl`), and the file is absent. Read-only Codex in a worktree: `printf readonly > ro.txt` failed with `operation not permitted`. Failure: a nonexistent model failed natively; the report named the kept worktree. Cancellation: the agent wrote `partial.txt`, then `StopExternalSubagent` confirmed `cancelled`; the report listed `?? sub/partial.txt` and the file was still present. Pi read-only ran with its working directory inside the worktree. The original snapshot was identical afterwards (`M sub/tracked.txt`, `?? draft.txt`, edit intact). All six worktrees remained in `git worktree list` after the server exited. |
 | A07 | Open (external) | `isolation:"remote"` is rejected before any work with the external reason; no native process starts. Investigated 2026-10-21: `codex cloud` (exec/status/list/diff/apply) has no cancel command. It also runs in a Codex Cloud environment bound to a pushed GitHub branch, not this working directory; this account lists no tasks, and the CLI cannot list environments. `codex exec-server --remote` registers a WebSocket exec server that the user must provision on a remote host; none exists here, and starting one locally would only alias a local directory. Pi 0.84.4 has no remote execution. |
-| A13 (isolation) | Pass | The initialization catalog, each profile's limits (`Isolation: worktree supported …; Remote: rejected …`), the tool description and the `isolation` field description all state the same support. Reports carry the worktree path, branch, base, effective writable roots, retention and the state after the last task. Isolation is fixed per ExternalSubagent: continuation reuses the same worktree. A removed worktree fails explicitly, and the task never moves to the original directory. Unknown isolation values reject. |
+| A13 (isolation) | Historical (superseded by 015): Pass | The initialization catalog, each profile's limits (`Isolation: worktree supported …; Remote: rejected …`), the tool description and the `isolation` field description all state the same support. Reports carry the worktree path, branch, base, effective writable roots, retention and the state after the last task. Isolation is fixed per ExternalSubagent: continuation reuses the same worktree. A removed worktree fails explicitly, and the task never moves to the original directory. Unknown isolation values reject. |
 
-Note (2026-10-21, after independent acceptance of `a09587c`): the reviewer
+Historical note (2026-10-21, superseded by backlog 015, which removed
+writable roots), after independent acceptance of `a09587c`: the reviewer
 found that a writable root spelled as a case variant of the repository
 (`/…/REPO`) was treated as an unrelated root and kept. On case-insensitive
 APFS, the Codex sandbox then allowed writes to the original checkout. A real
@@ -257,8 +263,9 @@ Evidence:
 (`server-debug.log`, `smoke-output.json`). The live probe covers the case
 variant only; NFD is covered deterministically.
 
-Note (2026-10-21, later the same day): the user decided on a subtraction fix
-instead, and it supersedes the directory-identity mapping of `23ead9d`.
+Historical note (2026-10-21, later the same day; superseded by backlog 015,
+under which isolation binds no sandbox at all): the user decided on a
+subtraction fix instead, and it supersedes the directory-identity mapping of `23ead9d`.
 Isolation now overrides grant `writable_roots`: under `bounded-write` the
 sandbox's only writable root is the worktree, and no user-written path string
 reaches an isolated run. This removes the whole class of spelling variants
@@ -287,19 +294,22 @@ Live re-run of `make smoke-mcp-isolation-live` passed. Evidence:
   `gitdir:` line.
 - The original snapshot was unchanged, and all 8 agent worktrees were kept.
 
-Enforcement under `isolation:"worktree"`:
+Current behavior under `isolation:"worktree"` (backlog 015):
 
-| Aspect | Codex | Pi |
-| --- | --- | --- |
-| Working directory | Worktree path of the original working directory | Same |
-| Writes | OS sandbox. `bounded-write`: the only writable root is the worktree (grant `writable_roots` do not apply); the worktree's `.git` stays protected. `read-only`: no writable root | No write tools (read-only only) |
-| Reads | Not path-restricted: the original checkout stays readable | Not path-restricted |
-| Commits | The repository's `.git` is outside the roots, so the agent cannot commit; work stays uncommitted in the worktree | Not applicable |
+| Aspect | Codex | Claude | Pi |
+| --- | --- | --- | --- |
+| Working directory | Worktree path of the original working directory | Same | Same |
+| Writes, reads, commits | `normal`: whatever the user's Codex configuration allows (AgentX adds only `approval_policy="never"`); `yolo`: unrestricted (`danger-full-access`) | `normal`: Claude's own settings; `yolo`: unrestricted (`--dangerously-skip-permissions`) | Read-only tool allowlist; `yolo` rejected |
+
+Historical (superseded by backlog 015): under the write-scope model the
+worktree was the only writable OS-sandbox root for `bounded-write`, a run
+without write had no writable root, the worktree's `.git` stayed protected,
+and the agent could not commit.
 
 Deterministic coverage (`go test ./internal/subagents`, real git with a fake
 native runner) covers the following:
-- Root rebasing.
-- Dirty-original preservation and plan cwd/roots.
+- Isolation independent of mode (`TestWorktreeIsolationIsIndependentOfMode`).
+- Dirty-original preservation and plan cwd.
 - Report contents.
 - Same-worktree continuation, and explicit failure when the worktree is removed.
 - Retention on failure and cancellation.
