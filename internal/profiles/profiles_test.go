@@ -193,13 +193,13 @@ func TestLaunchArgsNeverInventEffort(t *testing.T) {
 }
 
 func TestParseProfileWithNewFields(t *testing.T) {
-	data := []byte("---\nagent: codex\nmodel: test\nsandbox: false\nuser_config: false\nflags:\n  - --custom\n  - value\n---\nA test profile\n")
+	data := []byte("---\nagent: codex\nmodel: test\nuser_config: false\nflags:\n  - --custom\n  - value\n---\nA test profile\n")
 	p, err := Parse("test", data)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if p.Sandbox == nil || *p.Sandbox != false {
-		t.Fatal("sandbox not parsed")
+	if _, err := Parse("test", []byte("---\nagent: codex\nmodel: test\nsandbox: false\n---\nA test profile\n")); err == nil || !strings.Contains(err.Error(), `unknown field "sandbox"`) {
+		t.Fatal("removed sandbox field accepted:", err)
 	}
 	if p.UserConfig == nil || *p.UserConfig != false {
 		t.Fatal("user_config not parsed")

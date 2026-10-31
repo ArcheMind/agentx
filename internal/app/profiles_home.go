@@ -407,7 +407,7 @@ func (a App) changeField(ctx context.Context, reader *bufio.Reader, home string,
 	if mode == wizardCreate || mode == wizardCopy {
 		fields = append(fields, "Name")
 	}
-	fields = append(fields, "Sandbox", "User config", "Flags", "Description", "Return to summary")
+	fields = append(fields, "User config", "Flags", "Description", "Return to summary")
 	choice, err := a.pick(reader, "Change which entry?", fields)
 	if err != nil {
 		return err
@@ -431,8 +431,6 @@ func (a App) changeField(ctx context.Context, reader *bufio.Reader, home string,
 		err = a.askEffort(ctx, reader, draft)
 	case "Name":
 		err = a.askName(reader, home, draft)
-	case "Sandbox":
-		err = a.askSandbox(reader, draft)
 	case "User config":
 		err = a.askUserConfig(reader, draft)
 	case "Flags":
@@ -697,41 +695,6 @@ func (a App) askDescription(reader *bufio.Reader, draft *profileDraft, keep bool
 	}
 }
 
-func (a App) askSandbox(reader *bufio.Reader, draft *profileDraft) error {
-	labels := []string{
-		"Enabled — restrict network and tmpdir in Codex sandbox",
-		"Disabled — use native sandbox defaults",
-		"Default — enabled (same as omitting from profile file)",
-	}
-	selected := 2
-	if draft.profile.Sandbox != nil {
-		if *draft.profile.Sandbox {
-			selected = 0
-		} else {
-			selected = 1
-		}
-	}
-	rows := make([]contentRow, len(labels))
-	for i, label := range labels {
-		rows[i] = contentRow{text: label, itemIndex: i}
-	}
-	index, _, err := a.runSelector(reader, selector{title: "Sandbox restrictions:", help: selectorHelp, marker: "> ", selected: selected}, rows, len(rows), nil)
-	if err != nil {
-		return err
-	}
-	switch index {
-	case 0:
-		t := true
-		draft.profile.Sandbox = &t
-	case 1:
-		f := false
-		draft.profile.Sandbox = &f
-	case 2:
-		draft.profile.Sandbox = nil
-	}
-	return nil
-}
-
 func (a App) askUserConfig(reader *bufio.Reader, draft *profileDraft) error {
 	labels := []string{
 		"Loaded — native agent loads user config, extensions, skills",
@@ -823,15 +786,6 @@ func (a App) printProfileFields(p profiles.Profile, effort string) {
 	field("Agent", colorize(a.Color, agentColor(p.Agent), profiles.AgentName(p.Agent)))
 	field("Model", p.Model)
 	field("Effort", effort)
-	if p.Sandbox != nil {
-		if *p.Sandbox {
-			field("Sandbox", "enabled (network and tmpdir restricted)")
-		} else {
-			field("Sandbox", "disabled (native defaults)")
-		}
-	} else {
-		field("Sandbox", "default (enabled)")
-	}
 	if p.UserConfig != nil {
 		if *p.UserConfig {
 			field("User config", "loaded")

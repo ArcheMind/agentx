@@ -13,6 +13,7 @@ All notable changes to AgentX are documented here. The format follows [Keep a Ch
 
 - ExternalSubagent `write` and `writable_roots` parameters, the deprecated native `mode` values (`acceptEdits`, `auto`, `bypassPermissions`, `default`, `dontAsk`, `plan`), and the AgentX-injected Codex `read-only`/`workspace-write` sandbox with its network and tmpdir restrictions. No compatibility aliases.
 - `make smoke-mcp-policy-live`, which tested the removed write scope.
+- Profile `sandbox` field and its `ax` profile editor entry: it only tuned the removed write-mode Codex sandbox. Profiles that still set `sandbox` are rejected as having an unknown field; delete the line.
 
 ## [0.7.0] - 2026-10-25
 

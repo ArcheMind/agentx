@@ -28,14 +28,13 @@ type Profile struct {
 	Agent       string   `json:"agent" yaml:"agent"`
 	Model       string   `json:"model" yaml:"model"`
 	Effort      string   `json:"effort,omitempty" yaml:"effort,omitempty"`
-	Sandbox     *bool    `json:"sandbox,omitempty" yaml:"sandbox,omitempty"`
 	UserConfig  *bool    `json:"user_config,omitempty" yaml:"user_config,omitempty"`
 	Flags       []string `json:"flags,omitempty" yaml:"flags,omitempty"`
 }
 
 func (p Profile) Equal(o Profile) bool {
 	return p.Name == o.Name && p.Description == o.Description && p.Agent == o.Agent && p.Model == o.Model && p.Effort == o.Effort &&
-		boolEqual(p.Sandbox, o.Sandbox) && boolEqual(p.UserConfig, o.UserConfig) && slices.Equal(p.Flags, o.Flags)
+		boolEqual(p.UserConfig, o.UserConfig) && slices.Equal(p.Flags, o.Flags)
 }
 
 func boolEqual(a, b *bool) bool {
@@ -195,13 +194,13 @@ func Parse(name string, data []byte) (Profile, error) {
 			if !ok {
 				return p, fmt.Errorf("%s field %q must be a string", FileName, key)
 			}
-		case "sandbox", "user_config", "flags":
+		case "user_config", "flags":
 		case "name":
 			return p, fmt.Errorf("%s must not set name; the directory name is the profile name", FileName)
 		case "description":
 			return p, fmt.Errorf("%s must not set description in front matter; write it below the front matter", FileName)
 		default:
-			return p, fmt.Errorf("%s has unknown field %q; allowed: agent, model, effort, sandbox, user_config, flags", FileName, key)
+			return p, fmt.Errorf("%s has unknown field %q; allowed: agent, model, effort, user_config, flags", FileName, key)
 		}
 		switch key {
 		case "agent":
@@ -210,12 +209,6 @@ func Parse(name string, data []byte) (Profile, error) {
 			p.Model = value
 		case "effort":
 			p.Effort = value
-		case "sandbox":
-			b, ok := fields[key].(bool)
-			if !ok {
-				return p, fmt.Errorf("%s field %q must be a boolean", FileName, key)
-			}
-			p.Sandbox = &b
 		case "user_config":
 			b, ok := fields[key].(bool)
 			if !ok {

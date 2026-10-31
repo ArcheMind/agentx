@@ -132,7 +132,7 @@ func ProfileCatalog(home string) (string, []string) {
 		} else {
 			models = append(models, option.Name)
 		}
-		fmt.Fprintf(&text, "- %s: execution agent=%q; exact configured model ID (including provider prefix)=%q; effort=%q; sandbox=%s; user_config=%s; flags=%q; user description=%q; ExternalSubagent callable=%s; static prerequisites=%q; access/limits=%q\n", option.Name, option.Agent, option.Model, describeEffort(option.Effort), describeToggle(option.Sandbox), describeToggle(option.UserConfig), option.Flags, option.Description, callable, readiness, Limits(option))
+		fmt.Fprintf(&text, "- %s: execution agent=%q; exact configured model ID (including provider prefix)=%q; effort=%q; user_config=%s; flags=%q; user description=%q; ExternalSubagent callable=%s; static prerequisites=%q; access/limits=%q\n", option.Name, option.Agent, option.Model, describeEffort(option.Effort), describeToggle(option.UserConfig), option.Flags, option.Description, callable, readiness, Limits(option))
 	}
 	for _, problem := range problems {
 		fmt.Fprintf(&text, "- %s: invalid profile at %q; ExternalSubagent callable=no; problem=%q\n", problem.Name, problem.Path, problem.Err)
