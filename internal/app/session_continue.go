@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/ArcheMind/agentx/internal/drivers"
@@ -83,6 +85,10 @@ func (a App) sessionContinue(ctx context.Context, args []string) error {
 	if agent.ID != "claude" && agent.ID != "codex" && agent.ID != "pi" {
 		return fmt.Errorf("%s has no headless continue adapter", agent.ID)
 	}
+	// The caller owns this process (a host harness); SIGTERM/SIGINT must cancel
+	// the native turn's whole process group instead of orphaning it.
+	ctx, stopSignals := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
+	defer stopSignals()
 	if agent.ID == "pi" && model == "" {
 		return fmt.Errorf("--model is required for pi (provider/model)")
 	}
