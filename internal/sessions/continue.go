@@ -54,3 +54,20 @@ func FindCodexRollout(homeDir, threadID string) (string, error) {
 	}
 	return newest, nil
 }
+
+// RechainMessages rewrites the parent chain positionally for a continue
+// import. The transcript's message order is the conversation; Claude and Pi
+// reconstruct a session as the newest record's ancestor chain, so a dangling
+// or empty parentId (normal in delta-appended or recall-assembled
+// transcripts) would orphan all history before it. Export/import fidelity is
+// untouched: the serializers keep writing parentId verbatim.
+func RechainMessages(messages []Message) []Message {
+	out := make([]Message, len(messages))
+	previous := ""
+	for i, message := range messages {
+		message.ParentID = previous
+		previous = message.ID
+		out[i] = message
+	}
+	return out
+}

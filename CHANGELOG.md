@@ -6,7 +6,13 @@ All notable changes to AgentX are documented here. The format follows [Keep a Ch
 
 ### Added
 
-- `ax session continue <claude|codex|pi>`: headless one-turn transcript continuation. Reads a unified transcript (file or stdin) ending in a user message, imports the history into the native store, runs one turn with the trailing user message as the prompt, and prints the newly recorded messages as a transcript delta on stdout. Flags: `--model`, `--effort` (codex reasoning effort / claude effort / pi thinking), `--append-system-prompt`, `--mcp-config <file|json>` (unified `mcpServers` map translated to `--mcp-config --strict-mcp-config` for claude and `-c mcp_servers.*` for codex; pi is rejected, it has no MCP mechanism), `--mode <normal|yolo>` (normal passes no permission or sandbox flags; yolo bypasses them, rejected for pi), `--workspace`. Delta message ids are namespaced per call so repeated turns append cleanly to one caller-owned transcript.
+- `ax session continue <claude|codex|pi>`: headless one-turn transcript continuation.
+  The imported history's parent chain is rewritten positionally: Claude and Pi
+  reconstruct a session as the newest record's ancestor chain, so the dangling
+  parentIds normal in delta-appended transcripts would otherwise orphan the
+  history (the second turn silently lost the first turn's context). Export and
+  import fidelity are untouched; serializers keep parentId verbatim. Live
+  regression: `make smoke-continue-live` (AX_CONTINUE_AGENTS=claude[,codex,pi]). Reads a unified transcript (file or stdin) ending in a user message, imports the history into the native store, runs one turn with the trailing user message as the prompt, and prints the newly recorded messages as a transcript delta on stdout. Flags: `--model`, `--effort` (codex reasoning effort / claude effort / pi thinking), `--append-system-prompt`, `--mcp-config <file|json>` (unified `mcpServers` map translated to `--mcp-config --strict-mcp-config` for claude and `-c mcp_servers.*` for codex; pi is rejected, it has no MCP mechanism), `--mode <normal|yolo>` (normal passes no permission or sandbox flags; yolo bypasses them, rejected for pi), `--workspace`. Delta message ids are namespaced per call so repeated turns append cleanly to one caller-owned transcript.
 
 ### Changed
 

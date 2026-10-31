@@ -1,6 +1,6 @@
 .PHONY: fmt check test test-subagents smoke-subagents smoke-subagents-live audit build install smoke smoke-live smoke-clean smoke-hooks-live smoke-skills-clean smoke-skills-live verify clean
 .PHONY: smoke-mcp-management smoke-mcp-live smoke-mcp-channel smoke-mcp-host-live verify-mcp-host-evidence test-mcp-race test-mcp-syntax
-.PHONY: smoke-mcp-contract smoke-transcript-fidelity smoke-transcript-cross
+.PHONY: smoke-mcp-contract smoke-transcript-fidelity smoke-transcript-cross smoke-continue-live
 .PHONY: smoke-mcp-profiles smoke-profiles smoke-mcp-effort-live smoke-mcp-isolation-live
 
 # Schema validation reuses the protocol module's ajv; empty when the module dir is unresolvable, and the smoke reports it skipped.
@@ -62,6 +62,9 @@ smoke-transcript-fidelity: build
 
 smoke-transcript-cross: build
 	node test/smoke/transcript-cross.mjs "$(CURDIR)/bin/ax"
+
+smoke-continue-live: build
+	node test/smoke/continue-roundtrip-live.mjs "$(CURDIR)/bin/ax"
 
 smoke-mcp-effort-live: build
 	node test/smoke/mcp-roles-effort-live.mjs "$(CURDIR)/bin/ax"

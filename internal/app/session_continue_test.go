@@ -301,3 +301,94 @@ func TestSessionContinueRejectsAgentsWithoutAdapter(t *testing.T) {
 		t.Fatalf("err = %v", err)
 	}
 }
+
+// The caller's real contract: each delta is appended to the transcript AS-IS
+// (namespaced ids, dangling parentIds, native fields) and continued. The
+// second import must keep the whole history on one Claude ancestor chain.
+func TestSessionContinueRoundTripAppendsDeltaAsIs(t *testing.T) {
+	workspace := testWorkspace(t)
+	secret := "Remember the secret passphrase PINEAPPLE-77."
+	first := sessions.Session{ID: "turn-1", Provider: "harness", Workspace: workspace, Messages: []sessions.Message{
+		{ID: "u1", Role: "user", Content: []sessions.ContentBlock{{Type: "text", Text: secret}}},
+	}, MessageCount: 1}
+	firstInput, err := json.Marshal(first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	application, stdout, runner := continueApp(t, "claude", "", string(firstInput))
+	runner.reply = []sessions.Message{{ID: "a1", Role: "assistant", Content: []sessions.ContentBlock{{Type: "text", Text: "OK"}}}}
+	if err := application.Run(context.Background(), []string{"session", "continue", "claude"}); err != nil {
+		t.Fatal(err)
+	}
+	delta1 := decodeDelta(t, stdout)
+
+	second := first
+	second.Messages = append(append([]sessions.Message{}, first.Messages...), delta1.Messages...)
+	second.Messages = append(second.Messages, sessions.Message{
+		ID: "u2", Role: "user", Content: []sessions.ContentBlock{{Type: "text", Text: "What was the passphrase?"}},
+	})
+	second.MessageCount = len(second.Messages)
+	secondInput, err := json.Marshal(second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	application2, stdout2, runner2 := continueApp(t, "claude", "", string(secondInput))
+	application2.Sessions = application.Sessions
+	runner2.home = runner.home
+	runner2.reply = []sessions.Message{{ID: "a2", Role: "assistant", Content: []sessions.ContentBlock{{Type: "text", Text: "PINEAPPLE-77"}}}}
+	if err := application2.Run(context.Background(), []string{"session", "continue", "claude"}); err != nil {
+		t.Fatal(err)
+	}
+	delta2 := decodeDelta(t, stdout2)
+	if len(delta2.Messages) != 1 || sessions.MessageText(delta2.Messages[0]) != "PINEAPPLE-77" {
+		t.Fatalf("second delta = %+v", delta2.Messages)
+	}
+
+	run2 := runner2.plans[len(runner2.plans)-1]
+	token := flagValue(run2.Args, "--resume")
+	if token == "" {
+		t.Fatalf("second turn must resume the imported history: %q", run2.Args)
+	}
+	records := readClaudeRecords(t, sessions.ClaudeProjectFile(runner2.home, workspace, token))
+	joined := ""
+	// Only the imported history (first 2 records) is under test; the fake
+	// runner rewrites the file when simulating the turn.
+	if len(records) < 2 {
+		t.Fatalf("imported history has %d records", len(records))
+	}
+	if records[0]["parentUuid"] != "" {
+		t.Fatalf("history root carries parentUuid %v", records[0]["parentUuid"])
+	}
+	for i := 1; i < 2; i++ {
+		if records[i]["parentUuid"] != records[i-1]["uuid"] {
+			t.Fatalf("history record %d is off the ancestor chain: parentUuid=%v previous uuid=%v", i, records[i]["parentUuid"], records[i-1]["uuid"])
+		}
+	}
+	for _, record := range records {
+		data, _ := json.Marshal(record)
+		joined += string(data)
+	}
+	if !strings.Contains(joined, "PINEAPPLE-77") {
+		t.Fatalf("imported history lost the passphrase: %s", joined)
+	}
+}
+
+func readClaudeRecords(t *testing.T, path string) []map[string]any {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var records []map[string]any
+	for _, line := range strings.Split(string(data), "\n") {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		var record map[string]any
+		if err := json.Unmarshal([]byte(line), &record); err != nil {
+			t.Fatal(err)
+		}
+		records = append(records, record)
+	}
+	return records
+}
