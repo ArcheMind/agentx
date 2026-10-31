@@ -77,6 +77,8 @@ function splitReasoning(m){
 function degrade(dst,messages){
   let list=structuredClone(messages)
   if(dst==='codex')list=list.flatMap(splitReasoning)
+  // Spec Pi table maps no system role, so system messages are dropped.
+  if(dst==='pi')list=list.filter(m=>m.role!=='system')
   return list.map(m=>{
     if(dst==='pi'){
       // pi user content is text blocks only; image blocks in user messages are dropped.
@@ -292,8 +294,8 @@ async function runPair(src,dst){
   return detail
 }
 
-// Ordered (src,dst) pairs under test; adding a pair is one line (pi destinations are implemented but not yet enabled).
-const pairs=[['claude','codex'],['codex','claude']]
+// Ordered (src,dst) pairs under test; adding a pair is one line.
+const pairs=[['claude','codex'],['codex','claude'],['claude','pi'],['pi','claude'],['codex','pi'],['pi','codex']]
 const matrix={},failures=[],warnings={}
 const only=process.env.CROSS_PAIR?.split('->')
 for(const [src,dst] of pairs){
