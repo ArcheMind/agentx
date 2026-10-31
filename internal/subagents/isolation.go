@@ -17,7 +17,6 @@ const IsolationWorktree = "worktree"
 // removes it, because continuation reuses it and its uncommitted work belongs to the user.
 type Worktree struct {
 	Repo, Path, Branch, Base, Original string
-	Roots                              []string
 	Remaining                          string
 }
 
@@ -49,10 +48,7 @@ func within(base, path string) (string, bool) {
 // createWorktree adds a new worktree at HEAD of the repository containing cwd and returns it with
 // the agent working directory inside it. A rejected call leaves no worktree behind. It ignores the
 // connection context so a connection ending mid-call cannot interrupt git half way.
-//
-// With write the only writable root is the worktree path AgentX created: no caller-supplied path
-// string reaches an isolated run, so no spelling of a path can reopen the original checkout.
-func (s *Server) createWorktree(id, cwd string, write bool) (*Worktree, string, error) {
+func (s *Server) createWorktree(id, cwd string) (*Worktree, string, error) {
 	ctx := context.Background()
 	worktreeMu.Lock()
 	defer worktreeMu.Unlock()
@@ -103,20 +99,17 @@ func (s *Server) createWorktree(id, cwd string, write bool) (*Worktree, string, 
 	if info, err := os.Stat(agentCwd); err != nil || !info.IsDir() {
 		return reject(fmt.Errorf("working directory %s is not tracked at HEAD %s, so it does not exist in the worktree; no task started", cwd, base))
 	}
-	if write {
-		w.Roots = []string{w.Path}
-	}
 	return w, agentCwd, nil
 }
 
-func (s *Server) executionRoots(a *ExternalSubagentState) ([]string, error) {
+func (s *Server) checkWorktree(a *ExternalSubagentState) error {
 	if a.Worktree == nil {
-		return a.Roots, nil
+		return nil
 	}
 	if info, err := os.Stat(a.Cwd); err != nil || !info.IsDir() {
-		return nil, fmt.Errorf("isolation worktree directory %s unavailable; no replacement created and nothing runs in the original directory", a.Cwd)
+		return fmt.Errorf("isolation worktree directory %s unavailable; no replacement created and nothing runs in the original directory", a.Cwd)
 	}
-	return a.Worktree.Roots, nil
+	return nil
 }
 
 func (s *Server) worktreeRemaining(w *Worktree) string {

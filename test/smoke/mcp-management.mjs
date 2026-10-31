@@ -20,7 +20,7 @@ await mkdir(join(home,'.config','agentx'),{recursive:true});await writeFile(lega
 for(const removed of ['enable','disable','status']){const r=exec(executable,['profile',removed]);assert(r.status!==0&&r.stderr.includes('usage: ax [--json|--yaml] profile <list|show>'),`${removed} still exists: ${r.stdout}${r.stderr}`)}
 const initial=listProfiles()
 const review=initial.profiles.find(p=>p.name==='review'),daily=initial.profiles.find(p=>p.name==='daily')
-assert(initial.enabled===undefined&&initial.grant_problems===undefined&&initial.profiles.length===2&&review.execution===undefined&&review.auth===undefined&&review.limits.includes('read-only')&&daily.limits!==undefined&&daily.limits.includes('read-only'),'initial state: '+JSON.stringify(initial))
+assert(initial.enabled===undefined&&initial.grant_problems===undefined&&initial.profiles.length===2&&review.execution===undefined&&review.auth===undefined&&review.limits.includes('Mode: normal (default)')&&daily.limits!==undefined&&daily.limits.includes('Mode: normal (default)'),'initial state: '+JSON.stringify(initial))
 const plan=launch(),args=plan.status===0?JSON.parse(plan.stdout).args:[]
 assert(!existsSync(join(home,'.claude.json'))&&args[0]==='--mcp-config'&&JSON.parse(args[1]).mcpServers.agentx.args.join(' ')==='mcp serve'&&args.join(' ').includes('--allowedTools mcp__agentx__ExternalSubagent'),'ax claude did not attach the AgentX MCP connection without registration: '+plan.stdout+plan.stderr)
 assert(await readFile(legacy,'utf8')===legacyText,'legacy subagents.json was touched')

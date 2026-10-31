@@ -32,7 +32,28 @@ without creating any work. It used no model inference. Existing lifecycle tests
 now call the renamed tools; historical host evidence is read only in explicit
 historical mode.
 
+## Permission mode (backlog 015)
+
+The call-time write scope (`write`, `writable_roots`) and the deprecated native
+`mode` values were removed. A call now picks `mode`: `normal` (default) or
+`yolo`.
+
+| ID | Status | Check |
+| --- | --- | --- |
+| M01 | Pass (unit) | `normal` passes no sandbox or permission flag: Codex gets only `approval_policy="never"`, Claude gets none (`TestNormalModePassesNoPermissionFlags`, `make smoke-profiles` W01). |
+| M02 | Pass (unit) | `yolo` reaches Codex as `sandbox_mode="danger-full-access"` plus `approval_policy="never"` and Claude as `--dangerously-skip-permissions` (`TestYoloModeBypassesNativePermissions`). |
+| M03 | Pass (unit) | Pi `yolo`, unknown modes and the removed `write`/`writable_roots` fields are rejected before any work starts (`TestInvalidModesRejectedBeforeAnyWork`, `make smoke-mcp-contract`). |
+| M04 | Pass (unit) | The mode is fixed for continuations (`TestModeIsFixedForContinuation`). |
+| M05 | Pass (unit) | `isolation:"worktree"` is independent of mode: it only sets the working directory (`TestWorktreeIsolationIsIndependentOfMode`). |
+| M06 | Pending (live) | A default call runs real Codex and Claude; a Claude `yolo` call runs a command that `normal` refuses; `make smoke-mcp-isolation-live` passes with the rebuilt binary. |
+
+The write-scope evidence in the next two sections is historical: it describes
+the removed `write`/`writable_roots` surface and the sandbox AgentX used to
+inject. It no longer describes current behavior.
+
 ## Execution policy, approval and authentication (backlog 004 G01–G03)
+
+Historical (superseded by backlog 015, see Permission mode above).
 
 Recorded 2026-10-21 with Codex CLI 0.163.0 (`gpt-5.6-luna`, `low`) and Pi CLI
 0.84.4 (`openai-codex/gpt-5.6-luna`). The runs are real native execution
@@ -191,6 +212,9 @@ Still open or not claimed:
   `--thinking`) but cannot verify it.
 
 ## Isolation (backlog 004 G05–G06)
+
+Historical for writes (superseded by backlog 015): isolation no longer binds a
+sandbox to the worktree; it only sets the working directory.
 
 Recorded 2026-10-21 with Codex CLI 0.163.0 (`gpt-5.6-luna`, `low`), Pi CLI
 0.84.4 (`openai-codex/gpt-5.6-luna`) and git 2.39.5, through the built AgentX
@@ -472,7 +496,7 @@ see [Roles and effort](#roles-and-effort-backlog-004-g04-g09).
 | L08–L10 | Targeted process-group cancellation waits; unconfirmed cancellation honest; independent objects; lost session never silently recreated or replayed. |
 | R01–R03 | Readable reports, provenance and interaction hints; injected/native failures distinct from successful reports. |
 | R04–R05 | Native external usage or unknown; CLI delegation with no Claude relay. |
-| R06–R08 | Native readonly policy/allowlist; rejected unsupported settings; no permission inheritance claim/fallback; acceptance/running/terminal states distinct. |
+| R06–R08 | Permission mode `normal` (passthrough) or `yolo` (bypass), Pi allowlist; rejected unsupported settings; no permission inheritance claim/fallback; acceptance/running/terminal states distinct. |
 
 ## Explicit limits
 
@@ -488,14 +512,14 @@ see [Roles and effort](#roles-and-effort-backlog-004-g04-g09).
   that native evidence shows was not run as requested, remote isolation (004
   A07, no verifiable remote environment with cancellation), other MCP engine
   adapters and cross-connection recovery are rejected or reported.
-- Pi's allowlist is not an OS sandbox. Pi `bounded-write` is rejected; a real
-  Pi write boundary (004 G02 for Pi) remains open. Approve and deny approval
+- Pi's allowlist is not an OS sandbox. Pi `yolo` is rejected and Pi
+  always runs its read-only allowlist. Approve and deny approval
   scenarios (004 A03) remain pending: only `approval:"never"` exists, and host
   approvals are not inherited. Native context does not inherit Claude
   permissions, and authentication comes only from each grant's source.
-  Deprecated mode never grants extra access.
+  Only `mode: "yolo"` bypasses native permissions; `normal` passes none.
 
 Reproduce deterministic/management checks with
 `make verify test-mcp-race smoke-mcp-management`. Paid native/host checks use
-`make smoke-mcp-live smoke-mcp-channel smoke-mcp-host-live smoke-mcp-policy-live smoke-mcp-isolation-live`
+`make smoke-mcp-live smoke-mcp-channel smoke-mcp-host-live smoke-mcp-isolation-live`
 and the logins selected by each grant's auth source.

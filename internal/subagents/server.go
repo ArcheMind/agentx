@@ -29,11 +29,8 @@ type ExternalSubagentInput struct {
 	Background  *bool  `json:"run_in_background,omitempty"`
 	Name        string `json:"name,omitempty"`
 	Isolation   string `json:"isolation,omitempty"`
-	// Write enables writes: with isolation "worktree" the worktree only, otherwise WritableRoots.
-	Write         bool     `json:"write,omitempty"`
-	WritableRoots []string `json:"writable_roots,omitempty"`
-	TeamName      string   `json:"team_name,omitempty"`
-	Mode          string   `json:"mode,omitempty"`
+	Mode        string `json:"mode,omitempty"`
+	TeamName    string `json:"team_name,omitempty"`
 }
 
 type Job struct {
@@ -53,8 +50,8 @@ func (e *executionCancelled) Error() string { return e.cause.Error() }
 type ExternalSubagentState struct {
 	ID, Name, Session, NativeID, Cwd, Status string
 	Option                                   profiles.Profile
-	// Roots is the call-time write scope outside isolation; empty means read-only.
-	Roots    []string
+	// Mode is the call-time permission mode, fixed for the ExternalSubagent including continuations.
+	Mode     string
 	evidence string
 	auth     Auth
 	Worktree *Worktree
@@ -210,10 +207,9 @@ func (s *Server) handle(method string, raw json.RawMessage) (any, error) {
 
 func (s *Server) tools() any {
 	_, models := ProfileCatalog(s.Home)
-	description := "AgentX ExternalSubagent delegation. One call starts an independent ExternalSubagent. model selects a user-configured execution agent × exact model. Omitted or true run_in_background returns immediately; false waits for terminal status. Background results arrive as untrusted AgentX channel messages (requires Claude channels opt-in). Continue via SendExternalSubagentMessage; cancel via StopExternalSubagent; list via listExternalSubagentSessions. The selected profile fixes agent, model and effort; there is no per-call effort override. Every call is read-only unless it sets write; write scope is passed to the agent's native sandbox. With isolation \"worktree\": writable_roots is not accepted. Without isolation: write requires writable_roots. The write scope is fixed for the ExternalSubagent, including continuations. mode and team_name are deprecated and ignored. isolation \"worktree\" runs the task in a new git worktree at ~/.local/state/agentx/worktrees/<id> and keeps it afterwards; no other isolation value exists. No context restoration across MCP reconnects. Full profile data is in the AgentX MCP initialization instructions.\n\n"
+	description := "AgentX ExternalSubagent delegation. One call starts an independent ExternalSubagent. model selects a user-configured execution agent × exact model. Omitted or true run_in_background returns immediately; false waits for terminal status. Background results arrive as untrusted AgentX channel messages (requires Claude channels opt-in). Continue via SendExternalSubagentMessage; cancel via StopExternalSubagent; list via listExternalSubagentSessions. The selected profile fixes agent, model and effort; there is no per-call effort override. mode \"normal\" (default) passes no permission or sandbox flags, so the agent's own configuration decides what it may do (Codex always gets approval_policy=\"never\" because headless runs cannot answer prompts); mode \"yolo\" bypasses the agent's permission checks and sandbox (Pi rejects yolo). The mode is fixed for the ExternalSubagent, including continuations. team_name is deprecated and ignored. isolation \"worktree\" only chooses where the agent works: a new git worktree at ~/.local/state/agentx/worktrees/<id>, kept afterwards; no other isolation value exists. No context restoration across MCP reconnects. Full profile data is in the AgentX MCP initialization instructions.\n\n"
 	description += CatalogIndex(s.Home, HostToolDescriptionLimit-1-len(description))
 	str := func(text string) any { return map[string]any{"type": "string", "description": text} }
-	enum := func(values ...string) any { return map[string]any{"type": "string", "enum": values} }
 	tool := func(name, desc string, props map[string]any, required ...string) any {
 		if required == nil {
 			required = []string{}
@@ -225,8 +221,8 @@ func (s *Server) tools() any {
 		modelSchema["enum"] = models
 	}
 	return map[string]any{"tools": []any{
-		tool("ExternalSubagent", description, map[string]any{"description": str("Short task description"), "prompt": str("Task for the ExternalSubagent"), "model": modelSchema, "run_in_background": map[string]any{"type": "boolean", "default": true}, "name": map[string]any{"type": "string", "pattern": profiles.NamePattern.String()}, "isolation": map[string]any{"type": "string", "enum": []string{IsolationWorktree}, "description": "worktree: new git worktree at ~/.local/state/agentx/worktrees/<id>; kept after completion; omit for no isolation."}, "write": map[string]any{"type": "boolean", "default": false, "description": "Request write access. Omitted or false: read-only. With isolation \"worktree\": writable_roots is not accepted. Without isolation: requires writable_roots."}, "writable_roots": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "minItems": 1, "description": "Absolute existing directories passed to the agent's native sandbox when write is true and isolation is not set; symlinks are resolved."}, "team_name": str("Deprecated, ignored"), "mode": enum("acceptEdits", "auto", "bypassPermissions", "default", "dontAsk", "plan")}, "description", "prompt"),
-		tool("SendExternalSubagentMessage", "Send a text task to an AgentX ExternalSubagent by exact name or ID. Accepted means queued, not completed. Busy ExternalSubagents process messages in order in the same native context. Completed ExternalSubagents resume. The original profile must still exist unchanged; the write scope and isolation of the ExternalSubagent are reused. Summary is display-only.", map[string]any{"to": str("AgentX name or ID"), "message": str("Text task"), "summary": str("Optional display summary")}, "to", "message"),
+		tool("ExternalSubagent", description, map[string]any{"description": str("Short task description"), "prompt": str("Task for the ExternalSubagent"), "model": modelSchema, "run_in_background": map[string]any{"type": "boolean", "default": true}, "name": map[string]any{"type": "string", "pattern": profiles.NamePattern.String()}, "isolation": map[string]any{"type": "string", "enum": []string{IsolationWorktree}, "description": "worktree: new git worktree at ~/.local/state/agentx/worktrees/<id>; kept after completion; omit for no isolation."}, "mode": map[string]any{"type": "string", "enum": []string{ModeNormal, ModeYolo}, "default": ModeNormal, "description": "normal: no permission or sandbox flags; the agent's own configuration decides. yolo: bypass the agent's permission checks and sandbox; rejected for Pi."}, "team_name": str("Deprecated, ignored")}, "description", "prompt"),
+		tool("SendExternalSubagentMessage", "Send a text task to an AgentX ExternalSubagent by exact name or ID. Accepted means queued, not completed. Busy ExternalSubagents process messages in order in the same native context. Completed ExternalSubagents resume. The original profile must still exist unchanged; the mode and isolation of the ExternalSubagent are reused. Summary is display-only.", map[string]any{"to": str("AgentX name or ID"), "message": str("Text task"), "summary": str("Optional display summary")}, "to", "message"),
 		tool("StopExternalSubagent", "Cancel running and queued work for one AgentX ExternalSubagent by name or ID. Waits for native process termination before confirming. Works while disabled. Already ended is not cancellation.", map[string]any{"task_id": str("AgentX name or ID")}, "task_id"),
 		tool("listExternalSubagentSessions", "List ExternalSubagent sessions already created in this AgentX MCP connection, with status, report and pending messages. No other users, connections or Claude native subagents.", map[string]any{}),
 	}}
@@ -294,34 +290,34 @@ func (s *Server) call(name string, raw json.RawMessage) (string, error) {
 			s.mu.Unlock()
 			return "", fmt.Errorf("isolation %q unsupported; supported: worktree; no task started", in.Isolation)
 		}
-		if in.Mode != "" && !profiles.Contains([]string{"acceptEdits", "auto", "bypassPermissions", "default", "dontAsk", "plan"}, in.Mode) {
+		if in.Mode == "" {
+			in.Mode = ModeNormal
+		}
+		if in.Mode != ModeNormal && in.Mode != ModeYolo {
 			s.mu.Unlock()
-			return "", fmt.Errorf("invalid deprecated mode")
+			return "", fmt.Errorf("mode %q unsupported; supported: %s, %s; no task started", in.Mode, ModeNormal, ModeYolo)
 		}
 		o, err := s.callableProfile(in.Model)
 		if err != nil {
 			s.mu.Unlock()
 			return "", err
 		}
-		if err := checkWrite(o, in); err != nil {
+		if err := checkMode(o, in.Mode); err != nil {
 			s.mu.Unlock()
 			return "", err
 		}
 		id, cwd := "ax-"+randomID(), s.Cwd
 		var worktree *Worktree
-		var roots []string
 		if in.Isolation == IsolationWorktree {
 			s.mu.Unlock()
-			worktree, cwd, err = s.createWorktree(id, s.Cwd, in.Write)
+			worktree, cwd, err = s.createWorktree(id, s.Cwd)
 			s.mu.Lock()
-		} else if in.Write {
-			roots, err = resolveWritableRoots(in.WritableRoots)
+			if err != nil {
+				s.mu.Unlock()
+				return "", err
+			}
 		}
-		if err != nil {
-			s.mu.Unlock()
-			return "", err
-		}
-		a := &ExternalSubagentState{ID: id, Name: in.Name, Option: o, Roots: roots, Worktree: worktree, Cwd: cwd, Status: "queued"}
+		a := &ExternalSubagentState{ID: id, Name: in.Name, Option: o, Mode: in.Mode, Worktree: worktree, Cwd: cwd, Status: "queued"}
 		s.agents[a.ID] = a
 		if a.Name != "" {
 			s.names[a.Name] = a.ID
@@ -465,7 +461,7 @@ func (s *Server) call(name string, raw json.RawMessage) (string, error) {
 }
 
 func (s *Server) render(a *ExternalSubagentState, j *Job) string {
-	text := fmt.Sprintf("AgentX ExternalSubagent %s (name=%q; profile=%s; agent=%s; actual model=%s; effort=%s; connection=%s)\nWrite scope: %s\nTask %s: %s; ExternalSubagent status: %s.\n", a.ID, a.Name, a.Option.Name, a.Option.Agent, a.Option.Model, describeEffort(a.Option.Effort), s.connectionID, a.writeScope(), j.ID, j.Status, a.Status)
+	text := fmt.Sprintf("AgentX ExternalSubagent %s (name=%q; profile=%s; agent=%s; actual model=%s; effort=%s; connection=%s)\nMode: %s\nTask %s: %s; ExternalSubagent status: %s.\n", a.ID, a.Name, a.Option.Name, a.Option.Agent, a.Option.Model, describeEffort(a.Option.Effort), s.connectionID, a.Mode, j.ID, j.Status, a.Status)
 	if a.Worktree != nil {
 		text += a.Worktree.describe(a.Cwd)
 	}
@@ -588,8 +584,7 @@ func (s *Server) execute(ctx context.Context, a *ExternalSubagentState, prompt s
 			}
 		}
 	}
-	roots, err := s.executionRoots(a)
-	if err != nil {
+	if err := s.checkWorktree(a); err != nil {
 		return "", nil, err
 	}
 	auth, err := s.discoverAuth(ctx, a.Option)
@@ -600,20 +595,17 @@ func (s *Server) execute(ctx context.Context, a *ExternalSubagentState, prompt s
 	var plan runtime.CommandPlan
 	switch a.Option.Agent {
 	case "claude":
-		plan, err = drivers.ClaudePolicyExecPlan(a.Cwd, a.Option.Model, a.Session, a.Option.Effort, "", a.Option.Flags)
+		plan, err = drivers.ClaudePolicyExecPlan(a.Cwd, a.Option.Model, a.Session, a.Mode == ModeYolo, a.Option.Effort, "", a.Option.Flags)
 		if err != nil {
 			return "", nil, err
 		}
 	case "codex":
-		plan, err = drivers.CodexPolicyExecPlan(a.Cwd, a.Option.Model, a.Session, roots, a.Option.Effort, a.Option.Sandbox, a.Option.UserConfig, a.Option.Flags)
+		plan, err = drivers.CodexPolicyExecPlan(a.Cwd, a.Option.Model, a.Session, a.Mode == ModeYolo, a.Option.Effort, a.Option.UserConfig, a.Option.Flags)
 		if err != nil {
 			return "", nil, err
 		}
 		s.injectDelegation(&plan)
 	default:
-		if len(roots) != 0 {
-			return "", nil, fmt.Errorf("Pi cannot write: it has no runtime write boundary")
-		}
 		plan, err = drivers.ExecPlan("pi", a.Cwd, a.Option.Model, "")
 		if err != nil {
 			return "", nil, err

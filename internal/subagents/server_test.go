@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -199,7 +200,7 @@ func TestAgentContractRejectsUnsupportedAndUnknownInputs(t *testing.T) {
 			t.Fatalf("accepted %s", raw)
 		}
 	}
-	callTest(t, s, "ExternalSubagent", map[string]any{"description": "x", "prompt": "x", "model": "review", "team_name": "ignored", "mode": "bypassPermissions", "run_in_background": false})
+	callTest(t, s, "ExternalSubagent", map[string]any{"description": "x", "prompt": "x", "model": "review", "team_name": "ignored", "run_in_background": false})
 	if _, err := s.call("ExternalSubagent", []byte(`{"description":"x","prompt":"x"}`)); err == nil || !strings.Contains(err.Error(), "no default profile") {
 		t.Fatal("chose hidden default", err)
 	}
@@ -449,15 +450,15 @@ func TestExternalSubagentToolNamesAndUnchangedContract(t *testing.T) {
 	}
 	create := tools[0].(map[string]any)["inputSchema"].(map[string]any)
 	props := create["properties"].(map[string]any)
-	for _, key := range []string{"description", "prompt", "model", "run_in_background", "name", "isolation", "write", "writable_roots", "team_name", "mode"} {
+	for _, key := range []string{"description", "prompt", "model", "run_in_background", "name", "isolation", "team_name", "mode"} {
 		if props[key] == nil {
 			t.Fatal("changed parameter", key)
 		}
 	}
-	if !strings.HasPrefix(props["writable_roots"].(map[string]any)["description"].(string), "Absolute existing directories passed to the agent") {
-		t.Fatal("writable_roots description changed")
+	if mode := props["mode"].(map[string]any); mode["default"] != ModeNormal || !slices.Equal(mode["enum"].([]string), []string{ModeNormal, ModeYolo}) {
+		t.Fatal("mode schema changed", mode)
 	}
-	if len(props) != 10 || props["effort"] != nil || props["subagent_type"] != nil || !profiles.Contains(props["model"].(map[string]any)["enum"].([]string), "review") {
+	if len(props) != 8 || props["effort"] != nil || props["subagent_type"] != nil || !profiles.Contains(props["model"].(map[string]any)["enum"].([]string), "review") {
 		t.Fatal("changed model selection contract")
 	}
 	for _, old := range []string{"Agent", "SendMessage", "TaskStop", "ListAgents"} {
@@ -493,7 +494,7 @@ func TestProfileCatalogSharedDataAndRefresh(t *testing.T) {
 	if !strings.Contains(catalog, "interactive-only") || !strings.Contains(CatalogIndex(s.Home, HostToolDescriptionLimit), "interactive-only") {
 		t.Fatal("claude profile missing from MCP data", catalog)
 	}
-	for _, want := range []string{profiles.Dir(s.Home), "also used for interactive ax launch", "No default profile", "no per-call effort override", `execution agent="codex"`, `execution agent="claude"`, `exact configured model ID (including provider prefix)="test-model"`, `effort="low"`, `user description="code review"`, `ExternalSubagent callable=yes`, `Write: read-only unless the call sets write`, `write scope is passed to the agent`, `Isolation: worktree creates a new git worktree`, `login and model access are verified per execution`} {
+	for _, want := range []string{profiles.Dir(s.Home), "also used for interactive ax launch", "No default profile", "no per-call effort override", `execution agent="codex"`, `execution agent="claude"`, `exact configured model ID (including provider prefix)="test-model"`, `effort="low"`, `user description="code review"`, `ExternalSubagent callable=yes`, `Mode: normal (default) passes no permission or sandbox flags`, `yolo bypasses the agent's permission checks`, `Isolation: worktree creates a new git worktree`, `login and model access are verified per execution`} {
 		if !strings.Contains(catalog, want) {
 			t.Fatal("missing profile data", want, catalog)
 		}
@@ -574,7 +575,7 @@ func TestToolMetadataFitsHostLimitInTheWorstCase(t *testing.T) {
 	if len(description) >= HostToolDescriptionLimit {
 		t.Fatalf("ExternalSubagent description is %d bytes; Claude Code truncates at %d", len(description), HostToolDescriptionLimit)
 	}
-	for _, want := range []string{"read-only unless it sets write", "write scope is passed to the agent", "more entries omitted; full catalog in initialization data."} {
+	for _, want := range []string{`mode "normal" (default) passes no permission or sandbox flags`, `mode "yolo" bypasses`, "more entries omitted; full catalog in initialization data."} {
 		if !strings.Contains(description, want) {
 			t.Fatalf("description lost %q:\n%s", want, description)
 		}
