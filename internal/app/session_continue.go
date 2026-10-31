@@ -139,11 +139,13 @@ func (a App) sessionContinue(ctx context.Context, args []string) error {
 		prefix = len(before.Messages)
 	}
 
-	auth, err := subagents.DiscoverAuth(ctx, a.Runner, agent.ID, model)
+	// Plan first: an unsupported request (pi + MCP, pi + yolo) must fail as
+	// such, not as whatever the auth probe happens to report.
+	plan, err := drivers.ContinueExecPlan(agent.ID, workspace, model, token, effort, systemPrompt, mode == "yolo", mcp)
 	if err != nil {
 		return err
 	}
-	plan, err := drivers.ContinueExecPlan(agent.ID, workspace, model, token, effort, systemPrompt, mode == "yolo", mcp)
+	auth, err := subagents.DiscoverAuth(ctx, a.Runner, agent.ID, model)
 	if err != nil {
 		return err
 	}
