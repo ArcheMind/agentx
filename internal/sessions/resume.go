@@ -43,7 +43,9 @@ func WriteSessionFile(detail Session, agentID, dir, homeDir string) (string, err
 		detail.ID = newID
 		return newID, writeJSONLFile(path, SerializeCodex(detail))
 	case "pi":
-		path := filepath.Join(dir, newUUID()+".jsonl")
+		newID := newUUID()
+		path := filepath.Join(dir, newID+".jsonl")
+		detail.ID = newID
 		return path, writeJSONLFile(path, SerializePi(detail))
 	case "gemini":
 		path := filepath.Join(dir, newUUID()+".json")
