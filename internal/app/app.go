@@ -606,6 +606,8 @@ func (a App) sessions(ctx context.Context, args []string) error {
 		return a.sessionExport(args[1:])
 	case "import":
 		return a.sessionImport(args[1:])
+	case "continue":
+		return a.sessionContinue(ctx, args[1:])
 	default:
 		return sessionUsageError()
 	}
@@ -984,7 +986,7 @@ func (a App) prompt(reader *bufio.Reader, label string, allowBlank bool) (string
 }
 
 func sessionUsageError() error {
-	return fmt.Errorf("usage: ax [--json|--yaml] session <list|show|resume|export|import> [args...]")
+	return fmt.Errorf("usage: ax [--json|--yaml] session <list|show|resume|export|import|continue> [args...]")
 }
 
 func singleLine(value string, max int) string {
@@ -1007,13 +1009,14 @@ Usage:
 
   ax [--json|--yaml] agent <list|show|install|run|exec> [args...]
   ax [--json|--yaml] auth <list|show|login|logout> [args...]
-  ax [--json|--yaml] session <list|show|resume|export|import> [args...]
+  ax [--json|--yaml] session <list|show|resume|export|import|continue> [args...]
   ax [--json|--yaml] skill <list|show|install> [args...]
   ax [--json|--yaml] hook list
   ax [--json|--yaml] mcp <list|show|serve> [args...]
   ax [--json|--yaml] profile <list|show> [args...]
 
   ax agent exec <codex|pi|gemini> [--model <model>] [--resume <session-id>] [--cwd <path>] [--dry-run] < prompt.txt
+  ax --json session continue <claude|codex|pi> [--model <model>] [--mcp-config <file>] [--mode yolo] < transcript.json
 
   ax version
 

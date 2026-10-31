@@ -26,7 +26,7 @@ func TestCrossLayerConsistency(t *testing.T) {
 		"[--json|--yaml] status",
 		"agent <list|show|install|run|exec>",
 		"auth <list|show|login|logout>",
-		"session <list|show|resume|export|import>",
+		"session <list|show|resume|export|import|continue>",
 		"skill <list|show|install>",
 		"hook list",
 		"mcp <list|show|serve>",

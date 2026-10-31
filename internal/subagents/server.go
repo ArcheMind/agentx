@@ -623,7 +623,7 @@ func (s *Server) execute(ctx context.Context, a *ExternalSubagentState, prompt s
 		}
 		plan.Args = append(plan.Args, a.Option.Flags...)
 	}
-	plan.Env, plan.UnsetEnv = authEnvironment(auth)
+	plan.Env, plan.UnsetEnv = AuthEnvironment(auth)
 	observed := a.Option.Agent == "pi" && a.Option.Effort != ""
 	var piOffset int64
 	if observed {

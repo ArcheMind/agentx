@@ -4,6 +4,10 @@ All notable changes to AgentX are documented here. The format follows [Keep a Ch
 
 ## [Unreleased]
 
+### Added
+
+- `ax session continue <claude|codex|pi>`: headless one-turn transcript continuation. Reads a unified transcript (file or stdin) ending in a user message, imports the history into the native store, runs one turn with the trailing user message as the prompt, and prints the newly recorded messages as a transcript delta on stdout. Flags: `--model`, `--effort` (codex reasoning effort / claude effort / pi thinking), `--append-system-prompt`, `--mcp-config <file|json>` (unified `mcpServers` map translated to `--mcp-config --strict-mcp-config` for claude and `-c mcp_servers.*` for codex; pi is rejected, it has no MCP mechanism), `--mode <normal|yolo>` (normal passes no permission or sandbox flags; yolo bypasses them, rejected for pi), `--workspace`. Delta message ids are namespaced per call so repeated turns append cleanly to one caller-owned transcript.
+
 ### Changed
 
 - ExternalSubagent permissions collapse to one `mode` parameter: `normal` (default) passes no permission or sandbox flags, so each agent's own configuration decides (Codex keeps `approval_policy="never"` because headless runs cannot answer prompts); `yolo` bypasses them (Claude `--dangerously-skip-permissions`, Codex `sandbox_mode="danger-full-access"`; rejected for Pi). Reports show `Mode:` instead of `Write scope:`.

@@ -179,7 +179,7 @@ ax [--json|--yaml] status
 
 ax [--json|--yaml] agent <list|show|install|run|exec> [args...]
 ax [--json|--yaml] auth <list|show|login|logout> [args...]
-ax [--json|--yaml] session <list|show|resume|export|import> [args...]
+ax [--json|--yaml] session <list|show|resume|export|import|continue> [args...]
 ax [--json|--yaml] skill <list|show|install> [args...]
 ax [--json|--yaml] hook list
 ax [--json|--yaml] mcp <list|show|serve> [args...]
@@ -199,6 +199,7 @@ ax skill list                        # skills by filesystem source and reader
 ax mcp list                          # MCP servers by filesystem source and reader
 ax agent exec codex --model <id> < prompt.txt
 ax --json session resume pi <session-id> --source claude --dry-run
+ax --json session continue claude --mode yolo --mcp-config mcp.json < transcript.json
 ```
 
 ## Boundaries

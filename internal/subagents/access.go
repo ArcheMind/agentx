@@ -49,35 +49,41 @@ func authSource(agent string) (string, string, error) {
 	return key, filepath.Join(home, rel), nil
 }
 
-func authEnvironment(auth Auth) (map[string]string, []string) {
+// AuthEnvironment is the environment override that pins an execution to the
+// discovered credential source.
+func AuthEnvironment(auth Auth) (map[string]string, []string) {
 	if auth.Key == "" {
 		return map[string]string{}, nil
 	}
 	return map[string]string{auth.Key: auth.Dir}, nil
 }
 
-// discoverAuth runs the native login check against the discovered source before each execution
-// so a missing or broken login fails loudly instead of the runtime falling back to another identity.
 func (s *Server) discoverAuth(ctx context.Context, o profiles.Profile) (Auth, error) {
-	if o.Agent == "claude" {
+	return DiscoverAuth(ctx, s.Runner, o.Agent, o.Model)
+}
+
+// DiscoverAuth runs the native login check against the discovered source before each execution
+// so a missing or broken login fails loudly instead of the runtime falling back to another identity.
+func DiscoverAuth(ctx context.Context, runner runtime.Runner, agent, model string) (Auth, error) {
+	if agent == "claude" {
 		return Auth{Method: "native"}, nil
 	}
-	key, dir, err := authSource(o.Agent)
+	key, dir, err := authSource(agent)
 	if err != nil {
 		return Auth{}, err
 	}
 	auth := Auth{Key: key, Dir: dir}
-	env, unset := authEnvironment(auth)
-	plan := runtime.CommandPlan{Executable: o.Agent, Env: env, UnsetEnv: unset, Args: []string{"login", "status"}}
-	if o.Agent == "pi" {
-		plan.Args = []string{"auth", "check", "--json", "--model", o.Model}
+	env, unset := AuthEnvironment(auth)
+	plan := runtime.CommandPlan{Executable: agent, Env: env, UnsetEnv: unset, Args: []string{"login", "status"}}
+	if agent == "pi" {
+		plan.Args = []string{"auth", "check", "--json", "--model", model}
 	}
-	result, err := s.Runner.Execute(ctx, plan, runtime.ExecuteOptions{})
+	result, err := runner.Execute(ctx, plan, runtime.ExecuteOptions{})
 	if ctx.Err() != nil {
 		return Auth{}, &executionCancelled{cause: ctx.Err()}
 	}
 	output := runtime.RedactSecrets(strings.TrimSpace(result.Stdout + "\n" + result.Stderr))
-	if o.Agent == "pi" {
+	if agent == "pi" {
 		var status struct {
 			Status   string `json:"status"`
 			Provider string `json:"provider"`
@@ -87,7 +93,7 @@ func (s *Server) discoverAuth(ctx context.Context, o profiles.Profile) (Auth, er
 		if jsonErr := json.Unmarshal([]byte(strings.TrimSpace(result.Stdout)), &status); jsonErr != nil {
 			return Auth{}, fmt.Errorf("Pi auth check for %s=%q failed: %v; output: %s; no fallback identity", key, dir, err, output)
 		}
-		provider, _, _ := strings.Cut(o.Model, "/")
+		provider, _, _ := strings.Cut(model, "/")
 		if status.Status != "ready" {
 			return Auth{}, fmt.Errorf("Pi auth source %s=%q not ready for provider %s: %s; no fallback identity", key, dir, provider, status.Reason)
 		}
