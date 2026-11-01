@@ -4,6 +4,20 @@ All notable changes to AgentX are documented here. The format follows [Keep a Ch
 
 ## [Unreleased]
 
+### Fixed
+
+- `ax session continue`: tool ids the native APIs reject — the pre-refactor
+  harness's scoped ids ("native-<uuid>:<raw>") and composite ids
+  ("call_x|fc_y") — are mapped on import to deterministic API-safe ids
+  (charset [A-Za-z0-9_-], at most 64 characters), keeping tool_use/tool_result
+  pairs intact; already-safe native ids pass untouched. Previously any
+  transcript carrying such tool history failed every continue: Anthropic 400
+  (tool_use.id charset) and OpenAI Responses 400 (call_id length). Like the
+  positional rechain, this lives on the continue import path only; serializers
+  keep ids verbatim for export/import fidelity. The live regression
+  (`make smoke-continue-live`) now also runs a real tool turn, rewrites its ids
+  into the legacy scoped shape, and continues over them.
+
 ## [0.8.0] - 2026-10-31
 
 ### Added

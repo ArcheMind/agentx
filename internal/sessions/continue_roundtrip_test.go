@@ -1,6 +1,8 @@
 package sessions
 
 import (
+	"encoding/json"
+	"regexp"
 	"testing"
 )
 
@@ -105,4 +107,130 @@ func TestPiDeltaAppendRoundTripKeepsHistory(t *testing.T) {
 		t.Fatal("serialized pi session did not parse back")
 	}
 	assertRoundTripOrder(t, parsed.Messages)
+}
+
+// toolHistory is the failing philia shape: the chain carries tool ids scoped
+// by the pre-refactor harness ("native-<uuid>:<raw>", 76 chars; composite
+// "call_x|fc_y") that Anthropic rejects on charset and OpenAI on length.
+func toolHistory() []Message {
+	scoped := "native-0d9c8b7a-6f5e-4d3c-2b1a-09f8e7d6c5b4:toolu_01Abc123Def456Ghi789Jkl0"
+	composite := "call_AbCdEf123456|fc_9f8e7d6c5b4a39281706f5e4d3c2b1a09f8e7d6c5b4a3928"
+	return []Message{
+		{ID: "u1", Role: "user", Content: []ContentBlock{{Type: "text", Text: "Echo the marker MANGO-42."}}},
+		{ID: "a1", Role: "assistant", Content: []ContentBlock{
+			{Type: "tool_use", ID: scoped, Name: "Bash", Input: map[string]any{"command": "echo MANGO-42"}},
+		}},
+		{ID: "t1", Role: "tool", ToolUseID: scoped, ToolName: "Bash", Result: "MANGO-42"},
+		{ID: "a2", Role: "assistant", Content: []ContentBlock{
+			{Type: "tool_use", ID: composite, Name: "Read", Input: map[string]any{"file_path": "/x"}},
+		}},
+		{ID: "t2", Role: "tool", ToolUseID: composite, ToolName: "Read", Result: "ok"},
+		{ID: "a3", Role: "assistant", Content: []ContentBlock{{Type: "text", Text: "done"}}},
+		{ID: "u2", Role: "user", Content: []ContentBlock{{Type: "text", Text: "What marker?"}}},
+	}
+}
+
+func TestSanitizeToolIDsIsDeterministicPairedAndIdempotent(t *testing.T) {
+	once := SanitizeToolIDs(toolHistory())
+	again := SanitizeToolIDs(toolHistory())
+	twice := SanitizeToolIDs(once)
+	for i := range once {
+		if once[i].ToolUseID != again[i].ToolUseID || once[i].ToolUseID != twice[i].ToolUseID {
+			t.Fatalf("message %d: sanitization is not deterministic/idempotent", i)
+		}
+	}
+	call1 := once[1].Content[0].ID
+	call2 := once[3].Content[0].ID
+	for _, id := range []string{call1, call2} {
+		if !safeToolID.MatchString(id) {
+			t.Fatalf("sanitized id %q is not API-safe", id)
+		}
+	}
+	if call1 == call2 {
+		t.Fatalf("distinct raw ids collapsed to one sanitized id")
+	}
+	if once[2].ToolUseID != call1 || once[4].ToolUseID != call2 {
+		t.Fatalf("tool_use/tool_result pairing broken: %q/%q vs %q/%q", call1, once[2].ToolUseID, call2, once[4].ToolUseID)
+	}
+}
+
+func TestSanitizeToolIDsKeepsNativeIdsVerbatim(t *testing.T) {
+	native := []Message{
+		{ID: "a1", Role: "assistant", Content: []ContentBlock{{Type: "tool_use", ID: "toolu_01GoodId", Name: "Bash", Input: map[string]any{}}}},
+		{ID: "t1", Role: "tool", ToolUseID: "toolu_01GoodId", ToolName: "Bash", Result: "ok"},
+		{ID: "a2", Role: "assistant", Content: []ContentBlock{{Type: "tool_use", ID: "call_abc123", Name: "exec", Input: map[string]any{}}}},
+		{ID: "t2", Role: "tool", ToolUseID: "call_abc123", ToolName: "exec", Result: "ok"},
+	}
+	out := SanitizeToolIDs(native)
+	if out[0].Content[0].ID != "toolu_01GoodId" || out[1].ToolUseID != "toolu_01GoodId" || out[2].Content[0].ID != "call_abc123" {
+		t.Fatalf("native-safe ids must pass untouched: %+v", out)
+	}
+}
+
+func TestClaudeToolHistoryImportIsAPISafe(t *testing.T) {
+	messages := SanitizeToolIDs(RechainMessages(toolHistory()))
+	records := SerializeClaude(Session{ID: "sid-5", Provider: "claude", Workspace: "/ws", Messages: messages})
+	data, err := json.Marshal(records)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids := regexp.MustCompile(`"id":"([^"]+)"`).FindAllStringSubmatch(string(data), -1)
+	uses := regexp.MustCompile(`"tool_use_id":"([^"]+)"`).FindAllStringSubmatch(string(data), -1)
+	if len(ids) == 0 || len(uses) == 0 {
+		t.Fatalf("expected tool ids in claude records: %s", data)
+	}
+	for _, match := range append(ids, uses...) {
+		if !safeToolID.MatchString(match[1]) {
+			t.Fatalf("claude record carries an API-unsafe tool id %q", match[1])
+		}
+	}
+	parsed, ok := ParseRecords("claude", records)
+	if !ok {
+		t.Fatal("claude tool history did not parse back")
+	}
+	assertToolPairing(t, parsed.Messages)
+}
+
+func TestCodexToolHistoryImportIsAPISafe(t *testing.T) {
+	messages := SanitizeToolIDs(RechainMessages(toolHistory()))
+	records := SerializeCodex(Session{ID: "3f9a1c2e-aaaa-4bbb-8ccc-123456789abc", Provider: "codex", Workspace: "/ws", Messages: messages})
+	data, err := json.Marshal(records)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, match := range regexp.MustCompile(`"call_id":"([^"]+)"`).FindAllStringSubmatch(string(data), -1) {
+		if len(match[1]) > 64 || !safeToolID.MatchString(match[1]) {
+			t.Fatalf("codex record carries an API-unsafe call_id %q (%d chars)", match[1], len(match[1]))
+		}
+	}
+	parsed, ok := ParseRecords("codex", records)
+	if !ok {
+		t.Fatal("codex tool history did not parse back")
+	}
+	assertToolPairing(t, parsed.Messages)
+}
+
+func assertToolPairing(t *testing.T, messages []Message) {
+	t.Helper()
+	uses := map[string]bool{}
+	for _, message := range messages {
+		for _, block := range message.Content {
+			if block.Type == "tool_use" {
+				uses[block.ID] = true
+			}
+		}
+	}
+	results := 0
+	for _, message := range messages {
+		if message.Role != "tool" {
+			continue
+		}
+		results++
+		if !uses[message.ToolUseID] {
+			t.Fatalf("tool result %q has no matching tool_use after round trip", message.ToolUseID)
+		}
+	}
+	if len(uses) < 2 || results < 2 {
+		t.Fatalf("round trip lost tool pairs: %d uses, %d results", len(uses), results)
+	}
 }

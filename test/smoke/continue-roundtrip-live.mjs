@@ -32,7 +32,7 @@ function modelArgs(agent) {
   throw new Error(`no model policy for agent ${agent}`);
 }
 
-function continueTurn(agent, workspace, messages) {
+function continueTurn(agent, workspace, messages, extraArgs = []) {
   const transcript = JSON.stringify({
     id: `roundtrip-${randomUUID()}`,
     provider: "smoke",
@@ -40,7 +40,7 @@ function continueTurn(agent, workspace, messages) {
     messageCount: messages.length,
     messages,
   });
-  const stdout = execFileSync(ax, ["session", "continue", agent, ...modelArgs(agent)], {
+  const stdout = execFileSync(ax, ["session", "continue", agent, ...modelArgs(agent), ...extraArgs], {
     input: transcript,
     encoding: "utf8",
     timeout: 300_000,
@@ -55,6 +55,56 @@ function continueTurn(agent, workspace, messages) {
 function texts(messages) {
   return messages.flatMap((message) =>
     (message.content ?? []).flatMap((block) => (block.type === "text" && block.text ? [block.text] : [])));
+}
+
+// Rewrites every tool id in a delta into the pre-refactor harness's scoped
+// shape ("native-<uuid>:<raw>", over 64 chars with a colon), which Anthropic
+// rejects on charset and the OpenAI Responses API on length. Chains written
+// by that harness carry exactly these ids, so a continue import must survive
+// them.
+function legacyScopeToolIds(messages) {
+  const scope = `native-${randomUUID()}`;
+  return messages.map((message) => {
+    const out = { ...message };
+    if (out.toolUseId) out.toolUseId = `${scope}:${out.toolUseId}`;
+    if (Array.isArray(out.content)) {
+      out.content = out.content.map((block) =>
+        block.type === "tool_use" ? { ...block, id: `${scope}:${block.id}` } : block);
+    }
+    return out;
+  });
+}
+
+function hasToolPair(messages) {
+  return messages.some((message) => message.role === "tool")
+    && messages.some((message) => (message.content ?? []).some((block) => block.type === "tool_use"));
+}
+
+function runToolHistoryScenario(agent, workspace) {
+  const marker = `MARKER-${Math.floor(Math.random() * 1e10)}`;
+  const first = [{
+    id: "u1",
+    role: "user",
+    content: [{ type: "text", text: `Use your shell tool to run exactly this command once: echo ${marker}. Then reply with just: done.` }],
+  }];
+  const delta1 = continueTurn(agent, workspace, first, ["--mode", "yolo"]);
+  if (!hasToolPair(delta1.messages)) {
+    throw new Error(`first turn recorded no tool call to scope: ${JSON.stringify(delta1.messages).slice(0, 400)}`);
+  }
+  const second = [
+    ...first,
+    ...legacyScopeToolIds(delta1.messages),
+    {
+      id: "u2",
+      role: "user",
+      content: [{ type: "text", text: "What exact marker string did your echo command print earlier? Reply with just that string." }],
+    },
+  ];
+  const delta2 = continueTurn(agent, workspace, second, ["--mode", "yolo"]);
+  const answer = texts(delta2.messages).join("\n");
+  if (!answer.includes(marker)) {
+    throw new Error(`second turn lost the tool history; answer: ${answer.slice(0, 300)}`);
+  }
 }
 
 let failed = false;
@@ -85,6 +135,10 @@ for (const agent of agents) {
       throw new Error(`second turn lost the first turn's context; answer: ${answer.slice(0, 300)}`);
     }
     console.log(`PASS continue round-trip ${agent}: passphrase recalled through delta-as-is append`);
+    if (agent === "claude" || agent === "codex") {
+      runToolHistoryScenario(agent, workspace);
+      console.log(`PASS continue round-trip ${agent}: tool history with legacy-scoped ids survived re-import`);
+    }
   } catch (error) {
     failed = true;
     console.error(`FAIL continue round-trip ${agent}: ${String(error).slice(0, 800)}`);

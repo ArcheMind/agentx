@@ -1,9 +1,12 @@
 package sessions
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
 
@@ -70,4 +73,46 @@ func RechainMessages(messages []Message) []Message {
 		out[i] = message
 	}
 	return out
+}
+
+// Native APIs constrain tool ids: Anthropic requires ^[a-zA-Z0-9_-]+$ for
+// tool_use.id, the OpenAI Responses API caps call_id at 64 characters, and
+// Pi forwards to the same provider families. One rule satisfies all three.
+var safeToolID = regexp.MustCompile(`^[a-zA-Z0-9_-]{1,64}$`)
+
+// SanitizeToolIDs rewrites tool ids the native APIs would reject (legacy
+// harness-scoped ids like "native-<uuid>:<raw>" or composite "call_x|fc_y")
+// into deterministic API-safe ids, for a continue import. The mapping is a
+// pure hash of the raw id, so the same id maps identically in every turn
+// (idempotent across round trips), tool_use blocks and their tool_result
+// messages stay paired, and ids that are already API-safe pass untouched.
+// Like RechainMessages this lives on the continue path only: the serializers
+// keep ids verbatim because export/import fidelity requires it, and delta
+// output keeps the agent's own ids, which its API just accepted.
+func SanitizeToolIDs(messages []Message) []Message {
+	out := make([]Message, len(messages))
+	for i, message := range messages {
+		if message.ToolUseID != "" && !safeToolID.MatchString(message.ToolUseID) {
+			message.ToolUseID = sanitizedToolID(message.ToolUseID)
+		}
+		rewritten := false
+		blocks := make([]ContentBlock, len(message.Content))
+		for j, block := range message.Content {
+			if block.Type == "tool_use" && block.ID != "" && !safeToolID.MatchString(block.ID) {
+				block.ID = sanitizedToolID(block.ID)
+				rewritten = true
+			}
+			blocks[j] = block
+		}
+		if rewritten {
+			message.Content = blocks
+		}
+		out[i] = message
+	}
+	return out
+}
+
+func sanitizedToolID(raw string) string {
+	sum := sha256.Sum256([]byte(raw))
+	return "tid-" + hex.EncodeToString(sum[:12])
 }

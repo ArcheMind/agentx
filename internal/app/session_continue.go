@@ -123,8 +123,9 @@ func (a App) sessionContinue(ctx context.Context, args []string) error {
 		// Claude's session scanner rejects records without a parseable
 		// timestamp ("No conversation found"), so empty ones are filled; the
 		// parent chain is rewritten positionally so delta-appended history
-		// stays on one native ancestor chain.
-		imported.Messages = sessions.RechainMessages(fillTimestamps(history))
+		// stays on one native ancestor chain; tool ids the native APIs would
+		// reject are mapped to deterministic safe ids.
+		imported.Messages = sessions.SanitizeToolIDs(sessions.RechainMessages(fillTimestamps(history)))
 		imported.MessageCount = len(history)
 		token, err = sessions.WriteSessionFile(imported, agent.ID, stateDir, a.Sessions.HomeDir)
 		if err != nil {
