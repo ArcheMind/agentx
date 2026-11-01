@@ -12,7 +12,7 @@ func TestContinueClaudePlanCarriesResumeAccessMCPAndModel(t *testing.T) {
 	mcp := MCPConfig{Servers: map[string]MCPServer{
 		"harness": {Command: "/usr/bin/node", Args: []string{"bridge.mjs"}, Env: map[string]string{"KERNEL_URL": "http://localhost:1"}},
 	}}
-	plan, err := ContinueExecPlan("claude", "/ws", "opus", continueUUID, "high", "stay focused", true, mcp)
+	plan, err := ContinueExecPlan("claude", "/ws", "opus", continueUUID, "high", "stay focused", true, true, mcp)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -42,7 +42,7 @@ func TestContinueClaudePlanCarriesResumeAccessMCPAndModel(t *testing.T) {
 }
 
 func TestContinueClaudeWithoutResumeOrAccessStaysPlain(t *testing.T) {
-	plan, err := ContinueExecPlan("claude", "/ws", "", "", "", "", false, MCPConfig{})
+	plan, err := ContinueExecPlan("claude", "/ws", "", "", "", "", false, true, MCPConfig{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -53,7 +53,7 @@ func TestContinueClaudeWithoutResumeOrAccessStaysPlain(t *testing.T) {
 }
 
 func TestContinueClaudeRejectsNonUUIDResume(t *testing.T) {
-	if _, err := ContinueExecPlan("claude", "/ws", "", "not-a-uuid", "", "", false, MCPConfig{}); err == nil {
+	if _, err := ContinueExecPlan("claude", "/ws", "", "not-a-uuid", "", "", false, true, MCPConfig{}); err == nil {
 		t.Fatal("expected error")
 	}
 }
@@ -62,7 +62,7 @@ func TestContinueCodexPlanTranslatesMCPAndSandbox(t *testing.T) {
 	mcp := MCPConfig{Servers: map[string]MCPServer{
 		"harness": {Command: "/usr/bin/node", Args: []string{"bridge.mjs"}, Env: map[string]string{"A": "1"}, EnvPassthrough: []string{"KERNEL_URL", "PATH"}},
 	}}
-	plan, err := ContinueExecPlan("codex", "/ws", "gpt-6", continueUUID, "low", "be terse", true, mcp)
+	plan, err := ContinueExecPlan("codex", "/ws", "gpt-6", continueUUID, "low", "be terse", true, true, mcp)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,7 +89,7 @@ func TestContinueCodexPlanTranslatesMCPAndSandbox(t *testing.T) {
 }
 
 func TestContinueCodexNormalModePassesNoSandboxFlags(t *testing.T) {
-	plan, err := ContinueExecPlan("codex", "/ws", "", "", "", "", false, MCPConfig{})
+	plan, err := ContinueExecPlan("codex", "/ws", "", "", "", "", false, true, MCPConfig{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -103,7 +103,7 @@ func TestContinueCodexNormalModePassesNoSandboxFlags(t *testing.T) {
 }
 
 func TestContinuePiPlanUsesSessionFileAndThinking(t *testing.T) {
-	plan, err := ContinueExecPlan("pi", "/ws", "anthropic/claude-x", "/state/abc.jsonl", "medium", "persona", false, MCPConfig{})
+	plan, err := ContinueExecPlan("pi", "/ws", "anthropic/claude-x", "/state/abc.jsonl", "medium", "persona", false, true, MCPConfig{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -125,21 +125,21 @@ func TestContinuePiPlanUsesSessionFileAndThinking(t *testing.T) {
 }
 
 func TestContinuePiRejectsYolo(t *testing.T) {
-	if _, err := ContinueExecPlan("pi", "/ws", "anthropic/claude-x", "", "", "", true, MCPConfig{}); err == nil {
+	if _, err := ContinueExecPlan("pi", "/ws", "anthropic/claude-x", "", "", "", true, true, MCPConfig{}); err == nil {
 		t.Fatal("expected error")
 	}
 }
 
 func TestContinuePiRejectsMCP(t *testing.T) {
 	mcp := MCPConfig{Servers: map[string]MCPServer{"harness": {Command: "node"}}}
-	if _, err := ContinueExecPlan("pi", "/ws", "anthropic/claude-x", "", "", "", false, mcp); err == nil {
+	if _, err := ContinueExecPlan("pi", "/ws", "anthropic/claude-x", "", "", "", false, true, mcp); err == nil {
 		t.Fatal("expected error")
 	}
 }
 
 func TestContinueRejectsAgentsWithoutAdapter(t *testing.T) {
 	for _, agent := range []string{"gemini", "opencode", "dsh"} {
-		if _, err := ContinueExecPlan(agent, "/ws", "", "", "", "", false, MCPConfig{}); err == nil {
+		if _, err := ContinueExecPlan(agent, "/ws", "", "", "", "", false, true, MCPConfig{}); err == nil {
 			t.Fatalf("%s: expected error", agent)
 		}
 	}
@@ -154,4 +154,24 @@ func indexOf(t *testing.T, args []string, value string) int {
 	}
 	t.Fatalf("args %q missing %q", args, value)
 	return -1
+}
+
+func TestContinueUserConfigFalseAddsIsolationArgs(t *testing.T) {
+	for agent, want := range map[string]string{
+		"claude": "--setting-sources project,local",
+		"codex":  "--ignore-user-config --ignore-rules --disable hooks",
+		"pi":     "--no-skills --no-prompt-templates --no-extensions",
+	} {
+		on, err := ContinueExecPlan(agent, "/ws", "m", "", "", "", false, true, MCPConfig{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		off, err := ContinueExecPlan(agent, "/ws", "m", "", "", "", false, false, MCPConfig{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(strings.Join(on.Args, " "), want) || !strings.Contains(strings.Join(off.Args, " "), want) {
+			t.Fatalf("%s: on=%q off=%q", agent, on.Args, off.Args)
+		}
+	}
 }

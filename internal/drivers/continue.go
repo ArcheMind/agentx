@@ -28,22 +28,25 @@ type MCPConfig struct {
 // The prompt travels on stdin. resume is the token WriteSessionFile returned: a
 // session UUID for claude/codex, a session file path for pi. Mode follows the
 // two-mode permission surface: normal passes no permission or sandbox flags,
-// yolo bypasses them.
-func ContinueExecPlan(agent, cwd, model, resume, effort, systemPrompt string, yolo bool, mcp MCPConfig) (runtime.CommandPlan, error) {
+// yolo bypasses them. userConfig=false adds UserConfigIsolationArgs.
+func ContinueExecPlan(agent, cwd, model, resume, effort, systemPrompt string, yolo, userConfig bool, mcp MCPConfig) (runtime.CommandPlan, error) {
 	switch agent {
 	case "claude":
-		return continueClaude(cwd, model, resume, effort, systemPrompt, yolo, mcp)
+		return continueClaude(cwd, model, resume, effort, systemPrompt, yolo, userConfig, mcp)
 	case "codex":
-		return continueCodex(cwd, model, resume, effort, systemPrompt, yolo, mcp)
+		return continueCodex(cwd, model, resume, effort, systemPrompt, yolo, userConfig, mcp)
 	case "pi":
-		return continuePi(cwd, model, resume, effort, systemPrompt, yolo, mcp)
+		return continuePi(cwd, model, resume, effort, systemPrompt, yolo, userConfig, mcp)
 	default:
 		return runtime.CommandPlan{}, fmt.Errorf("%s has no headless continue adapter", agent)
 	}
 }
 
-func continueClaude(cwd, model, resume, effort, systemPrompt string, yolo bool, mcp MCPConfig) (runtime.CommandPlan, error) {
+func continueClaude(cwd, model, resume, effort, systemPrompt string, yolo, userConfig bool, mcp MCPConfig) (runtime.CommandPlan, error) {
 	args := []string{"-p", "--output-format", "stream-json", "--verbose"}
+	if !userConfig {
+		args = append(args, UserConfigIsolationArgs("claude")...)
+	}
 	if resume != "" {
 		if !sessionID.MatchString(resume) {
 			return runtime.CommandPlan{}, fmt.Errorf("continue requires a Claude session UUID")
@@ -87,7 +90,7 @@ func continueClaude(cwd, model, resume, effort, systemPrompt string, yolo bool, 
 	return runtime.CommandPlan{Executable: "claude", Args: args, Cwd: cwd}, nil
 }
 
-func continueCodex(cwd, model, resume, effort, systemPrompt string, yolo bool, mcp MCPConfig) (runtime.CommandPlan, error) {
+func continueCodex(cwd, model, resume, effort, systemPrompt string, yolo, userConfig bool, mcp MCPConfig) (runtime.CommandPlan, error) {
 	args := []string{"exec"}
 	if resume != "" {
 		if !sessionID.MatchString(resume) {
@@ -96,6 +99,9 @@ func continueCodex(cwd, model, resume, effort, systemPrompt string, yolo bool, m
 		args = append(args, "resume")
 	}
 	args = append(args, "--json", "--skip-git-repo-check")
+	if !userConfig {
+		args = append(args, UserConfigIsolationArgs("codex")...)
+	}
 	if yolo {
 		args = append(args, "-c", `sandbox_mode="danger-full-access"`)
 	}
@@ -138,7 +144,7 @@ func continueCodex(cwd, model, resume, effort, systemPrompt string, yolo bool, m
 	return runtime.CommandPlan{Executable: "codex", Args: args, Cwd: cwd}, nil
 }
 
-func continuePi(cwd, model, resume, effort, systemPrompt string, yolo bool, mcp MCPConfig) (runtime.CommandPlan, error) {
+func continuePi(cwd, model, resume, effort, systemPrompt string, yolo, userConfig bool, mcp MCPConfig) (runtime.CommandPlan, error) {
 	if len(mcp.Servers) > 0 {
 		return runtime.CommandPlan{}, fmt.Errorf("pi has no MCP server mechanism; --mcp-config is not supported for pi")
 	}
@@ -147,6 +153,9 @@ func continuePi(cwd, model, resume, effort, systemPrompt string, yolo bool, mcp 
 	}
 	// --no-approve always: a headless pi would otherwise hang on tool approval.
 	args := []string{"--print", "--mode", "json", "--no-approve"}
+	if !userConfig {
+		args = append(args, UserConfigIsolationArgs("pi")...)
+	}
 	if resume != "" {
 		args = append(args, "--session", resume)
 	}

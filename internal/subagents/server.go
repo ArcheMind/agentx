@@ -595,7 +595,7 @@ func (s *Server) execute(ctx context.Context, a *ExternalSubagentState, prompt s
 	var plan runtime.CommandPlan
 	switch a.Option.Agent {
 	case "claude":
-		plan, err = drivers.ClaudePolicyExecPlan(a.Cwd, a.Option.Model, a.Session, a.Mode == ModeYolo, a.Option.Effort, "", a.Option.Flags)
+		plan, err = drivers.ClaudePolicyExecPlan(a.Cwd, a.Option.Model, a.Session, a.Mode == ModeYolo, a.Option.Effort, "", a.Option.UserConfig, a.Option.Flags)
 		if err != nil {
 			return "", nil, err
 		}
@@ -619,7 +619,7 @@ func (s *Server) execute(ctx context.Context, a *ExternalSubagentState, prompt s
 		}
 		plan.Args = append(plan.Args, "--session", a.Session, "--no-approve")
 		if a.Option.UserConfig != nil && !*a.Option.UserConfig {
-			plan.Args = append(plan.Args, "--no-skills", "--no-prompt-templates", "--no-extensions")
+			plan.Args = append(plan.Args, drivers.UserConfigIsolationArgs("pi")...)
 		}
 		plan.Args = append(plan.Args, a.Option.Flags...)
 	}
