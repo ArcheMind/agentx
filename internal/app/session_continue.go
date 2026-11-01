@@ -17,7 +17,7 @@ import (
 	"github.com/ArcheMind/agentx/internal/subagents"
 )
 
-const sessionContinueUsage = "usage: ax [--json|--yaml] session continue <target-agent> [file] [--model <model>] [--effort <level>] [--append-system-prompt <text>] [--mcp-config <file|json>] [--mode <normal|yolo>] [--user-config <true|false>] [--workspace <path>]"
+const sessionContinueUsage = "usage: ax [--json|--yaml] session continue <target-agent> [file] [--model <model>] [--effort <level>] [--append-system-prompt <text>] [--mcp-config <file|json>] [--mode <normal|yolo>] [--workspace <path>]"
 
 // sessionContinue runs one headless turn on a unified transcript: import the
 // history into the target agent's native store, resume it with the trailing
@@ -33,7 +33,6 @@ func (a App) sessionContinue(ctx context.Context, args []string) error {
 	}
 	var file, model, effort, systemPrompt, mcpValue, workspace string
 	mode := "normal"
-	userConfig := true
 	for index := 1; index < len(args); index++ {
 		switch args[index] {
 		case "--model":
@@ -68,19 +67,6 @@ func (a App) sessionContinue(ctx context.Context, args []string) error {
 			mode = args[index]
 			if mode != "normal" && mode != "yolo" {
 				return fmt.Errorf("--mode must be normal or yolo")
-			}
-		case "--user-config":
-			index++
-			if index >= len(args) {
-				return fmt.Errorf("--user-config requires a value")
-			}
-			switch args[index] {
-			case "true":
-				userConfig = true
-			case "false":
-				userConfig = false
-			default:
-				return fmt.Errorf("--user-config must be true or false")
 			}
 		case "--workspace":
 			index++
@@ -158,7 +144,7 @@ func (a App) sessionContinue(ctx context.Context, args []string) error {
 
 	// Plan first: an unsupported request (pi + MCP, pi + yolo) must fail as
 	// such, not as whatever the auth probe happens to report.
-	plan, err := drivers.ContinueExecPlan(agent.ID, workspace, model, token, effort, systemPrompt, mode == "yolo", userConfig, mcp)
+	plan, err := drivers.ContinueExecPlan(agent.ID, workspace, model, token, effort, systemPrompt, mode == "yolo", mcp)
 	if err != nil {
 		return err
 	}

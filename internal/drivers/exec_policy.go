@@ -20,7 +20,7 @@ func CodexPolicyExecPlan(cwd, model, resume string, yolo bool, effort string, us
 	}
 	args = append(args, "--json", "--skip-git-repo-check")
 	if userConfig != nil && !*userConfig {
-		args = append(args, UserConfigIsolationArgs("codex")...)
+		args = append(args, "--ignore-user-config", "--ignore-rules", "--disable", "hooks")
 	}
 	if yolo {
 		args = append(args, "-c", `sandbox_mode="danger-full-access"`)
@@ -42,12 +42,8 @@ func CodexPolicyExecPlan(cwd, model, resume string, yolo bool, effort string, us
 
 // ClaudePolicyExecPlan builds a non-interactive Claude Code invocation. Normal mode passes no
 // permission flags, so Claude's own settings decide; yolo skips all permission checks.
-// userConfig=false skips user-level settings and ~/.claude/CLAUDE.md.
-func ClaudePolicyExecPlan(cwd, model, resume string, yolo bool, effort, roleInstructions string, userConfig *bool, flags []string) (runtime.CommandPlan, error) {
+func ClaudePolicyExecPlan(cwd, model, resume string, yolo bool, effort, roleInstructions string, flags []string) (runtime.CommandPlan, error) {
 	args := []string{"-p", "--output-format", "stream-json", "--verbose"}
-	if userConfig != nil && !*userConfig {
-		args = append(args, UserConfigIsolationArgs("claude")...)
-	}
 	if yolo {
 		args = append(args, "--dangerously-skip-permissions")
 	}
@@ -68,19 +64,4 @@ func ClaudePolicyExecPlan(cwd, model, resume string, yolo bool, effort, roleInst
 	}
 	args = append(args, flags...)
 	return runtime.CommandPlan{Executable: "claude", Args: args, Cwd: cwd}, nil
-}
-
-// UserConfigIsolationArgs are the native flags that stop an agent from loading the host user's
-// own configuration, the single meaning of user_config=false across agents.
-func UserConfigIsolationArgs(agent string) []string {
-	switch agent {
-	case "claude":
-		return []string{"--setting-sources", "project,local"}
-	case "codex":
-		return []string{"--ignore-user-config", "--ignore-rules", "--disable", "hooks"}
-	case "pi":
-		return []string{"--no-skills", "--no-prompt-templates", "--no-extensions"}
-	default:
-		return nil
-	}
 }

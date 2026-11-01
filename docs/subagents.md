@@ -161,8 +161,7 @@ call picks one `mode`, fixed for that ExternalSubagent:
   See [Isolation](#isolation).
 
 The profile's `user_config` and `flags` are passed through unchanged. With
-`user_config: false` Claude runs with `--setting-sources project,local`, so
-`~/.claude/settings.json` and `~/.claude/CLAUDE.md` are not loaded, and Codex runs with `--ignore-user-config --ignore-rules
+`user_config: false` Codex runs with `--ignore-user-config --ignore-rules
 --disable hooks`, so MCP servers, hooks and `notify` programs from the user's
 `config.toml` are not loaded; user-config defaults such as model effort,
 personality and service tier then also do not apply.
