@@ -4,6 +4,8 @@ All notable changes to AgentX are documented here. The format follows [Keep a Ch
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-10-31
+
 ### Added
 
 - `ax session continue <claude|codex|pi>`: headless one-turn transcript continuation.
