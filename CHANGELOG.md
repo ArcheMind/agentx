@@ -4,6 +4,8 @@ All notable changes to AgentX are documented here. The format follows [Keep a Ch
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-10-31
+
 ### Fixed
 
 - `ax session continue`: tool ids the native APIs reject — the pre-refactor
