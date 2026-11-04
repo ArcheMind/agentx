@@ -3,6 +3,7 @@ package sessions
 import (
 	"encoding/json"
 	"regexp"
+	"strings"
 	"testing"
 )
 
@@ -232,5 +233,35 @@ func assertToolPairing(t *testing.T, messages []Message) {
 	}
 	if len(uses) < 2 || results < 2 {
 		t.Fatalf("round trip lost tool pairs: %d uses, %d results", len(uses), results)
+	}
+}
+
+func TestSanitizeMessageIDsShortensForCodexAndKeepsChain(t *testing.T) {
+	long := "01a1a806-1c2d-4e5f-8a9b-0c1d2e3f4a5b:msg_078c5d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b"
+	messages := RechainMessages([]Message{
+		{ID: "u1", Role: "user", Content: []ContentBlock{{Type: "text", Text: "hi"}}},
+		{ID: long, Role: "assistant", Content: []ContentBlock{{Type: "text", Text: "OK"}}},
+		{ID: "u2", Role: "user", Content: []ContentBlock{{Type: "text", Text: "again"}}},
+	})
+	once := SanitizeMessageIDs(messages)
+	twice := SanitizeMessageIDs(once)
+	short := once[1].ID
+	if len(short) != 64 || !strings.HasPrefix(short, "msg_") {
+		t.Fatalf("long id not mapped to msg_+60 hex: %q", short)
+	}
+	if !strings.HasPrefix(once[0].ID, "msg_") || once[0].ID == short || SanitizeMessageIDs([]Message{{ID: "msg_abc"}})[0].ID != "msg_abc" || twice[1].ID != short || SanitizeMessageIDs(messages)[1].ID != short {
+		t.Fatalf("shortening must be deterministic, idempotent and leave short ids verbatim: %+v", once)
+	}
+	if once[2].ParentID != short {
+		t.Fatalf("parent chain broken: %q vs %q", once[2].ParentID, short)
+	}
+	data, err := json.Marshal(SerializeCodex(Session{ID: "sid-6", Provider: "codex", Workspace: "/ws", Messages: once}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, match := range regexp.MustCompile(`"id":"([^"]+)"`).FindAllStringSubmatch(string(data), -1) {
+		if len(match[1]) > 64 {
+			t.Fatalf("codex record carries an id over 64 chars: %q", match[1])
+		}
 	}
 }

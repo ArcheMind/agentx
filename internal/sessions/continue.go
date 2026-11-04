@@ -112,6 +112,34 @@ func SanitizeToolIDs(messages []Message) []Message {
 	return out
 }
 
+// Codex sends a message's id as input[].id, which the Responses API requires
+// to start with "msg" and cap at 64 chars. Namespaced delta ids
+// ("<runId>:msg_...", 91 chars) and other agents' ids (uuids) violate it.
+var codexMessageID = regexp.MustCompile(`^msg[a-zA-Z0-9_-]{0,61}$`)
+
+// SanitizeMessageIDs maps message ids Codex would reject to "msg_" + 60 hex of
+// their SHA-256, rewriting parentId with the same pure hash so the chain stays
+// intact and the mapping is deterministic and idempotent across turns. No
+// reverse mapping is needed: deltas are cut positionally from the native
+// file, never by id. Continue path only, for the same reason as SanitizeToolIDs.
+func SanitizeMessageIDs(messages []Message) []Message {
+	out := make([]Message, len(messages))
+	for i, message := range messages {
+		message.ID = sanitizedMessageID(message.ID)
+		message.ParentID = sanitizedMessageID(message.ParentID)
+		out[i] = message
+	}
+	return out
+}
+
+func sanitizedMessageID(raw string) string {
+	if raw == "" || codexMessageID.MatchString(raw) {
+		return raw
+	}
+	sum := sha256.Sum256([]byte(raw))
+	return "msg_" + hex.EncodeToString(sum[:30])
+}
+
 func sanitizedToolID(raw string) string {
 	sum := sha256.Sum256([]byte(raw))
 	return "tid-" + hex.EncodeToString(sum[:12])

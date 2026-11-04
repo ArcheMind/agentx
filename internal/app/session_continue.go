@@ -124,8 +124,9 @@ func (a App) sessionContinue(ctx context.Context, args []string) error {
 		// timestamp ("No conversation found"), so empty ones are filled; the
 		// parent chain is rewritten positionally so delta-appended history
 		// stays on one native ancestor chain; tool ids the native APIs would
-		// reject are mapped to deterministic safe ids.
-		imported.Messages = sessions.SanitizeToolIDs(sessions.RechainMessages(fillTimestamps(history)))
+		// reject are mapped to deterministic safe ids, and message ids over
+		// the Codex item id cap are shortened.
+		imported.Messages = sessions.SanitizeMessageIDs(sessions.SanitizeToolIDs(sessions.RechainMessages(fillTimestamps(history))))
 		imported.MessageCount = len(history)
 		token, err = sessions.WriteSessionFile(imported, agent.ID, stateDir, a.Sessions.HomeDir)
 		if err != nil {
