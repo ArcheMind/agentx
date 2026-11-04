@@ -4,6 +4,13 @@ All notable changes to AgentX are documented here. The format follows [Keep a Ch
 
 ## [Unreleased]
 
+### Fixed
+
+- Session commands and the interactive recent-session picker no longer fail with
+  `bufio.Scanner: token too long` when a native JSONL record exceeds 8 MiB (for
+  example, a large tool output). Full records are preserved instead of truncated
+  or skipped.
+
 ## [0.8.1] - 2026-10-31
 
 ### Fixed
