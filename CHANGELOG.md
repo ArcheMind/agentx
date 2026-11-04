@@ -4,6 +4,21 @@ All notable changes to AgentX are documented here. The format follows [Keep a Ch
 
 ## [Unreleased]
 
+## [0.8.3] - 2026-11-04
+
+### Fixed
+
+- `ax session continue` to codex: message ids the OpenAI Responses API rejects
+  (not `msg`-prefixed or longer than 64 characters, e.g. namespaced continue
+  deltas "<runId>:msg_...") are mapped on import to "msg_" + 60 hex of their
+  SHA-256, with parentId mapped the same way so the chain stays intact.
+  Previously, once such a delta was in a transcript, every later codex turn on
+  that chain failed with 400 `string_above_max_length`. Like tool id
+  sanitization, this lives on the continue import path only; serializers keep
+  ids verbatim.
+
+## [0.8.2] - 2026-11-04
+
 ### Fixed
 
 - Session commands and the interactive recent-session picker no longer fail with
