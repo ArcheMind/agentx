@@ -1,7 +1,6 @@
 package sessions
 
 import (
-	"bufio"
 	"crypto/sha256"
 	"encoding/json"
 	"errors"
@@ -767,28 +766,6 @@ func loadJSONLGlob(pattern string, parse func(string, []map[string]any) (Session
 	}
 	sortDetails(details)
 	return details, nil
-}
-
-func readJSONL(path string) ([]map[string]any, error) {
-	file, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
-	scanner := bufio.NewScanner(file)
-	scanner.Buffer(make([]byte, 64*1024), 8*1024*1024)
-	var records []map[string]any
-	for scanner.Scan() {
-		var record map[string]any
-		if json.Unmarshal(scanner.Bytes(), &record) != nil {
-			continue
-		}
-		records = append(records, record)
-	}
-	if err := scanner.Err(); err != nil {
-		return nil, err
-	}
-	return records, nil
 }
 
 func newDetail(agent, source string) Session {

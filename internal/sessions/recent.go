@@ -1,7 +1,6 @@
 package sessions
 
 import (
-	"bufio"
 	"bytes"
 	"crypto/sha256"
 	"encoding/json"
@@ -182,23 +181,6 @@ func recentPiSummary(path string) (Summary, bool, error) {
 		return item.ID != "" && item.Workspace != "" && item.Title != ""
 	})
 	return item, item.ID != "", err
-}
-
-func scanJSONL(path string, visit func(map[string]any) bool) error {
-	file, err := os.Open(path)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-	scanner := bufio.NewScanner(file)
-	scanner.Buffer(make([]byte, 64*1024), 8*1024*1024)
-	for scanner.Scan() {
-		var record map[string]any
-		if json.Unmarshal(scanner.Bytes(), &record) == nil && visit(record) {
-			return nil
-		}
-	}
-	return scanner.Err()
 }
 
 func recentFileTimestamp(path string) string {
