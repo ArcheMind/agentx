@@ -491,6 +491,51 @@ func TestCodexFidelityRoundTrip(t *testing.T) {
 	}
 }
 
+func TestSerializeCodexThinkingChannels(t *testing.T) {
+	detail := Session{ID: "cx-think", Provider: "codex", Workspace: "/w", Messages: []Message{
+		{ID: "u1", Role: "user", Content: []ContentBlock{{Type: "text", Text: "go"}}, Timestamp: "2026-09-01T11:00:00Z"},
+		{ID: "a1", ParentID: "u1", Role: "assistant", Timestamp: "2026-09-01T11:01:00Z", Content: []ContentBlock{
+			{Type: "text", Text: "before"},
+			{Type: "thinking", Text: "unsigned plan"},
+			{Type: "thinking"},
+			{Type: "tool_use", ID: "c1", Name: "shell", Input: map[string]any{"cmd": "ls"}},
+			{Type: "thinking", Text: "signed plan", Signature: "enc-1"},
+			{Type: "thinking", Text: "after signed"},
+			{Type: "text", Text: "after"},
+		}},
+	}}
+	var got []string
+	for _, rec := range SerializeCodex(detail) {
+		payload, _ := rec["payload"].(map[string]any)
+		switch {
+		case rec["type"] == "response_item" && payload["type"] == "message" && payload["role"] == "assistant":
+			var texts []string
+			for _, c := range payload["content"].([]any) {
+				texts = append(texts, c.(map[string]any)["text"].(string))
+			}
+			got = append(got, "message:"+strings.Join(texts, "|"))
+		case rec["type"] == "response_item" && payload["type"] == "reasoning":
+			summary, _ := json.Marshal(payload["summary"])
+			got = append(got, fmt.Sprintf("reasoning:%s:%v", summary, payload["encrypted_content"]))
+		case rec["type"] == "response_item" && payload["type"] == "function_call":
+			got = append(got, "function_call")
+		case rec["type"] == "event_msg" && payload["type"] == "agent_message":
+			got = append(got, "agent_message:"+payload["message"].(string))
+		}
+	}
+	want := []string{
+		"message:before|<think>\nunsigned plan\n</think>",
+		"agent_message:before\n<think>\nunsigned plan\n</think>",
+		"function_call",
+		`reasoning:[{"text":"signed plan","type":"summary_text"}]:enc-1`,
+		"message:<think>\nafter signed\n</think>|after",
+		"agent_message:<think>\nafter signed\n</think>\nafter",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("codex records =\n%q\nwant\n%q", got, want)
+	}
+}
+
 func TestPiFidelityRoundTrip(t *testing.T) {
 	native := strings.Join([]string{
 		`{"type":"session","id":"fid","cwd":"/w","timestamp":"2026-09-01T14:00:00Z"}`,

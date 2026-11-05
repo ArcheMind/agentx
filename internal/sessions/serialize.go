@@ -319,25 +319,32 @@ func SerializeCodex(detail Session) []map[string]any {
 				}))
 				textBlocks, agentText = nil, ""
 			}
+			appendText := func(text string) {
+				textBlocks = append(textBlocks, map[string]any{"type": "output_text", "text": text})
+				if agentText != "" {
+					agentText += "\n"
+				}
+				agentText += text
+			}
 			// Blocks are emitted in order so reasoning, text and calls keep their native interleaving.
 			for _, b := range m.Content {
 				switch b.Type {
 				case "text":
-					textBlocks = append(textBlocks, map[string]any{"type": "output_text", "text": b.Text})
-					if agentText != "" {
-						agentText += "\n"
-					}
-					agentText += b.Text
+					appendText(b.Text)
 				case "thinking":
+					// Codex hides summary-only reasoning from the model, so unsigned thinking must ride the text stream to stay readable.
+					if b.Signature == "" {
+						if b.Text != "" {
+							appendText("<think>\n" + b.Text + "\n</think>")
+						}
+						continue
+					}
 					flushText()
 					summary := []any{}
 					if b.Text != "" {
 						summary = append(summary, map[string]any{"type": "summary_text", "text": b.Text})
 					}
-					payload := map[string]any{"type": "reasoning", "summary": summary}
-					if b.Signature != "" {
-						payload["encrypted_content"] = b.Signature
-					}
+					payload := map[string]any{"type": "reasoning", "summary": summary, "encrypted_content": b.Signature}
 					records = append(records, map[string]any{"type": "response_item", "timestamp": m.Timestamp, "payload": payload})
 				case "tool_use":
 					flushText()
