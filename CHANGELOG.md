@@ -4,6 +4,19 @@ All notable changes to AgentX are documented here. The format follows [Keep a Ch
 
 ## [Unreleased]
 
+## [0.8.4] - 2026-11-05
+
+### Fixed
+
+- `ax session continue`: unsigned thinking (synthetic or cross-agent, with no
+  provider signature) is no longer silently dropped from the model's context.
+  Codex, Claude and Pi all ignore unsigned thinking in imported history, so it
+  now serializes as its own `<think>`-wrapped text block in its original
+  position for all three agents; signed thinking keeps the native channel, so
+  same-agent round-trips stay lossless. Every provider import lifts a text block
+  wholly wrapped in a single `<think>` pair back into a thinking block, so the
+  unified transcript round-trips.
+
 ## [0.8.3] - 2026-11-04
 
 ### Fixed
