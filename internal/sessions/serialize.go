@@ -138,11 +138,13 @@ func SerializeClaude(detail Session) []map[string]any {
 			for _, b := range m.Content {
 				switch b.Type {
 				case "thinking":
-					block := map[string]any{"type": "thinking", "thinking": b.Text}
-					if b.Signature != "" {
-						block["signature"] = b.Signature
+					if b.Signature == "" {
+						if b.Text != "" {
+							blocks = append(blocks, map[string]any{"type": "text", "text": thinkTagText(b.Text)})
+						}
+						continue
 					}
-					blocks = append(blocks, block)
+					blocks = append(blocks, map[string]any{"type": "thinking", "thinking": b.Text, "signature": b.Signature})
 				case "text":
 					blocks = append(blocks, map[string]any{"type": "text", "text": b.Text})
 				case "tool_use":
@@ -332,10 +334,9 @@ func SerializeCodex(detail Session) []map[string]any {
 				case "text":
 					appendText(b.Text)
 				case "thinking":
-					// Codex hides summary-only reasoning from the model, so unsigned thinking must ride the text stream to stay readable.
 					if b.Signature == "" {
 						if b.Text != "" {
-							appendText("<think>\n" + b.Text + "\n</think>")
+							appendText(thinkTagText(b.Text))
 						}
 						continue
 					}
@@ -545,11 +546,13 @@ func SerializePi(detail Session) []map[string]any {
 			for _, b := range m.Content {
 				switch b.Type {
 				case "thinking":
-					block := map[string]any{"type": "thinking", "thinking": b.Text}
-					if b.Signature != "" {
-						block["thinkingSignature"] = b.Signature
+					if b.Signature == "" {
+						if b.Text != "" {
+							content = append(content, map[string]any{"type": "text", "text": thinkTagText(b.Text)})
+						}
+						continue
 					}
-					content = append(content, block)
+					content = append(content, map[string]any{"type": "thinking", "thinking": b.Text, "thinkingSignature": b.Signature})
 				case "text":
 					content = append(content, map[string]any{"type": "text", "text": b.Text})
 				case "tool_use":
@@ -747,6 +750,11 @@ func codexImageURL(source any) string {
 		return "data:" + mediaType + ";base64," + data
 	}
 	return ""
+}
+
+// Agents hide or drop unsigned thinking from the model, so it travels as its own tagged text block that import lifts back.
+func thinkTagText(text string) string {
+	return "<think>\n" + text + "\n</think>"
 }
 
 func codexEvent(ts string, payload map[string]any) map[string]any {

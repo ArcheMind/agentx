@@ -791,6 +791,11 @@ func finishDetail(detail Session) (Session, bool) {
 	if detail.ID == "" {
 		return Session{}, false
 	}
+	for i := range detail.Messages {
+		if detail.Messages[i].Role == "assistant" {
+			liftThinkTags(detail.Messages[i].Content)
+		}
+	}
 	detail.MessageCount = len(detail.Messages)
 	if detail.Title == "" {
 		for _, message := range detail.Messages {
@@ -802,6 +807,24 @@ func finishDetail(detail Session) (Session, bool) {
 		}
 	}
 	return detail, true
+}
+
+// Inverse of thinkTagText: only a text block wholly wrapped in one <think> pair becomes thinking again.
+func liftThinkTags(blocks []ContentBlock) {
+	for i, b := range blocks {
+		if b.Type != "text" {
+			continue
+		}
+		inner, ok := strings.CutPrefix(strings.TrimSpace(b.Text), "<think>")
+		if !ok {
+			continue
+		}
+		inner, ok = strings.CutSuffix(inner, "</think>")
+		if !ok || strings.Contains(inner, "<think>") || strings.Contains(inner, "</think>") {
+			continue
+		}
+		blocks[i] = ContentBlock{Type: "thinking", Text: strings.TrimSuffix(strings.TrimPrefix(inner, "\n"), "\n")}
+	}
 }
 
 func extractText(value any) string {

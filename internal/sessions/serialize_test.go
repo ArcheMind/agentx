@@ -580,3 +580,97 @@ func TestPiFidelityRoundTrip(t *testing.T) {
 		t.Fatalf("serialized arguments must be an object, got %#v", rec.Message.Content[0].Arguments)
 	}
 }
+
+func TestSerializeUnsignedThinkingAsThinkTagText(t *testing.T) {
+	detail := Session{ID: "think-tag", Workspace: "/w", Messages: []Message{
+		{ID: "u1", Role: "user", Content: []ContentBlock{{Type: "text", Text: "go"}}, Timestamp: "2026-09-01T11:00:00Z"},
+		{ID: "a1", ParentID: "u1", Role: "assistant", Timestamp: "2026-09-01T11:01:00Z", Content: []ContentBlock{
+			{Type: "thinking", Text: "unsigned plan"},
+			{Type: "thinking", Text: "signed plan", Signature: "sig-1"},
+			{Type: "text", Text: "after"},
+		}},
+	}}
+	for name, test := range map[string]struct {
+		records []map[string]any
+		sigKey  string
+	}{
+		"claude": {SerializeClaude(detail), "signature"},
+		"pi":     {SerializePi(detail), "thinkingSignature"},
+	} {
+		var content []any
+		for _, rec := range test.records {
+			if msg, ok := rec["message"].(map[string]any); ok && msg["role"] == "assistant" {
+				content = msg["content"].([]any)
+			}
+		}
+		want := []any{
+			map[string]any{"type": "text", "text": "<think>\nunsigned plan\n</think>"},
+			map[string]any{"type": "thinking", "thinking": "signed plan", test.sigKey: "sig-1"},
+			map[string]any{"type": "text", "text": "after"},
+		}
+		if !reflect.DeepEqual(content, want) {
+			t.Fatalf("%s assistant content = %#v", name, content)
+		}
+	}
+}
+
+func TestUnsignedThinkingRoundTripsThroughThinkTag(t *testing.T) {
+	detail := Session{ID: "3f9a1c2e-aaaa-4bbb-8ccc-123456789abc", Workspace: "/w", Messages: []Message{
+		{ID: "u1", Role: "user", Content: []ContentBlock{{Type: "text", Text: "go"}}, Timestamp: "2026-09-01T11:00:00Z"},
+		{ID: "a1", ParentID: "u1", Role: "assistant", Timestamp: "2026-09-01T11:01:00Z", Content: []ContentBlock{
+			{Type: "text", Text: "before"},
+			{Type: "thinking", Text: "\nunsigned\nplan "},
+			{Type: "thinking", Text: "signed plan", Signature: "sig-1"},
+			{Type: "text", Text: "after"},
+		}},
+	}}
+	want := []ContentBlock{
+		{Type: "text", Text: "before"},
+		{Type: "thinking", Text: "\nunsigned\nplan "},
+		{Type: "thinking", Text: "signed plan", Signature: "sig-1"},
+		{Type: "text", Text: "after"},
+	}
+	for agent, serialize := range map[string]func(Session) []map[string]any{
+		"claude": SerializeClaude, "codex": SerializeCodex, "pi": SerializePi,
+	} {
+		var records []map[string]any
+		for _, line := range strings.Split(marshalJSONL(t, serialize(detail)), "\n") {
+			var rec map[string]any
+			if err := json.Unmarshal([]byte(line), &rec); err != nil {
+				t.Fatal(err)
+			}
+			records = append(records, rec)
+		}
+		parsed, ok := ParseRecords(agent, records)
+		if !ok {
+			t.Fatalf("%s did not parse back", agent)
+		}
+		var got []ContentBlock
+		for _, m := range parsed.Messages {
+			if m.Role == "assistant" {
+				got = append(got, m.Content...)
+			}
+		}
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("%s assistant blocks =\n%#v\nwant\n%#v", agent, got, want)
+		}
+	}
+}
+
+func TestLiftThinkTagsOnlyWholeBlocks(t *testing.T) {
+	for text, want := range map[string]ContentBlock{
+		"<think>\nplan\n</think>":             {Type: "thinking", Text: "plan"},
+		"  <think>plan</think>\n":             {Type: "thinking", Text: "plan"},
+		"<think>\n\n</think>":                 {Type: "thinking", Text: ""},
+		"note <think>plan</think>":            {Type: "text", Text: "note <think>plan</think>"},
+		"<think>plan</think> then answer":     {Type: "text", Text: "<think>plan</think> then answer"},
+		"<think>a</think> b <think>c</think>": {Type: "text", Text: "<think>a</think> b <think>c</think>"},
+		"<think>unterminated":                 {Type: "text", Text: "<think>unterminated"},
+	} {
+		blocks := []ContentBlock{{Type: "text", Text: text}}
+		liftThinkTags(blocks)
+		if !reflect.DeepEqual(blocks[0], want) {
+			t.Fatalf("lift(%q) = %#v, want %#v", text, blocks[0], want)
+		}
+	}
+}
