@@ -105,7 +105,7 @@ func (r *continueRunner) runClaude(plan runtime.CommandPlan, prompt string) (run
 
 func (r *continueRunner) runCodex(plan runtime.CommandPlan, prompt string) (runtime.CommandResult, error) {
 	id := plan.Args[len(plan.Args)-2]
-	path, err := sessions.FindCodexRollout(r.home, id)
+	path, err := sessions.FindCodexRollout(plan.Env["CODEX_HOME"], id)
 	if err != nil {
 		return runtime.CommandResult{}, err
 	}
@@ -238,7 +238,9 @@ func TestSessionContinueClaudeFreshSessionWithoutHistory(t *testing.T) {
 	}
 }
 
-func TestSessionContinueCodexEmitsDelta(t *testing.T) {
+func TestSessionContinueCodexEmitsDeltaFromConfiguredHome(t *testing.T) {
+	codexHome := t.TempDir()
+	t.Setenv("CODEX_HOME", codexHome)
 	workspace := testWorkspace(t)
 	application, stdout, runner := continueApp(t, "codex", "", continueTranscript(t, workspace))
 	runner.reply = []sessions.Message{{ID: "a1", Role: "assistant", Content: []sessions.ContentBlock{{Type: "text", Text: "codex answer"}}}}
@@ -252,8 +254,12 @@ func TestSessionContinueCodexEmitsDelta(t *testing.T) {
 	if sessions.MessageText(delta.Messages[0]) != "codex answer" {
 		t.Fatalf("message = %+v", delta.Messages[0])
 	}
-	if !strings.Contains(strings.Join(runner.plans[0].Args, " "), "login") && runner.plans[0].Args[0] != "login" {
-		t.Fatalf("codex must discover auth first: %+v", runner.plans[0].Args)
+	if len(runner.plans) != 2 || runner.plans[0].Args[0] != "login" ||
+		runner.plans[0].Env["CODEX_HOME"] != codexHome || runner.plans[1].Env["CODEX_HOME"] != codexHome {
+		t.Fatalf("codex must discover auth and run in the configured home: %+v", runner.plans)
+	}
+	if _, err := os.Stat(filepath.Join(runner.home, ".codex", "sessions")); !os.IsNotExist(err) {
+		t.Fatalf("expected no writes in the default Codex sessions directory, stat error = %v", err)
 	}
 }
 

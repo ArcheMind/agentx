@@ -33,8 +33,8 @@ func ClaudeProjectFile(homeDir, workspace, sessionID string) string {
 
 // FindCodexRollout locates the rollout file for a Codex thread id, newest
 // first: Codex names rollout files rollout-<timestamp>-<uuid>.jsonl.
-func FindCodexRollout(homeDir, threadID string) (string, error) {
-	pattern := filepath.Join(homeDir, ".codex", "sessions", "*", "*", "*", "*-"+threadID+".jsonl")
+func FindCodexRollout(codexHome, threadID string) (string, error) {
+	pattern := filepath.Join(codexHome, "sessions", "*", "*", "*", "*-"+threadID+".jsonl")
 	matches, err := filepath.Glob(pattern)
 	if err != nil {
 		return "", err

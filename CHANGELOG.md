@@ -4,6 +4,13 @@ All notable changes to AgentX are documented here. The format follows [Keep a Ch
 
 ## [Unreleased]
 
+## [0.8.5] - 2026-11-07
+
+### Fixed
+
+- `ax session continue codex` imports history and reads the result from the
+  same Codex home as the native turn.
+
 ## [0.8.4] - 2026-11-05
 
 ### Fixed

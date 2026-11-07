@@ -31,17 +31,7 @@ func WriteSessionFile(detail Session, agentID, dir, homeDir string) (string, err
 		detail.ID = newID
 		return newID, writeJSONLFile(path, SerializeClaude(detail))
 	case "codex":
-		newID := newUUID()
-		now := time.Now()
-		codexDir := filepath.Join(homeDir, ".codex", "sessions",
-			now.Format("2006"), now.Format("01"), now.Format("02"))
-		if err := os.MkdirAll(codexDir, 0700); err != nil {
-			return "", fmt.Errorf("create codex session directory: %w", err)
-		}
-		name := fmt.Sprintf("rollout-%s-%s.jsonl", now.Format("2006-01-02T15-04-05"), newID)
-		path := filepath.Join(codexDir, name)
-		detail.ID = newID
-		return newID, writeJSONLFile(path, SerializeCodex(detail))
+		return WriteCodexSessionFile(detail, filepath.Join(homeDir, ".codex"))
 	case "pi":
 		newID := newUUID()
 		path := filepath.Join(dir, newID+".jsonl")
@@ -72,6 +62,18 @@ func WriteSessionFile(detail Session, agentID, dir, homeDir string) (string, err
 	default:
 		return "", fmt.Errorf("unsupported resume target %q", agentID)
 	}
+}
+
+func WriteCodexSessionFile(detail Session, codexHome string) (string, error) {
+	id := newUUID()
+	now := time.Now()
+	dir := filepath.Join(codexHome, "sessions", now.Format("2006"), now.Format("01"), now.Format("02"))
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return "", fmt.Errorf("create codex session directory: %w", err)
+	}
+	name := fmt.Sprintf("rollout-%s-%s.jsonl", now.Format("2006-01-02T15-04-05"), id)
+	detail.ID = id
+	return id, writeJSONLFile(filepath.Join(dir, name), SerializeCodex(detail))
 }
 
 func ResumeArgs(agentID, token string) []string {

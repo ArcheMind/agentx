@@ -113,6 +113,15 @@ func (a App) sessionContinue(ctx context.Context, args []string) error {
 	}
 	detail.Workspace = workspace
 
+	var auth subagents.Auth
+	if agent.ID == "codex" {
+		// Resolve the directory before importing history so the same store
+		// serves the import, the native execution, and the result lookup.
+		auth, err = subagents.DiscoverAuth(ctx, a.Runner, agent.ID, model)
+		if err != nil {
+			return err
+		}
+	}
 	stateDir := filepath.Join(a.Sessions.HomeDir, ".local", "state", "agentx", "resume")
 	token := ""
 	prefix := 0
@@ -128,11 +137,15 @@ func (a App) sessionContinue(ctx context.Context, args []string) error {
 		// the Codex item id cap are shortened.
 		imported.Messages = sessions.SanitizeMessageIDs(sessions.SanitizeToolIDs(sessions.RechainMessages(fillTimestamps(history))))
 		imported.MessageCount = len(history)
-		token, err = sessions.WriteSessionFile(imported, agent.ID, stateDir, a.Sessions.HomeDir)
+		if agent.ID == "codex" {
+			token, err = sessions.WriteCodexSessionFile(imported, auth.Dir)
+		} else {
+			token, err = sessions.WriteSessionFile(imported, agent.ID, stateDir, a.Sessions.HomeDir)
+		}
 		if err != nil {
 			return err
 		}
-		importPath, err := a.continueSessionFile(agent.ID, workspace, token)
+		importPath, err := a.continueSessionFile(agent.ID, workspace, token, auth.Dir)
 		if err != nil {
 			return err
 		}
@@ -149,9 +162,11 @@ func (a App) sessionContinue(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	auth, err := subagents.DiscoverAuth(ctx, a.Runner, agent.ID, model)
-	if err != nil {
-		return err
+	if agent.ID != "codex" {
+		auth, err = subagents.DiscoverAuth(ctx, a.Runner, agent.ID, model)
+		if err != nil {
+			return err
+		}
 	}
 	plan.Env, plan.UnsetEnv = subagents.AuthEnvironment(auth)
 	result, execErr := a.Runner.Execute(ctx, plan, runtime.ExecuteOptions{Stdin: strings.NewReader(prompt), CancelProcessGroup: true})
@@ -179,7 +194,7 @@ func (a App) sessionContinue(ctx context.Context, args []string) error {
 	if agent.ID != "pi" {
 		resultToken = run.sessionID
 	}
-	resultPath, err := a.continueSessionFile(agent.ID, workspace, resultToken)
+	resultPath, err := a.continueSessionFile(agent.ID, workspace, resultToken, auth.Dir)
 	if err != nil {
 		return err
 	}
@@ -286,12 +301,12 @@ func resolveContinueWorkspace(flagValue, transcriptValue string) (string, error)
 }
 
 // continueSessionFile maps a session token to the native file that records it.
-func (a App) continueSessionFile(agentID, workspace, token string) (string, error) {
+func (a App) continueSessionFile(agentID, workspace, token, codexHome string) (string, error) {
 	switch agentID {
 	case "claude":
 		return sessions.ClaudeProjectFile(a.Sessions.HomeDir, workspace, token), nil
 	case "codex":
-		return sessions.FindCodexRollout(a.Sessions.HomeDir, token)
+		return sessions.FindCodexRollout(codexHome, token)
 	default:
 		return token, nil
 	}
