@@ -14,12 +14,12 @@ import (
 	"unicode"
 
 	"github.com/ArcheMind/agentx/internal/drivers"
-	"github.com/mattn/go-runewidth"
-	"golang.org/x/term"
 	"github.com/ArcheMind/agentx/internal/profiles"
 	"github.com/ArcheMind/agentx/internal/runtime"
 	"github.com/ArcheMind/agentx/internal/sessions"
 	"github.com/ArcheMind/agentx/internal/subagents"
+	"github.com/mattn/go-runewidth"
+	"golang.org/x/term"
 )
 
 const (
