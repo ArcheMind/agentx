@@ -590,10 +590,14 @@ func (s *Server) execute(ctx context.Context, a *ExternalSubagentState, prompt s
 		return "", nil, err
 	}
 	a.auth = auth
+	var roleInstructions string
+	if a.Option.Description != "" {
+		roleInstructions = "Role: " + a.Option.Name + "\n" + a.Option.Description
+	}
 	var plan runtime.CommandPlan
 	switch a.Option.Agent {
 	case "claude":
-		plan, err = drivers.ClaudePolicyExecPlan(a.Cwd, a.Option.Model, a.Session, a.Mode == ModeYolo, a.Option.Effort, "", a.Option.Flags)
+		plan, err = drivers.ClaudePolicyExecPlan(a.Cwd, a.Option.Model, a.Session, a.Mode == ModeYolo, a.Option.Effort, roleInstructions, a.Option.Flags)
 		if err != nil {
 			return "", nil, err
 		}
@@ -601,6 +605,9 @@ func (s *Server) execute(ctx context.Context, a *ExternalSubagentState, prompt s
 		plan, err = drivers.CodexPolicyExecPlan(a.Cwd, a.Option.Model, a.Session, a.Mode == ModeYolo, a.Option.Effort, a.Option.UserConfig, a.Option.Flags)
 		if err != nil {
 			return "", nil, err
+		}
+		if roleInstructions != "" {
+			plan.Args = append(plan.Args[:len(plan.Args)-1], "-c", fmt.Sprintf("developer_instructions=%q", roleInstructions), "-")
 		}
 		s.injectDelegation(&plan)
 	default:
@@ -618,6 +625,9 @@ func (s *Server) execute(ctx context.Context, a *ExternalSubagentState, prompt s
 		plan.Args = append(plan.Args, "--session", a.Session, "--no-approve")
 		if a.Option.UserConfig != nil && !*a.Option.UserConfig {
 			plan.Args = append(plan.Args, "--no-skills", "--no-prompt-templates", "--no-extensions")
+		}
+		if roleInstructions != "" {
+			plan.Args = append(plan.Args, "--append-system-prompt", roleInstructions)
 		}
 		plan.Args = append(plan.Args, a.Option.Flags...)
 	}

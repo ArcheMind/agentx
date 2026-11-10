@@ -168,8 +168,8 @@ func TestPiEffortVerifiedFromObserverRecords(t *testing.T) {
 			t.Fatal(want, args)
 		}
 	}
-	if strings.Contains(args, "--append-system-prompt") {
-		t.Fatal("append-system-prompt should not be present", args)
+	if !strings.Contains(args, "--append-system-prompt") {
+		t.Fatal("append-system-prompt should be present for profiles with a description", args)
 	}
 	r.thinking = ""
 	callTest(t, s, "SendExternalSubagentMessage", map[string]any{"to": "pi", "message": "again"})
@@ -208,7 +208,7 @@ func TestPiWithoutEffortKeepsPlainPlan(t *testing.T) {
 	s := piServer(t, r, "")
 	text := callTest(t, s, "ExternalSubagent", map[string]any{"description": "x", "prompt": "x", "model": "pi-review", "run_in_background": false})
 	args := strings.Join(r.plans[0].Args, " ")
-	if strings.Contains(args, "--extension") || strings.Contains(args, "--thinking") || strings.Contains(args, "--append-system-prompt") || strings.Contains(text, "Native evidence") {
+	if strings.Contains(args, "--extension") || strings.Contains(args, "--thinking") || strings.Contains(text, "Native evidence") {
 		t.Fatal(args, text)
 	}
 }
