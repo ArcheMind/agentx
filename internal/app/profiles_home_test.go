@@ -103,7 +103,7 @@ func TestProfileRowsStayOneLineAndTruncateOnlyDescription(t *testing.T) {
 			t.Fatalf("selected=%t line = %q", selected, line)
 		}
 	}
-	if line := styledContentRow(rows[2], false, false); line != "multi   Pi · openai-code…gpt-5.6-luna · normal  First line Second line" || middleTruncate("short", profileModelWidth) != "short" {
+	if line := styledContentRow(rows[2], false, false); line != "multi   Pi · openai-code…gpt-5.6-luna · yolo  First line Second line" || middleTruncate("short", profileModelWidth) != "short" {
 		t.Fatalf("line = %q", line)
 	}
 }

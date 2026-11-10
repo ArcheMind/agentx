@@ -26,10 +26,10 @@ func TestInvalidModesRejectedBeforeAnyWork(t *testing.T) {
 	installPi(t)
 	saveProfile(t, s.Home, profiles.Profile{Name: "pi-review", Agent: "pi", Model: "provider/model", Description: "d"})
 	for input, want := range map[string]string{
-		`{"description":"x","prompt":"x","model":"review","mode":"dontAsk"}`:                        `mode "dontAsk" unsupported`,
-		`{"description":"x","prompt":"x","model":"review","mode":""}`:                               "must not be empty",
-		`{"description":"x","prompt":"x","model":"review","write":true}`:                            "unknown field",
-		`{"description":"x","prompt":"x","model":"review","writable_roots":["/x"]}`:                 "unknown field",
+		`{"description":"x","prompt":"x","model":"review","mode":"dontAsk"}`:        `mode "dontAsk" unsupported`,
+		`{"description":"x","prompt":"x","model":"review","mode":""}`:               "must not be empty",
+		`{"description":"x","prompt":"x","model":"review","write":true}`:            "unknown field",
+		`{"description":"x","prompt":"x","model":"review","writable_roots":["/x"]}`: "unknown field",
 	} {
 		_, err := s.call("ExternalSubagent", []byte(input))
 		if err == nil || !strings.Contains(err.Error(), want) {
