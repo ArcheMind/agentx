@@ -4,6 +4,13 @@ All notable changes to AgentX are documented here. The format follows [Keep a Ch
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-11-10
+
+### Changed
+
+- Replace runtime fallback with idempotent install-time migration: first run
+  renames `~/.agentx/profiles/` → `presets/` and `PROFILE.md` → `PRESET.md`.
+
 ## [0.9.0] - 2026-11-10
 
 ### Changed
@@ -12,8 +19,6 @@ All notable changes to AgentX are documented here. The format follows [Keep a Ch
   configuration directory is `~/.agentx/presets/<name>/PRESET.md`; MCP catalog
   text uses "preset" throughout. Go package `internal/profiles` → `internal/presets`;
   struct `Profile` → `Preset`. Smoke test files and Makefile targets renamed accordingly.
-- Reads fall back to `~/.agentx/profiles/` and `PROFILE.md` when the new paths
-  do not exist, so existing configurations keep working without migration.
 
 ## [0.8.5] - 2026-11-07
 
