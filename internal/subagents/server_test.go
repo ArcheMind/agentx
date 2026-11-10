@@ -39,20 +39,7 @@ type testRunner struct {
 	release chan struct{}
 }
 
-func authCheck(p runtime.CommandPlan) (runtime.CommandResult, bool) {
-	if len(p.Args) > 1 && p.Args[0] == "login" && p.Args[1] == "status" {
-		return runtime.CommandResult{Stderr: "Logged in using ChatGPT\n"}, true
-	}
-	if len(p.Args) > 1 && p.Args[0] == "auth" && p.Args[1] == "check" {
-		return runtime.CommandResult{Stdout: `{"status":"ready","provider":"provider","authType":"oauth"}`}, true
-	}
-	return runtime.CommandResult{}, false
-}
-
 func (r *testRunner) Execute(ctx context.Context, p runtime.CommandPlan, o runtime.ExecuteOptions) (runtime.CommandResult, error) {
-	if result, ok := authCheck(p); ok {
-		return result, nil
-	}
 	var data []byte
 	if o.Stdin != nil {
 		data, _ = io.ReadAll(o.Stdin)
@@ -267,9 +254,6 @@ func TestParseFailuresAndUnknownUsage(t *testing.T) {
 type failureRunner struct{}
 
 func (failureRunner) Execute(_ context.Context, p runtime.CommandPlan, _ runtime.ExecuteOptions) (runtime.CommandResult, error) {
-	if result, ok := authCheck(p); ok {
-		return result, nil
-	}
 	return runtime.CommandResult{Stderr: "model unavailable", ExitCode: 1}, fmt.Errorf("native request rejected")
 }
 
@@ -405,9 +389,6 @@ func TestQueuedCancellationNotifiesEveryAcceptedTask(t *testing.T) {
 type ignoringCancelRunner struct{ started chan struct{} }
 
 func (r ignoringCancelRunner) Execute(ctx context.Context, p runtime.CommandPlan, o runtime.ExecuteOptions) (runtime.CommandResult, error) {
-	if result, ok := authCheck(p); ok {
-		return result, nil
-	}
 	close(r.started)
 	<-ctx.Done()
 	return runtime.CommandResult{Stderr: codexTelemetry(p, ""), Stdout: "{\"type\":\"thread.started\",\"thread_id\":\"12345678-1234-1234-1234-123456789abc\"}\n{\"type\":\"item.completed\",\"item\":{\"type\":\"agent_message\",\"text\":\"Finished naturally; cancel was ignored\"}}\n{\"type\":\"turn.completed\"}"}, nil

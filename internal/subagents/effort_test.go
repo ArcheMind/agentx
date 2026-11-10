@@ -47,9 +47,6 @@ type codexEffortRunner struct {
 }
 
 func (r *codexEffortRunner) Execute(ctx context.Context, p runtime.CommandPlan, o runtime.ExecuteOptions) (runtime.CommandResult, error) {
-	if result, ok := authCheck(p); ok {
-		return result, nil
-	}
 	data, _ := io.ReadAll(o.Stdin)
 	r.mu.Lock()
 	r.plans = append(r.plans, p)
@@ -118,9 +115,6 @@ type piRunner struct {
 }
 
 func (r *piRunner) Execute(ctx context.Context, p runtime.CommandPlan, o runtime.ExecuteOptions) (runtime.CommandResult, error) {
-	if result, ok := authCheck(p); ok {
-		return result, nil
-	}
 	io.ReadAll(o.Stdin)
 	r.mu.Lock()
 	r.plans = append(r.plans, p)
@@ -216,9 +210,6 @@ func TestPiWithoutEffortKeepsPlainPlan(t *testing.T) {
 type rejectedEffortRunner struct{}
 
 func (rejectedEffortRunner) Execute(_ context.Context, p runtime.CommandPlan, _ runtime.ExecuteOptions) (runtime.CommandResult, error) {
-	if result, ok := authCheck(p); ok {
-		return result, nil
-	}
 	return runtime.CommandResult{ExitCode: 1, Stdout: "{\"type\":\"thread.started\",\"thread_id\":\"12345678-1234-1234-1234-123456789abc\"}\n{\"type\":\"turn.failed\",\"error\":{\"message\":\"Unsupported value: 'minimal' is not supported with the 'test-model' model.\"}}\n"}, fmt.Errorf("exit status 1")
 }
 

@@ -25,12 +25,12 @@ func (r *gitRunner) Execute(ctx context.Context, p runtime.CommandPlan, o runtim
 	if p.Executable == "git" {
 		return runtime.ExecRunner{}.Execute(ctx, p, o)
 	}
-	if _, ok := authCheck(p); !ok && r.write != "" {
+	if r.write != "" {
 		if err := os.WriteFile(filepath.Join(p.Cwd, r.write), []byte("agent output\n"), 0600); err != nil {
 			return runtime.CommandResult{}, err
 		}
 	}
-	if _, ok := authCheck(p); !ok && r.fail {
+	if r.fail {
 		return runtime.CommandResult{Stderr: "native failure"}, errors.New("exit status 1")
 	}
 	return r.testRunner.Execute(ctx, p, o)
@@ -241,19 +241,11 @@ func TestConcurrentWorktreeCreationInOneRepository(t *testing.T) {
 	}
 }
 
-type noLoginGitRunner struct{ *gitRunner }
-
-func (r noLoginGitRunner) Execute(ctx context.Context, p runtime.CommandPlan, o runtime.ExecuteOptions) (runtime.CommandResult, error) {
-	if len(p.Args) > 1 && p.Args[0] == "login" {
-		return runtime.CommandResult{Stderr: "Not logged in", ExitCode: 1}, errors.New("exit status 1")
-	}
-	return r.gitRunner.Execute(ctx, p, o)
-}
-
-func TestWorktreeIsKeptAndNamedWhenAuthPreflightFails(t *testing.T) {
+func TestWorktreeIsKeptAndNamedWhenAuthSourceIsInvalid(t *testing.T) {
 	inner := &gitRunner{testRunner: &testRunner{}}
-	s := testServer(t, noLoginGitRunner{inner})
+	s := testServer(t, inner)
 	dirtyRepo(t, s)
+	t.Setenv("CODEX_HOME", "relative")
 	_, err := s.call("ExternalSubagent", []byte(`{"description":"x","prompt":"x","model":"review","isolation":"worktree","name":"noauth","run_in_background":false}`))
 	s.mu.Lock()
 	a, _ := s.target("noauth")
@@ -262,6 +254,6 @@ func TestWorktreeIsKeptAndNamedWhenAuthPreflightFails(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, statErr := os.Stat(a.Worktree.Path); statErr != nil || len(inner.plans) != 0 {
-		t.Fatal("worktree not kept or native execution started after failed preflight", statErr, len(inner.plans))
+		t.Fatal("worktree not kept or native execution started with an invalid auth source", statErr, len(inner.plans))
 	}
 }

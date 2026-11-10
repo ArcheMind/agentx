@@ -113,14 +113,11 @@ func (a App) sessionContinue(ctx context.Context, args []string) error {
 	}
 	detail.Workspace = workspace
 
-	var auth subagents.Auth
-	if agent.ID == "codex" {
-		// Resolve the directory before importing history so the same store
-		// serves the import, the native execution, and the result lookup.
-		auth, err = subagents.DiscoverAuth(ctx, a.Runner, agent.ID, model)
-		if err != nil {
-			return err
-		}
+	// Resolve the directory before importing history so the same store
+	// serves the import, the native execution, and the result lookup.
+	auth, err := subagents.DiscoverAuth(agent.ID)
+	if err != nil {
+		return err
 	}
 	stateDir := filepath.Join(a.Sessions.HomeDir, ".local", "state", "agentx", "resume")
 	token := ""
@@ -156,17 +153,9 @@ func (a App) sessionContinue(ctx context.Context, args []string) error {
 		prefix = len(before.Messages)
 	}
 
-	// Plan first: an unsupported request (pi + MCP, pi + yolo) must fail as
-	// such, not as whatever the auth probe happens to report.
 	plan, err := drivers.ContinueExecPlan(agent.ID, workspace, model, token, effort, systemPrompt, mode == "yolo", mcp)
 	if err != nil {
 		return err
-	}
-	if agent.ID != "codex" {
-		auth, err = subagents.DiscoverAuth(ctx, a.Runner, agent.ID, model)
-		if err != nil {
-			return err
-		}
 	}
 	plan.Env, plan.UnsetEnv = subagents.AuthEnvironment(auth)
 	result, execErr := a.Runner.Execute(ctx, plan, runtime.ExecuteOptions{Stdin: strings.NewReader(prompt), CancelProcessGroup: true})

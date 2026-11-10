@@ -171,22 +171,20 @@ personality and service tier then also do not apply.
 Authentication is discovered, not configured. Before every turn AgentX selects
 the native agent's own credential directory, which is `CODEX_HOME` or
 `PI_CODING_AGENT_DIR` from its environment, otherwise `~/.codex` or
-`~/.pi/agent` (`AX_SUBAGENT_HOME` never changes it). It then runs
-`codex login status` or `pi auth check --json --model <model>` against that
-directory with credential-like variables removed. Each report carries an
-`Auth (discovered by preflight for this turn):` line with the variable,
-directory and login method. If the directory is not logged in, not ready for
-the model's provider, or the check fails, the task fails with a reason that
-ends `no fallback identity`, and no native execution starts.
+`~/.pi/agent` (`AX_SUBAGENT_HOME` never changes it), and pins the native
+process to it through that variable. Each report carries an
+`Auth source for this turn:` line with the variable and directory. AgentX runs
+no login or readiness check of its own: whether the directory can serve the
+preset's model is decided by the runtime, which resolves models and credentials
+with its own rules and reports a failure in its native stream. A relative
+`CODEX_HOME` or `PI_CODING_AGENT_DIR` fails before any work starts.
 
 Inherited environment variables whose names look like credentials (`*KEY*`,
 `*TOKEN*`, `*SECRET*`, `*PASSWORD*`, `*CREDENTIAL*`, `*AUTH*`, `*COOKIE*`,
-`AWS_PROFILE`) are removed from both the preflight and the native process.
-Without this, Pi would silently use an inherited `OPENAI_API_KEY` when the
-directory has no login. AgentX never copies credentials between runtimes.
-Identity means the directory plus its login method (for Pi also the model's
-provider). The account inside that directory is not checked: switching accounts
-within the same `CODEX_HOME` or Pi agent directory is not detected.
+`AWS_PROFILE`) are removed from the native process. Without this, Pi would
+silently use an inherited `OPENAI_API_KEY` when the directory has no login.
+AgentX never copies credentials between runtimes. Identity means the directory;
+the login method, provider and account inside it are not checked.
 
 ## Claude discovery and background delivery
 
@@ -330,8 +328,8 @@ and never falls back to the original directory.
 
 Retention: AgentX never removes a worktree, whether the task completed, failed
 or was cancelled, and including after the MCP connection ends. This includes a
-task whose auth preflight failed: the worktree was already created, no native
-execution ran, and the failure report names the worktree path. Continuation
+task that failed before native execution started: the worktree was already
+created, and the failure report names the worktree path. Continuation
 needs the worktree, and any uncommitted work in it belongs to the user. Every
 report names the path, branch, base commit and mode. After
 each task, the report also records the state: whether `HEAD` moved, plus

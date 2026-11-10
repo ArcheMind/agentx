@@ -99,7 +99,7 @@ configuration, and in `yolo` mode they are not restricted.
 | Reads | Not path-restricted | Not path-restricted |
 | User MCP servers/hooks/notify | Not loaded (`--ignore-user-config --ignore-rules --disable hooks`); before this change user MCP servers such as a node REPL ran outside the sandbox | Extensions, skills, prompt templates and project approval disabled |
 | Approval | `approval_policy="never"`; no human path | None exists |
-| Auth source | `CODEX_HOME` + `codex login status` preflight (method only, not account) | `PI_CODING_AGENT_DIR` + `pi auth check` preflight (provider and auth type, not account) |
+| Auth source | `CODEX_HOME` pinned; no preflight (the runtime decides) | `PI_CODING_AGENT_DIR` pinned; no preflight (the runtime decides) |
 
 Historical deterministic coverage (`go test ./internal/subagents ./internal/runtime`,
 grant model; these tests were since replaced) added the following:

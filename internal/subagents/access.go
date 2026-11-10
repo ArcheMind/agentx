@@ -1,15 +1,12 @@
 package subagents
 
 import (
-	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/ArcheMind/agentx/internal/presets"
-	"github.com/ArcheMind/agentx/internal/runtime"
 )
 
 const (
@@ -19,11 +16,11 @@ const (
 
 // Auth is the native credential source discovered for one turn.
 type Auth struct {
-	Key, Dir, Method string
+	Key, Dir string
 }
 
 func (a Auth) String() string {
-	return fmt.Sprintf("%s=%q (%s)", a.Key, a.Dir, a.Method)
+	return fmt.Sprintf("%s=%q", a.Key, a.Dir)
 }
 
 // authSource is the native agent's own credential directory: its environment variable when set,
@@ -58,61 +55,18 @@ func AuthEnvironment(auth Auth) (map[string]string, []string) {
 	return map[string]string{auth.Key: auth.Dir}, nil
 }
 
-func (s *Server) discoverAuth(ctx context.Context, o presets.Preset) (Auth, error) {
-	return DiscoverAuth(ctx, s.Runner, o.Agent, o.Model)
-}
-
-// DiscoverAuth runs the native login check against the discovered source before each execution
-// so a missing or broken login fails loudly instead of the runtime falling back to another identity.
-func DiscoverAuth(ctx context.Context, runner runtime.Runner, agent, model string) (Auth, error) {
+// DiscoverAuth pins the execution to the native agent's own credential directory.
+// Whether that directory can serve the model is the runtime's own call: pi and
+// codex resolve models and credentials themselves and fail loudly in-stream.
+func DiscoverAuth(agent string) (Auth, error) {
 	if agent == "claude" {
-		return Auth{Method: "native"}, nil
+		return Auth{}, nil
 	}
 	key, dir, err := authSource(agent)
 	if err != nil {
 		return Auth{}, err
 	}
-	auth := Auth{Key: key, Dir: dir}
-	env, unset := AuthEnvironment(auth)
-	plan := runtime.CommandPlan{Executable: agent, Env: env, UnsetEnv: unset, Args: []string{"login", "status"}}
-	if agent == "pi" {
-		plan.Args = []string{"auth", "check", "--json", "--model", model}
-	}
-	result, err := runner.Execute(ctx, plan, runtime.ExecuteOptions{})
-	if ctx.Err() != nil {
-		return Auth{}, &executionCancelled{cause: ctx.Err()}
-	}
-	output := runtime.RedactSecrets(strings.TrimSpace(result.Stdout + "\n" + result.Stderr))
-	if agent == "pi" {
-		var status struct {
-			Status   string `json:"status"`
-			Provider string `json:"provider"`
-			AuthType string `json:"authType"`
-			Reason   string `json:"reason"`
-		}
-		if jsonErr := json.Unmarshal([]byte(strings.TrimSpace(result.Stdout)), &status); jsonErr != nil {
-			return Auth{}, fmt.Errorf("Pi auth check for %s=%q failed: %v; output: %s; no fallback identity", key, dir, err, output)
-		}
-		provider, _, _ := strings.Cut(model, "/")
-		if status.Status != "ready" {
-			return Auth{}, fmt.Errorf("Pi auth source %s=%q not ready for provider %s: %s; no fallback identity", key, dir, provider, status.Reason)
-		}
-		if status.Provider != provider || status.AuthType == "" {
-			return Auth{}, fmt.Errorf("Pi auth source %s=%q reports provider %q with auth type %q for model provider %s; no fallback identity", key, dir, status.Provider, status.AuthType, provider)
-		}
-		auth.Method = status.AuthType
-		return auth, nil
-	}
-	switch {
-	case strings.Contains(output, "Logged in using ChatGPT"):
-		auth.Method = "chatgpt"
-	case strings.Contains(output, "Logged in using an API key"):
-		auth.Method = "api-key"
-	}
-	if err != nil || auth.Method == "" {
-		return Auth{}, fmt.Errorf("Codex auth source %s=%q is not usable: %s; no fallback identity", key, dir, output)
-	}
-	return auth, nil
+	return Auth{Key: key, Dir: dir}, nil
 }
 
 func Limits(o presets.Preset) string {
@@ -123,7 +77,7 @@ func Limits(o presets.Preset) string {
 		text.WriteString("This agent rejects yolo. ")
 	}
 	text.WriteString("Preset user_config and flags are passed through to the agent. ")
-	text.WriteString("Auth is discovered before each execution; the report names the source. ")
+	text.WriteString("The native credential directory is pinned before each execution; the report names it. ")
 	text.WriteString(IsolationLimits())
 	text.WriteString("Effort is fixed by the preset.")
 	return text.String()

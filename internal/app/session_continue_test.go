@@ -29,12 +29,6 @@ type continueRunner struct {
 
 func (r *continueRunner) Execute(_ context.Context, plan runtime.CommandPlan, options runtime.ExecuteOptions) (runtime.CommandResult, error) {
 	r.plans = append(r.plans, plan)
-	if len(plan.Args) > 0 && (plan.Args[0] == "login" || plan.Args[0] == "auth") {
-		if plan.Executable == "pi" {
-			return runtime.CommandResult{Stdout: `{"status":"ready","provider":"anthropic","authType":"oauth"}`}, nil
-		}
-		return runtime.CommandResult{Stdout: "Logged in using ChatGPT"}, nil
-	}
 	prompt := ""
 	if options.Stdin != nil {
 		data, _ := io.ReadAll(options.Stdin)
@@ -257,9 +251,8 @@ func TestSessionContinueCodexEmitsDeltaFromConfiguredHome(t *testing.T) {
 	if sessions.MessageText(delta.Messages[0]) != "codex answer" {
 		t.Fatalf("message = %+v", delta.Messages[0])
 	}
-	if len(runner.plans) != 2 || runner.plans[0].Args[0] != "login" ||
-		runner.plans[0].Env["CODEX_HOME"] != codexHome || runner.plans[1].Env["CODEX_HOME"] != codexHome {
-		t.Fatalf("codex must discover auth and run in the configured home: %+v", runner.plans)
+	if len(runner.plans) != 1 || runner.plans[0].Env["CODEX_HOME"] != codexHome {
+		t.Fatalf("codex must run in the configured home: %+v", runner.plans)
 	}
 	if _, err := os.Stat(filepath.Join(runner.home, ".codex", "sessions")); !os.IsNotExist(err) {
 		t.Fatalf("expected no writes in the default Codex sessions directory, stat error = %v", err)

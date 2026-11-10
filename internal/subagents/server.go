@@ -464,7 +464,7 @@ func (s *Server) render(a *ExternalSubagentState, j *Job) string {
 		text += a.Worktree.describe(a.Cwd)
 	}
 	if j.Auth != "" {
-		text += "Auth (discovered by preflight for this turn): " + j.Auth + "\n"
+		text += "Auth source for this turn: " + j.Auth + "\n"
 	}
 	if j.Evidence != "" {
 		text += "Native evidence: " + j.Evidence + "\n"
@@ -533,7 +533,7 @@ func (s *Server) work(a *ExternalSubagentState) {
 		job.Report = report
 		job.Usage = usage
 		job.Evidence = a.evidence
-		if a.auth.Method != "" {
+		if a.auth.Key != "" {
 			job.Auth = a.auth.String()
 		}
 		var cancelled *executionCancelled
@@ -585,7 +585,7 @@ func (s *Server) execute(ctx context.Context, a *ExternalSubagentState, prompt s
 	if err := s.checkWorktree(a); err != nil {
 		return "", nil, err
 	}
-	auth, err := s.discoverAuth(ctx, a.Option)
+	auth, err := DiscoverAuth(a.Option.Agent)
 	if err != nil {
 		return "", nil, err
 	}

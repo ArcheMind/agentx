@@ -50,7 +50,7 @@ func TestNormalModePassesNoPermissionFlags(t *testing.T) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	codex, claude := strings.Join(r.plans[0].Args, " "), strings.Join(r.plans[1].Args, " ")
-	if strings.Contains(codex, "sandbox") || !strings.Contains(codex, `approval_policy="never"`) || !strings.Contains(text, "Mode: normal\n") || !strings.Contains(text, `Auth (discovered by preflight for this turn): CODEX_HOME="`+os.Getenv("CODEX_HOME")+`" (chatgpt)`) {
+	if strings.Contains(codex, "sandbox") || !strings.Contains(codex, `approval_policy="never"`) || !strings.Contains(text, "Mode: normal\n") || !strings.Contains(text, `Auth source for this turn: CODEX_HOME="`+os.Getenv("CODEX_HOME")+`"`+"\n") {
 		t.Fatal(codex, text)
 	}
 	if strings.Contains(claude, "permission") || strings.Contains(claude, "dangerously") {
@@ -116,57 +116,19 @@ func TestAuthSourceIsNativeDefaultUnlessEnvironmentSetsIt(t *testing.T) {
 	}
 }
 
-type authRunner struct {
-	testRunner
-	login string
-	pi    string
-}
-
-func (r *authRunner) Execute(ctx context.Context, p runtime.CommandPlan, o runtime.ExecuteOptions) (runtime.CommandResult, error) {
-	if len(p.Args) > 1 && p.Args[0] == "login" {
-		if strings.HasPrefix(r.login, "Not") {
-			return runtime.CommandResult{Stderr: r.login, ExitCode: 1}, os.ErrPermission
-		}
-		return runtime.CommandResult{Stderr: r.login}, nil
-	}
-	if len(p.Args) > 1 && p.Args[0] == "auth" {
-		return runtime.CommandResult{Stdout: r.pi}, nil
-	}
-	return r.testRunner.Execute(ctx, p, o)
-}
-
-func TestFailedAuthPreflightStartsNoNativeExecution(t *testing.T) {
-	for _, login := range []string{"Not logged in", "Something else - sk-proj-abcdefghijklmnopqrstuvwxyz"} {
-		r := &authRunner{login: login}
-		s := testServer(t, r)
-		_, err := s.call("ExternalSubagent", []byte(`{"description":"x","prompt":"x","model":"review","run_in_background":false}`))
-		if err == nil || !strings.Contains(err.Error(), "no fallback identity") || strings.Contains(err.Error(), "abcdefghijklmnop") {
-			t.Fatal(err)
-		}
-		if len(r.plans) != 0 {
-			t.Fatal("native execution started without verified auth")
-		}
-	}
-	for _, status := range []string{`{"status":"not_ready","provider":"provider","reason":"credentials_not_configured"}`, `{"status":"ready","provider":"other","authType":"oauth"}`, `not json`} {
-		r := &authRunner{pi: status}
-		s := testServer(t, r)
-		installPi(t)
-		savePreset(t, s.Home, presets.Preset{Name: "review", Agent: "pi", Model: "provider/model", Description: "d"})
-		_, err := s.call("ExternalSubagent", []byte(`{"description":"x","prompt":"x","model":"review","run_in_background":false}`))
-		if err == nil || !strings.Contains(err.Error(), "no fallback identity") {
-			t.Fatal(status, err)
-		}
-		if len(r.plans) != 0 {
-			t.Fatal("native execution started without verified auth")
-		}
-	}
-	r := &authRunner{pi: `{"status":"ready","provider":"provider","authType":"api_key"}`}
+func TestAuthSourcePinnedWithoutPreflight(t *testing.T) {
+	r := &testRunner{}
 	s := testServer(t, r)
 	installPi(t)
 	savePreset(t, s.Home, presets.Preset{Name: "review", Agent: "pi", Model: "provider/model", Description: "d"})
 	_, err := s.call("ExternalSubagent", []byte(`{"description":"x","prompt":"x","model":"review","run_in_background":false}`))
-	if err == nil || !strings.Contains(err.Error(), `PI_CODING_AGENT_DIR="`+os.Getenv("PI_CODING_AGENT_DIR")+`" (api_key)`) || len(r.plans) != 1 {
-		t.Fatal("discovered Pi auth not used or reported:", err)
+	if err == nil || !strings.Contains(err.Error(), `PI_CODING_AGENT_DIR="`+os.Getenv("PI_CODING_AGENT_DIR")+`"`+"\n") {
+		t.Fatal("pinned Pi auth source not reported:", err)
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if len(r.plans) != 1 || r.plans[0].Args[0] == "auth" || r.plans[0].Env["PI_CODING_AGENT_DIR"] != os.Getenv("PI_CODING_AGENT_DIR") {
+		t.Fatalf("native execution not pinned to the auth source: %#v", r.plans)
 	}
 }
 
@@ -181,10 +143,7 @@ func must(t *testing.T, name string) string {
 
 type leakingRunner struct{}
 
-func (leakingRunner) Execute(_ context.Context, p runtime.CommandPlan, _ runtime.ExecuteOptions) (runtime.CommandResult, error) {
-	if result, ok := authCheck(p); ok {
-		return result, nil
-	}
+func (leakingRunner) Execute(_ context.Context, _ runtime.CommandPlan, _ runtime.ExecuteOptions) (runtime.CommandResult, error) {
 	return runtime.CommandResult{Stderr: "auth header Bearer abcdefghijklmnopqrstuvwxyz0123 key sk-proj-abcdefghijklmnopqrstuvwxyz", ExitCode: 1}, os.ErrPermission
 }
 
