@@ -127,8 +127,10 @@ func (a App) injectClaudeAgentX(request *runtime.RunRequest) error {
 	request.PassthroughArgs = append([]string{
 		"--mcp-config", string(entry),
 		"--allowedTools", "mcp__agentx__StartExternalSubagent", "mcp__agentx__SendExternalSubagentMessage", "mcp__agentx__StopExternalSubagent", "mcp__agentx__ListExternalSubagentSessions",
-		"--channels", "server:agentx",
 	}, request.PassthroughArgs...)
+	if os.Getenv("AX_CLAUDE_CHANNELS") == "1" {
+		request.PassthroughArgs = append([]string{"--channels", "server:agentx", "--dangerously-load-development-channels", "server:agentx"}, request.PassthroughArgs...)
+	}
 	return nil
 }
 

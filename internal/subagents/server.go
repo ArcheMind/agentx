@@ -701,7 +701,6 @@ func (s *Server) injectClaudeDelegation(plan *runtime.CommandPlan) {
 	plan.Args = append(plan.Args,
 		"--mcp-config", string(entry),
 		"--allowedTools", "mcp__agentx__StartExternalSubagent", "mcp__agentx__SendExternalSubagentMessage", "mcp__agentx__StopExternalSubagent", "mcp__agentx__ListExternalSubagentSessions",
-		"--channels", "server:agentx",
 	)
 }
 
