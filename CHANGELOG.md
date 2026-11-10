@@ -4,6 +4,16 @@ All notable changes to AgentX are documented here. The format follows [Keep a Ch
 
 ## [Unreleased]
 
+## [0.9.2] - 2026-11-10
+
+### Fixed
+
+- Pi model list and `ax auth list` no longer depend on locating Pi's Node SDK
+  beside the `pi` executable, which failed under Pi's managed install
+  (`curl pi.dev/install.sh`). Both now read `pi --list-models`, which Pi
+  already restricts to providers with configured auth, so custom
+  `models.json` providers and env-var credentials are listed.
+
 ## [0.9.1] - 2026-11-10
 
 ### Changed
