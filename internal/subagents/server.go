@@ -221,7 +221,7 @@ func (s *Server) tools() any {
 		modelSchema["enum"] = models
 	}
 	return map[string]any{"tools": []any{
-		tool("ExternalSubagent", description, map[string]any{"description": str("Short task description"), "prompt": str("Task for the ExternalSubagent"), "model": modelSchema, "run_in_background": map[string]any{"type": "boolean", "default": true}, "name": map[string]any{"type": "string", "pattern": profiles.NamePattern.String()}, "isolation": map[string]any{"type": "string", "enum": []string{IsolationWorktree}, "description": "worktree: new git worktree at ~/.local/state/agentx/worktrees/<id>; kept after completion; omit for no isolation."}, "mode": map[string]any{"type": "string", "enum": []string{ModeNormal, ModeYolo}, "description": "Override the profile's mode for this call. Omit to use the profile's mode (default yolo). normal: no permission or sandbox flags; the agent's own configuration decides. yolo: bypass the agent's permission checks and sandbox; rejected for Pi."}, "team_name": str("Deprecated, ignored")}, "description", "prompt"),
+		tool("StartExternalSubagent", description, map[string]any{"description": str("Short task description"), "prompt": str("Task for the ExternalSubagent"), "model": modelSchema, "run_in_background": map[string]any{"type": "boolean", "default": true}, "name": map[string]any{"type": "string", "pattern": profiles.NamePattern.String()}, "isolation": map[string]any{"type": "string", "enum": []string{IsolationWorktree}, "description": "worktree: new git worktree at ~/.local/state/agentx/worktrees/<id>; kept after completion; omit for no isolation."}, "mode": map[string]any{"type": "string", "enum": []string{ModeNormal, ModeYolo}, "description": "Override the profile's mode for this call. Omit to use the profile's mode (default yolo). normal: no permission or sandbox flags; the agent's own configuration decides. yolo: bypass the agent's permission checks and sandbox; not all agents have a boundary to bypass; per-profile limits say which do."}, "team_name": str("Deprecated, ignored")}, "description", "prompt"),
 		tool("SendExternalSubagentMessage", "Send a text task to an AgentX ExternalSubagent by exact name or ID. Accepted means queued, not completed. Busy ExternalSubagents process messages in order in the same native context. Completed ExternalSubagents resume. The original profile must still exist unchanged; the mode and isolation of the ExternalSubagent are reused. Summary is display-only.", map[string]any{"to": str("AgentX name or ID"), "message": str("Text task"), "summary": str("Optional display summary")}, "to", "message"),
 		tool("StopExternalSubagent", "Cancel running and queued work for one AgentX ExternalSubagent by name or ID. Waits for native process termination before confirming. Works while disabled. Already ended is not cancellation.", map[string]any{"task_id": str("AgentX name or ID")}, "task_id"),
 		tool("listExternalSubagentSessions", "List ExternalSubagent sessions already created in this AgentX MCP connection, with status, report and pending messages. No other users, connections or Claude native subagents.", map[string]any{}),
@@ -264,7 +264,7 @@ func (s *Server) target(to string) (*ExternalSubagentState, error) {
 func (s *Server) call(name string, raw json.RawMessage) (string, error) {
 	s.mu.Lock()
 	switch name {
-	case "ExternalSubagent":
+	case "StartExternalSubagent", "ExternalSubagent":
 		var in ExternalSubagentInput
 		if err := StrictDecode(raw, &in); err != nil {
 			s.mu.Unlock()
