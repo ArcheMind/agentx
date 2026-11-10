@@ -6,29 +6,29 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/ArcheMind/agentx/internal/profiles"
+	"github.com/ArcheMind/agentx/internal/presets"
 	"github.com/ArcheMind/agentx/internal/runtime"
 	"github.com/ArcheMind/agentx/internal/subagents"
 )
 
-func (a App) profile(ctx context.Context, args []string) error {
+func (a App) preset(ctx context.Context, args []string) error {
 	if len(args) == 0 {
-		return profileUsageError()
+		return presetUsageError()
 	}
-	home := a.profileHome()
+	home := a.presetHome()
 	switch args[0] {
 	case "list":
 		if len(args) != 1 {
-			return fmt.Errorf("usage: ax [--json|--yaml] profile list")
+			return fmt.Errorf("usage: ax [--json|--yaml] preset list")
 		}
-		return a.profileList(home)
+		return a.presetList(home)
 	case "show":
 		if len(args) != 2 {
-			return fmt.Errorf("usage: ax [--json|--yaml] profile show <name>")
+			return fmt.Errorf("usage: ax [--json|--yaml] preset show <name>")
 		}
-		return a.profileShow(home, args[1])
+		return a.presetShow(home, args[1])
 	default:
-		return profileUsageError()
+		return presetUsageError()
 	}
 }
 
@@ -37,37 +37,37 @@ func (a App) mcpServe(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	return (&subagents.Server{Home: a.profileHome(), Cwd: cwd, Runner: a.Runner}).Serve(ctx, a.Stdin, a.Stdout)
+	return (&subagents.Server{Home: a.presetHome(), Cwd: cwd, Runner: a.Runner}).Serve(ctx, a.Stdin, a.Stdout)
 }
 
-func profileUsageError() error {
-	return fmt.Errorf("usage: ax [--json|--yaml] profile <list|show> [args...]")
+func presetUsageError() error {
+	return fmt.Errorf("usage: ax [--json|--yaml] preset <list|show> [args...]")
 }
 
-func profileEntry(o profiles.Profile) map[string]any {
+func presetEntry(o presets.Preset) map[string]any {
 	reason := "static requirements satisfied; login and model access verified per execution"
 	if err := subagents.Ready(o); err != nil {
 		reason = err.Error()
 	}
-	entry := map[string]any{"name": o.Name, "agent": o.Agent, "model": o.Model, "effort": profiles.EffortLabel(o.Effort), "description": o.Description, "status": reason, "limits": subagents.Limits(o)}
+	entry := map[string]any{"name": o.Name, "agent": o.Agent, "model": o.Model, "effort": presets.EffortLabel(o.Effort), "description": o.Description, "status": reason, "limits": subagents.Limits(o)}
 	return entry
 }
 
-func (a App) profileList(home string) error {
-	list, problems, err := profiles.Load(home)
+func (a App) presetList(home string) error {
+	list, problems, err := presets.Load(home)
 	if err != nil {
 		return err
 	}
 	options := []map[string]any{}
 	for _, o := range list {
-		options = append(options, profileEntry(o))
+		options = append(options, presetEntry(o))
 	}
-	invalid := append([]profiles.Problem{}, problems...)
+	invalid := append([]presets.Problem{}, problems...)
 	if a.Output != OutputText {
 		return writeStructured(a.Stdout, map[string]any{
-			"profiles_directory": profiles.Dir(home),
-			"profiles":           options,
-			"invalid_profiles":   invalid,
+			"presets_directory": presets.Dir(home),
+			"presets":           options,
+			"invalid_presets":   invalid,
 		}, a.Output)
 	}
 	for _, o := range options {
@@ -79,12 +79,12 @@ func (a App) profileList(home string) error {
 	return nil
 }
 
-func (a App) profileShow(home string, name string) error {
-	list, problems, err := profiles.Load(home)
+func (a App) presetShow(home string, name string) error {
+	list, problems, err := presets.Load(home)
 	if err != nil {
 		return err
 	}
-	var found *profiles.Profile
+	var found *presets.Preset
 	for i := range list {
 		if list[i].Name == name {
 			found = &list[i]
@@ -94,12 +94,12 @@ func (a App) profileShow(home string, name string) error {
 	if found == nil {
 		for _, p := range problems {
 			if p.Name == name {
-				return fmt.Errorf("profile %s is invalid: %s", name, p.Err)
+				return fmt.Errorf("preset %s is invalid: %s", name, p.Err)
 			}
 		}
-		return fmt.Errorf("profile %q not found in %s", name, profiles.Dir(home))
+		return fmt.Errorf("preset %q not found in %s", name, presets.Dir(home))
 	}
-	result := profileEntry(*found)
+	result := presetEntry(*found)
 	if a.Output != OutputText {
 		return writeStructured(a.Stdout, result, a.Output)
 	}
@@ -111,7 +111,7 @@ func (a App) profileShow(home string, name string) error {
 	return nil
 }
 
-func (a App) profileHome() string {
+func (a App) presetHome() string {
 	if override := os.Getenv("AX_SUBAGENT_HOME"); override != "" {
 		return override
 	}

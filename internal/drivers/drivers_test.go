@@ -235,7 +235,7 @@ func TestDSHHasOnlyVerifiedDrivers(t *testing.T) {
 		t.Fatalf("dsh launch plan = %#v", plan)
 	}
 	if _, err := agent.Launch.PlanRun(runtime.RunRequest{Model: "unverified"}); err == nil {
-		t.Fatal("dsh model selection must remain owned by the native profile")
+		t.Fatal("dsh model selection must remain owned by the native preset")
 	}
 }
 

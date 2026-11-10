@@ -8,7 +8,7 @@ The first useful command must work with tools and data the user already has. Age
 
 ## Own the workflow, not the format
 
-AgentX coordinates native tools. It does not require a universal profile, credential vault, project manifest, or session database. Existing formats remain authoritative.
+AgentX coordinates native tools. It does not require a universal preset, credential vault, project manifest, or session database. Existing formats remain authoritative.
 
 ## Deliver an immediate, legible advantage
 

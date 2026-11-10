@@ -14,7 +14,7 @@ import (
 	"unicode"
 
 	"github.com/ArcheMind/agentx/internal/drivers"
-	"github.com/ArcheMind/agentx/internal/profiles"
+	"github.com/ArcheMind/agentx/internal/presets"
 	"github.com/ArcheMind/agentx/internal/runtime"
 	"github.com/ArcheMind/agentx/internal/sessions"
 	"github.com/ArcheMind/agentx/internal/subagents"
@@ -23,12 +23,12 @@ import (
 )
 
 const (
-	profileAccent     = "\x1b[38;5;81m"
-	profileLineWidth  = 96
-	profileMinDesc    = 20
-	profileModelWidth = 24
-	homeHelp          = "↑/↓ or j/k select · Enter open · e export session · m manage profiles · q/Esc cancel"
-	emptyProfilesHint = "Save an agent, model and effort for reuse."
+	presetAccent     = "\x1b[38;5;81m"
+	presetLineWidth  = 96
+	presetMinDesc    = 20
+	presetModelWidth = 24
+	homeHelp          = "↑/↓ or j/k select · Enter open · e export session · m manage presets · q/Esc cancel"
+	emptyPresetsHint = "Save an agent, model and effort for reuse."
 )
 
 var errHomeCancelled = errors.New("cancelled; no session started")
@@ -36,7 +36,7 @@ var errHomeCancelled = errors.New("cancelled; no session started")
 type homeKind int
 
 const (
-	homeProfile homeKind = iota
+	homePreset homeKind = iota
 	homeProblem
 	homeCreate
 	homeSession
@@ -44,13 +44,13 @@ const (
 
 type homeItem struct {
 	kind    homeKind
-	profile profiles.Profile
-	problem profiles.Problem
+	preset presets.Preset
+	problem presets.Problem
 	session sessions.Summary
 }
 
-func buildHomeRows(list []profiles.Profile, problems []profiles.Problem, loadErr error, groups []sessionGroup, now time.Time) ([]contentRow, []homeItem) {
-	rows := []contentRow{{text: "New session · Profiles", itemIndex: -1, kind: contentRowHeading}}
+func buildHomeRows(list []presets.Preset, problems []presets.Problem, loadErr error, groups []sessionGroup, now time.Time) ([]contentRow, []homeItem) {
+	rows := []contentRow{{text: "New session · Presets", itemIndex: -1, kind: contentRowHeading}}
 	var items []homeItem
 	width := 0
 	for _, p := range list {
@@ -62,18 +62,18 @@ func buildHomeRows(list []profiles.Profile, problems []profiles.Problem, loadErr
 	if loadErr != nil {
 		rows = append(rows, contentRow{text: "Error: " + loadErr.Error(), itemIndex: -1, kind: contentRowProblem})
 	} else if len(list)+len(problems) == 0 {
-		rows = append(rows, contentRow{text: emptyProfilesHint, itemIndex: -1, kind: contentRowEmpty})
+		rows = append(rows, contentRow{text: emptyPresetsHint, itemIndex: -1, kind: contentRowEmpty})
 	}
 	comboWidth := 0
 	for _, p := range list {
-		comboWidth = max(comboWidth, len([]rune(profileCombo(p))))
+		comboWidth = max(comboWidth, len([]rune(presetCombo(p))))
 	}
-	descWidth := max(profileMinDesc, profileLineWidth-2-width-2-comboWidth-2)
+	descWidth := max(presetMinDesc, presetLineWidth-2-width-2-comboWidth-2)
 	for _, p := range list {
 		index := len(items)
-		items = append(items, homeItem{kind: homeProfile, profile: p})
-		rest := strings.TrimPrefix(profileCombo(p), profiles.AgentName(p.Agent))
-		rows = append(rows, contentRow{title: padRight(p.Name, width), agent: p.Agent, updated: padRight(rest, comboWidth-len([]rune(profiles.AgentName(p.Agent)))), text: singleLine(p.Description, descWidth), itemIndex: index, kind: contentRowProfile})
+		items = append(items, homeItem{kind: homePreset, preset: p})
+		rest := strings.TrimPrefix(presetCombo(p), presets.AgentName(p.Agent))
+		rows = append(rows, contentRow{title: padRight(p.Name, width), agent: p.Agent, updated: padRight(rest, comboWidth-len([]rune(presets.AgentName(p.Agent)))), text: singleLine(p.Description, descWidth), itemIndex: index, kind: contentRowPreset})
 	}
 	for _, problem := range problems {
 		index := len(items)
@@ -81,7 +81,7 @@ func buildHomeRows(list []profiles.Profile, problems []profiles.Problem, loadErr
 		rows = append(rows, contentRow{title: padRight(problem.Name, width), text: "Error: " + singleLine(problem.Err, 70), itemIndex: index, kind: contentRowProblem})
 	}
 	items = append(items, homeItem{kind: homeCreate})
-	rows = append(rows, contentRow{text: "+ Create profile…", itemIndex: len(items) - 1, kind: contentRowCreate})
+	rows = append(rows, contentRow{text: "+ Create preset…", itemIndex: len(items) - 1, kind: contentRowCreate})
 	offset := len(items)
 	for _, row := range buildContentRows(groups, now) {
 		if row.kind == contentRowHeading {
@@ -100,9 +100,9 @@ func buildHomeRows(list []profiles.Profile, problems []profiles.Problem, loadErr
 	return rows, items
 }
 
-// profileCombo is the compact home-row form; summaries show the full model ID and native default explicitly.
-func profileCombo(p profiles.Profile) string {
-	combo := profiles.AgentName(p.Agent) + " · " + middleTruncate(p.Model, profileModelWidth)
+// presetCombo is the compact home-row form; summaries show the full model ID and native default explicitly.
+func presetCombo(p presets.Preset) string {
+	combo := presets.AgentName(p.Agent) + " · " + middleTruncate(p.Model, presetModelWidth)
 	if p.Effort != "" {
 		combo += " · " + p.Effort
 	}
@@ -127,7 +127,7 @@ func homeEffort(effort string) string {
 }
 
 func (a App) chooseHome(reader *bufio.Reader, home string, groups []sessionGroup, selected int) (homeItem, selectionKey, int, error) {
-	list, problems, loadErr := profiles.Load(home)
+	list, problems, loadErr := presets.Load(home)
 	rows, items := buildHomeRows(list, problems, loadErr, groups, time.Now())
 	if selected >= len(items) {
 		selected = 0
@@ -150,7 +150,7 @@ func (a App) interactiveResume(ctx context.Context, includeSubagents bool) error
 		return err
 	}
 	fmt.Fprint(a.Stdout, "\x1b[2K\r")
-	home := a.profileHome()
+	home := a.presetHome()
 	selected := 0
 	for {
 		item, action, index, err := a.chooseHome(reader, home, groups, selected)
@@ -164,20 +164,20 @@ func (a App) interactiveResume(ctx context.Context, includeSubagents bool) error
 			if item.kind == homeSession {
 				err = a.exportChosenSession(item.session)
 			}
-		case action == selectionManage && item.kind == homeProfile:
-			launched, err = a.manageProfile(ctx, reader, home, item.profile)
+		case action == selectionManage && item.kind == homePreset:
+			launched, err = a.managePreset(ctx, reader, home, item.preset)
 		case action == selectionManage && item.kind == homeProblem:
 			err = a.manageProblem(ctx, reader, home, item.problem)
 		case action == selectionManage:
-			launched, err = a.chooseManagedProfile(ctx, reader, home)
+			launched, err = a.chooseManagedPreset(ctx, reader, home)
 		case item.kind == homeSession:
 			return a.resumeChosenSession(ctx, reader, item.session)
-		case item.kind == homeProfile:
-			launched, err = a.startProfile(ctx, reader, home, item.profile)
+		case item.kind == homePreset:
+			launched, err = a.startPreset(ctx, reader, home, item.preset)
 		case item.kind == homeProblem:
 			err = a.manageProblem(ctx, reader, home, item.problem)
 		case item.kind == homeCreate:
-			launched, err = a.profileWizard(ctx, reader, home, profileDraft{}, wizardCreate)
+			launched, err = a.presetWizard(ctx, reader, home, presetDraft{}, wizardCreate)
 		}
 		if launched {
 			return err
@@ -216,38 +216,38 @@ func (a App) exportChosenSession(selected sessions.Summary) error {
 }
 
 type resumeChoice struct {
-	kind    int // 0 = profile, 1 = agent
-	profile profiles.Profile
+	kind    int // 0 = preset, 1 = agent
+	preset presets.Preset
 	agent   runtime.Agent
 }
 
 func (a App) resumeSessionInteractive(ctx context.Context, reader *bufio.Reader, detail sessions.Session) error {
-	home := a.profileHome()
-	profileList, _, _ := profiles.Load(home)
+	home := a.presetHome()
+	presetList, _, _ := presets.Load(home)
 	agents := make([]runtime.Agent, 0)
 	for _, agent := range a.Registry.All() {
 		if _, err := exec.LookPath(agent.Binary); err == nil {
 			agents = append(agents, agent)
 		}
 	}
-	if len(profileList) == 0 && len(agents) == 0 {
-		return fmt.Errorf("no profiles or agents available")
+	if len(presetList) == 0 && len(agents) == 0 {
+		return fmt.Errorf("no presets or agents available")
 	}
 
 	var rows []contentRow
 	var choices []resumeChoice
 
-	if len(profileList) > 0 {
-		rows = append(rows, contentRow{text: "Resume with profile", itemIndex: -1, kind: contentRowHeading})
-		for _, p := range profileList {
+	if len(presetList) > 0 {
+		rows = append(rows, contentRow{text: "Resume with preset", itemIndex: -1, kind: contentRowHeading})
+		for _, p := range presetList {
 			idx := len(choices)
-			choices = append(choices, resumeChoice{kind: 0, profile: p})
-			rows = append(rows, contentRow{text: fmt.Sprintf("%-12s %s", p.Name, profileCombo(p)), itemIndex: idx, agent: p.Agent})
+			choices = append(choices, resumeChoice{kind: 0, preset: p})
+			rows = append(rows, contentRow{text: fmt.Sprintf("%-12s %s", p.Name, presetCombo(p)), itemIndex: idx, agent: p.Agent})
 		}
 	}
 	if len(agents) > 0 {
 		rows = append(rows, contentRow{text: "", itemIndex: -1})
-		rows = append(rows, contentRow{text: "Resume with agent (no profile)", itemIndex: -1, kind: contentRowHeading})
+		rows = append(rows, contentRow{text: "Resume with agent (no preset)", itemIndex: -1, kind: contentRowHeading})
 		for _, agent := range agents {
 			idx := len(choices)
 			choices = append(choices, resumeChoice{kind: 1, agent: agent})
@@ -265,11 +265,11 @@ func (a App) resumeSessionInteractive(ctx context.Context, reader *bufio.Reader,
 
 	chosen := choices[index]
 	if chosen.kind == 0 {
-		agent, err := a.Registry.Get(chosen.profile.Agent)
+		agent, err := a.Registry.Get(chosen.preset.Agent)
 		if err != nil {
 			return err
 		}
-		return a.resumeSession(ctx, agent, detail, "", chosen.profile.Model, chosen.profile.LaunchArgs(), false)
+		return a.resumeSession(ctx, agent, detail, "", chosen.preset.Model, chosen.preset.LaunchArgs(), false)
 	}
 
 	model, err := a.chooseModel(ctx, reader, chosen.agent)
@@ -279,20 +279,20 @@ func (a App) resumeSessionInteractive(ctx context.Context, reader *bufio.Reader,
 	return a.resumeSession(ctx, chosen.agent, detail, "", model, nil, false)
 }
 
-// startProfile reports launched=true once the native agent ran; pre-launch failures return to the home screen.
-func (a App) startProfile(ctx context.Context, reader *bufio.Reader, home string, p profiles.Profile) (bool, error) {
+// startPreset reports launched=true once the native agent ran; pre-launch failures return to the home screen.
+func (a App) startPreset(ctx context.Context, reader *bufio.Reader, home string, p presets.Preset) (bool, error) {
 	agent, err := a.Registry.Get(p.Agent)
 	problem := ""
 	switch {
 	case err != nil:
-		problem = err.Error() + "; edit the profile to choose a supported agent."
+		problem = err.Error() + "; edit the preset to choose a supported agent."
 	case p.Validate() != nil:
 		problem = p.Validate().Error()
 	case !hasCapability(agent.Capabilities, runtime.CapabilityModelSelect):
-		problem = fmt.Sprintf("%s does not support model selection; edit the profile to use another agent.", agent.Name)
+		problem = fmt.Sprintf("%s does not support model selection; edit the preset to use another agent.", agent.Name)
 	default:
 		if _, err := exec.LookPath(agent.Binary); err != nil {
-			problem = fmt.Sprintf("%s is not installed. Install it with ax agent install %s, or edit the profile to use another agent.", agent.Name, agent.ID)
+			problem = fmt.Sprintf("%s is not installed. Install it with ax agent install %s, or edit the preset to use another agent.", agent.Name, agent.ID)
 		}
 	}
 	cwd, err := os.Getwd()
@@ -318,28 +318,28 @@ func (a App) startProfile(ctx context.Context, reader *bufio.Reader, home string
 	if err != nil {
 		return a.startFailure(ctx, reader, home, p, err.Error(), true)
 	}
-	fmt.Fprintf(a.Stdout, "Starting a new %s session with profile %s: model %s · effort %s · mode %s · %s\n", profiles.AgentName(p.Agent), p.Name, p.Model, profiles.EffortLabel(p.Effort), p.EffectiveMode(), cwd)
+	fmt.Fprintf(a.Stdout, "Starting a new %s session with preset %s: model %s · effort %s · mode %s · %s\n", presets.AgentName(p.Agent), p.Name, p.Model, presets.EffortLabel(p.Effort), p.EffectiveMode(), cwd)
 	result, err := a.Runner.Execute(ctx, plan, runtime.ExecuteOptions{Interactive: true, Stdin: a.Stdin, Stdout: a.Stdout, Stderr: a.Stderr})
 	if err != nil {
-		fmt.Fprintf(a.Stderr, "ax: %s exited with an error after starting profile %s (model %s, effort %s, mode %s). AgentX did not substitute another agent, model or effort. If the model or effort was rejected, edit the profile (run ax, select it, press m) or log in with ax auth login %s.\n", agent.Name, p.Name, p.Model, profiles.EffortLabel(p.Effort), p.EffectiveMode(), agent.ID)
+		fmt.Fprintf(a.Stderr, "ax: %s exited with an error after starting preset %s (model %s, effort %s, mode %s). AgentX did not substitute another agent, model or effort. If the model or effort was rejected, edit the preset (run ax, select it, press m) or log in with ax auth login %s.\n", agent.Name, p.Name, p.Model, presets.EffortLabel(p.Effort), p.EffectiveMode(), agent.ID)
 		return true, &ExitError{Code: result.ExitCode, Err: err}
 	}
 	return true, nil
 }
 
-// startFailure offers Edit profile only when editing the profile can fix the problem.
-func (a App) startFailure(ctx context.Context, reader *bufio.Reader, home string, p profiles.Profile, problem string, editable bool) (bool, error) {
+// startFailure offers Edit preset only when editing the preset can fix the problem.
+func (a App) startFailure(ctx context.Context, reader *bufio.Reader, home string, p presets.Preset, problem string, editable bool) (bool, error) {
 	fmt.Fprintf(a.Stdout, "\n%s\n%s\n", colorize(a.Color, ansiBold, "Start · "+p.Name), colorize(a.Color, ansiRed, "Error: "+problem))
 	fmt.Fprintln(a.Stdout, colorize(a.Color, ansiDim, "No session was started and no other agent, model or effort was substituted."))
 	if !editable {
-		_, err := a.pick(reader, "", []string{"Back to profiles"})
+		_, err := a.pick(reader, "", []string{"Back to presets"})
 		return false, err
 	}
-	choice, err := a.pick(reader, "", []string{"Edit profile", "Back to profiles"})
+	choice, err := a.pick(reader, "", []string{"Edit preset", "Back to presets"})
 	if err != nil || choice == 1 {
 		return false, err
 	}
-	return a.profileWizard(ctx, reader, home, profileDraft{profile: p}, wizardEdit)
+	return a.presetWizard(ctx, reader, home, presetDraft{preset: p}, wizardEdit)
 }
 
 type wizardMode int
@@ -351,23 +351,23 @@ const (
 	wizardRepair
 )
 
-type profileDraft struct {
-	profile      profiles.Profile
+type presetDraft struct {
+	preset      presets.Preset
 	listed       *runtime.Model
 	unlisted     string
 	effortStatus string
 }
 
-func (a App) profileWizard(ctx context.Context, reader *bufio.Reader, home string, draft profileDraft, mode wizardMode) (bool, error) {
+func (a App) presetWizard(ctx context.Context, reader *bufio.Reader, home string, draft presetDraft, mode wizardMode) (bool, error) {
 	cancelled := func() (bool, error) {
 		fmt.Fprintln(a.Stdout, colorize(a.Color, ansiDim, "Cancelled; nothing was saved."))
 		return false, errSelectionCancelled
 	}
 	switch mode {
 	case wizardCreate, wizardRepair:
-		title := "Create profile"
+		title := "Create preset"
 		if mode == wizardRepair {
-			title = "Repair profile · " + draft.profile.Name
+			title = "Repair preset · " + draft.preset.Name
 		}
 		fmt.Fprintln(a.Stdout, colorize(a.Color, ansiBold, title))
 		if err := a.askAgent(reader, &draft); err != nil {
@@ -387,18 +387,18 @@ func (a App) profileWizard(ctx context.Context, reader *bufio.Reader, home strin
 				return cancelled()
 			}
 		}
-		if err := a.askDescription(reader, &draft, strings.TrimSpace(draft.profile.Description) != ""); err != nil {
+		if err := a.askDescription(reader, &draft, strings.TrimSpace(draft.preset.Description) != ""); err != nil {
 			return cancelled()
 		}
 	case wizardCopy:
-		fmt.Fprintln(a.Stdout, colorize(a.Color, ansiBold, "Duplicate profile · "+draft.profile.Name))
-		fmt.Fprintln(a.Stdout, colorize(a.Color, ansiDim, "The copy is independent: later changes to either profile do not affect the other."))
+		fmt.Fprintln(a.Stdout, colorize(a.Color, ansiBold, "Duplicate preset · "+draft.preset.Name))
+		fmt.Fprintln(a.Stdout, colorize(a.Color, ansiDim, "The copy is independent: later changes to either preset do not affect the other."))
 		if err := a.askName(reader, home, &draft); err != nil {
 			return cancelled()
 		}
 	}
 	for {
-		a.printProfileSummary(draft)
+		a.printPresetSummary(draft)
 		actions := []string{"Save and start", "Save", "Back", "Cancel"}
 		if mode == wizardEdit || mode == wizardRepair {
 			actions = []string{"Save", "Back", "Cancel"}
@@ -421,11 +421,11 @@ func (a App) profileWizard(ctx context.Context, reader *bufio.Reader, home strin
 			continue
 		}
 		if mode == wizardEdit || mode == wizardRepair {
-			err = profiles.Update(home, draft.profile)
+			err = presets.Update(home, draft.preset)
 		} else {
-			err = profiles.Create(home, draft.profile)
+			err = presets.Create(home, draft.preset)
 		}
-		if errors.Is(err, profiles.ErrExists) {
+		if errors.Is(err, presets.ErrExists) {
 			fmt.Fprintln(a.Stdout, colorize(a.Color, ansiRed, "Error: Name already exists. Choose another name."))
 			fmt.Fprintln(a.Stdout, colorize(a.Color, ansiDim, "Your other entries are kept."))
 			if err := a.askName(reader, home, &draft); err != nil {
@@ -438,16 +438,16 @@ func (a App) profileWizard(ctx context.Context, reader *bufio.Reader, home strin
 			fmt.Fprintln(a.Stdout, colorize(a.Color, ansiDim, "Nothing was saved; choose Back to change the entry."))
 			continue
 		}
-		fmt.Fprintf(a.Stdout, "Saved %s. Saving did not run inference.\n", profiles.Path(home, draft.profile.Name))
-		a.profileChangeNote(home)
+		fmt.Fprintf(a.Stdout, "Saved %s. Saving did not run inference.\n", presets.Path(home, draft.preset.Name))
+		a.presetChangeNote(home)
 		if action == "Save and start" {
-			return a.startProfile(ctx, reader, home, draft.profile)
+			return a.startPreset(ctx, reader, home, draft.preset)
 		}
 		return false, nil
 	}
 }
 
-func (a App) changeField(ctx context.Context, reader *bufio.Reader, home string, draft *profileDraft, mode wizardMode) error {
+func (a App) changeField(ctx context.Context, reader *bufio.Reader, home string, draft *presetDraft, mode wizardMode) error {
 	fields := []string{"Agent (then model and effort)", "Model (then effort)", "Effort", "Mode"}
 	if mode == wizardCreate || mode == wizardCopy {
 		fields = append(fields, "Name")
@@ -491,10 +491,10 @@ func (a App) changeField(ctx context.Context, reader *bufio.Reader, home string,
 	return err
 }
 
-func (a App) askAgent(reader *bufio.Reader, draft *profileDraft) error {
+func (a App) askAgent(reader *bufio.Reader, draft *presetDraft) error {
 	var rows []contentRow
 	selected := 0
-	for index, id := range profiles.AgentOrder {
+	for index, id := range presets.AgentOrder {
 		agent, err := a.Registry.Get(id)
 		if err != nil {
 			continue
@@ -503,19 +503,19 @@ func (a App) askAgent(reader *bufio.Reader, draft *profileDraft) error {
 		if _, err := exec.LookPath(agent.Binary); err != nil {
 			status = "not installed"
 		}
-		if id == draft.profile.Agent {
+		if id == draft.preset.Agent {
 			selected = index
 		}
 		rows = append(rows, contentRow{text: fmt.Sprintf("%-9s %s · %s", id, agent.Name, status), itemIndex: len(rows), agent: id})
 	}
-	index, _, err := a.runSelector(reader, selector{title: "Choose the agent that runs this profile:", help: selectorHelp, marker: "> ", selected: selected}, rows, len(rows), errors.New("no agents available"))
+	index, _, err := a.runSelector(reader, selector{title: "Choose the agent that runs this preset:", help: selectorHelp, marker: "> ", selected: selected}, rows, len(rows), errors.New("no agents available"))
 	if err != nil {
 		return err
 	}
-	if agent := rows[index].agent; agent != draft.profile.Agent {
-		draft.profile.Agent = agent
-		draft.profile.Model = ""
-		draft.profile.Effort = ""
+	if agent := rows[index].agent; agent != draft.preset.Agent {
+		draft.preset.Agent = agent
+		draft.preset.Model = ""
+		draft.preset.Effort = ""
 		draft.listed, draft.unlisted = nil, ""
 		draft.effortStatus = ""
 	}
@@ -542,23 +542,23 @@ func (a App) listModels(ctx context.Context, agent runtime.Agent) ([]runtime.Mod
 }
 
 // matchListed records whether the draft model's effort levels are confirmed by the agent's list.
-func matchListed(draft *profileDraft, agent runtime.Agent, models []runtime.Model, limitation string) {
+func matchListed(draft *presetDraft, agent runtime.Agent, models []runtime.Model, limitation string) {
 	draft.listed, draft.unlisted = nil, ""
 	for index := range models {
-		if models[index].ID == draft.profile.Model {
+		if models[index].ID == draft.preset.Model {
 			draft.listed = &models[index]
 			return
 		}
 	}
 	if len(models) > 0 {
-		draft.unlisted = fmt.Sprintf("%s is not in the %s model list, so its levels were not confirmed", draft.profile.Model, agent.Name)
+		draft.unlisted = fmt.Sprintf("%s is not in the %s model list, so its levels were not confirmed", draft.preset.Model, agent.Name)
 		return
 	}
-	draft.unlisted = strings.TrimSuffix(limitation, ".") + "; the levels for " + draft.profile.Model + " could not be confirmed"
+	draft.unlisted = strings.TrimSuffix(limitation, ".") + "; the levels for " + draft.preset.Model + " could not be confirmed"
 }
 
-func (a App) askModel(ctx context.Context, reader *bufio.Reader, draft *profileDraft) error {
-	agent, err := a.Registry.Get(draft.profile.Agent)
+func (a App) askModel(ctx context.Context, reader *bufio.Reader, draft *presetDraft) error {
+	agent, err := a.Registry.Get(draft.preset.Agent)
 	if err != nil {
 		return err
 	}
@@ -571,7 +571,7 @@ func (a App) askModel(ctx context.Context, reader *bufio.Reader, draft *profileD
 			if model.DisplayName != "" && model.DisplayName != model.ID {
 				label += "  " + model.DisplayName
 			}
-			if model.ID == draft.profile.Model {
+			if model.ID == draft.preset.Model {
 				selected = index
 			}
 			labels = append(labels, label)
@@ -586,10 +586,10 @@ func (a App) askModel(ctx context.Context, reader *bufio.Reader, draft *profileD
 			return err
 		}
 		if index < len(models) {
-			if models[index].ID != draft.profile.Model {
-				draft.profile.Effort, draft.effortStatus = "", ""
+			if models[index].ID != draft.preset.Model {
+				draft.preset.Effort, draft.effortStatus = "", ""
 			}
-			draft.profile.Model = models[index].ID
+			draft.preset.Model = models[index].ID
 			draft.listed, draft.unlisted = &models[index], ""
 			return nil
 		}
@@ -606,15 +606,15 @@ func (a App) askModel(ctx context.Context, reader *bufio.Reader, draft *profileD
 		if value == "" {
 			return errSelectionCancelled
 		}
-		probe := profiles.Profile{Name: "probe", Description: "probe", Agent: draft.profile.Agent, Model: value}
+		probe := presets.Preset{Name: "probe", Description: "probe", Agent: draft.preset.Agent, Model: value}
 		if err := probe.Validate(); err != nil {
 			fmt.Fprintln(a.Stdout, colorize(a.Color, ansiRed, "Error: "+err.Error()))
 			continue
 		}
-		if value != draft.profile.Model {
-			draft.profile.Effort, draft.effortStatus = "", ""
+		if value != draft.preset.Model {
+			draft.preset.Effort, draft.effortStatus = "", ""
 		}
-		draft.profile.Model = value
+		draft.preset.Model = value
 		matchListed(draft, agent, models, limitation)
 		return nil
 	}
@@ -624,14 +624,14 @@ type effortChoice struct {
 	value, label, status string
 }
 
-func effortChoices(draft profileDraft) (string, []effortChoice) {
-	rule := profiles.Agents[draft.profile.Agent]
-	choices := []effortChoice{{value: "", label: "Native default — no explicit effort; the agent decides", status: "native default; profile sets no effort"}}
+func effortChoices(draft presetDraft) (string, []effortChoice) {
+	rule := presets.Agents[draft.preset.Agent]
+	choices := []effortChoice{{value: "", label: "Native default — no explicit effort; the agent decides", status: "native default; preset sets no effort"}}
 	switch {
-	case draft.profile.Agent == "codex" && draft.listed != nil && len(draft.listed.Efforts) > 0:
+	case draft.preset.Agent == "codex" && draft.listed != nil && len(draft.listed.Efforts) > 0:
 		var skipped []string
 		for _, effort := range draft.listed.Efforts {
-			if !profiles.Contains(rule.Efforts, effort) {
+			if !presets.Contains(rule.Efforts, effort) {
 				skipped = append(skipped, effort)
 				continue
 			}
@@ -641,14 +641,14 @@ func effortChoices(draft profileDraft) (string, []effortChoice) {
 			}
 			choices = append(choices, effortChoice{value: effort, label: label, status: "listed by Codex for this model"})
 		}
-		note := fmt.Sprintf("Explicit levels listed by Codex for %s.", draft.profile.Model)
+		note := fmt.Sprintf("Explicit levels listed by Codex for %s.", draft.preset.Model)
 		if len(skipped) > 0 {
 			note += " Not offered because AgentX does not recognise them: " + strings.Join(skipped, ", ") + "."
 		}
 		return note, choices
-	case draft.profile.Agent == "codex" && draft.listed != nil:
+	case draft.preset.Agent == "codex" && draft.listed != nil:
 		return "Explicit effort not applicable: Codex lists no reasoning levels for this model.", choices
-	case draft.profile.Agent == "pi":
+	case draft.preset.Agent == "pi":
 		for _, effort := range rule.Efforts {
 			choices = append(choices, effortChoice{value: effort, label: effort + " (checked at every ExternalSubagent turn; not checked in interactive launch)", status: "checked against Pi's provider request at every ExternalSubagent turn"})
 		}
@@ -658,7 +658,7 @@ func effortChoices(draft profileDraft) (string, []effortChoice) {
 		if source == "" {
 			source = "Codex did not confirm the levels for this model"
 		}
-		if draft.profile.Agent != "codex" {
+		if draft.preset.Agent != "codex" {
 			source = rule.EffortNote
 		}
 		for _, effort := range rule.Efforts {
@@ -670,9 +670,9 @@ func effortChoices(draft profileDraft) (string, []effortChoice) {
 	}
 }
 
-func (a App) askEffort(ctx context.Context, reader *bufio.Reader, draft *profileDraft) error {
-	if draft.profile.Agent == "codex" && draft.listed == nil && draft.unlisted == "" {
-		if agent, err := a.Registry.Get(draft.profile.Agent); err == nil {
+func (a App) askEffort(ctx context.Context, reader *bufio.Reader, draft *presetDraft) error {
+	if draft.preset.Agent == "codex" && draft.listed == nil && draft.unlisted == "" {
+		if agent, err := a.Registry.Get(draft.preset.Agent); err == nil {
 			models, limitation := a.listModels(ctx, agent)
 			matchListed(draft, agent, models, limitation)
 		}
@@ -683,7 +683,7 @@ func (a App) askEffort(ctx context.Context, reader *bufio.Reader, draft *profile
 	selected := 0
 	for index, choice := range choices {
 		rows[index] = contentRow{text: choice.label, itemIndex: index}
-		if choice.value == draft.profile.Effort {
+		if choice.value == draft.preset.Effort {
 			selected = index
 		}
 	}
@@ -691,16 +691,16 @@ func (a App) askEffort(ctx context.Context, reader *bufio.Reader, draft *profile
 	if err != nil {
 		return err
 	}
-	draft.profile.Effort = choices[index].value
+	draft.preset.Effort = choices[index].value
 	draft.effortStatus = choices[index].status
 	return nil
 }
 
-func (a App) askMode(reader *bufio.Reader, draft *profileDraft) error {
-	rule := profiles.Agents[draft.profile.Agent]
+func (a App) askMode(reader *bufio.Reader, draft *presetDraft) error {
+	rule := presets.Agents[draft.preset.Agent]
 	if !rule.Bypassable {
 		fmt.Fprintln(a.Stdout, colorize(a.Color, ansiDim, fmt.Sprintf("%s has no runtime permission boundary; mode is always normal.", rule.Name)))
-		draft.profile.Mode = profiles.ModeNormal
+		draft.preset.Mode = presets.ModeNormal
 		return nil
 	}
 	labels := []string{
@@ -708,7 +708,7 @@ func (a App) askMode(reader *bufio.Reader, draft *profileDraft) error {
 		"normal — no permission flags; the agent's own configuration decides",
 	}
 	selected := 0
-	if draft.profile.EffectiveMode() == profiles.ModeNormal {
+	if draft.preset.EffectiveMode() == presets.ModeNormal {
 		selected = 1
 	}
 	rows := make([]contentRow, len(labels))
@@ -721,38 +721,38 @@ func (a App) askMode(reader *bufio.Reader, draft *profileDraft) error {
 	}
 	switch index {
 	case 0:
-		draft.profile.Mode = "" // empty = yolo default
+		draft.preset.Mode = "" // empty = yolo default
 	case 1:
-		draft.profile.Mode = profiles.ModeNormal
+		draft.preset.Mode = presets.ModeNormal
 	}
 	return nil
 }
 
-func (a App) askName(reader *bufio.Reader, home string, draft *profileDraft) error {
+func (a App) askName(reader *bufio.Reader, home string, draft *presetDraft) error {
 	for {
-		value, err := a.readLine(reader, "Profile name (letters, digits, _ or -; empty cancels): ")
+		value, err := a.readLine(reader, "Preset name (letters, digits, _ or -; empty cancels): ")
 		if err != nil {
 			return err
 		}
 		if value == "" {
 			return errSelectionCancelled
 		}
-		if err := profiles.ValidName(value); err != nil {
+		if err := presets.ValidName(value); err != nil {
 			fmt.Fprintln(a.Stdout, colorize(a.Color, ansiRed, "Error: Invalid name: "+err.Error()+"."))
 			fmt.Fprintln(a.Stdout, colorize(a.Color, ansiDim, "Your other entries are kept."))
 			continue
 		}
-		if _, err := os.Lstat(filepath.Join(profiles.Dir(home), value)); err == nil {
+		if _, err := os.Lstat(filepath.Join(presets.Dir(home), value)); err == nil {
 			fmt.Fprintln(a.Stdout, colorize(a.Color, ansiRed, "Error: Name already exists. Choose another name."))
 			fmt.Fprintln(a.Stdout, colorize(a.Color, ansiDim, "Your other entries are kept."))
 			continue
 		}
-		draft.profile.Name = value
+		draft.preset.Name = value
 		return nil
 	}
 }
 
-func (a App) askDescription(reader *bufio.Reader, draft *profileDraft, keep bool) error {
+func (a App) askDescription(reader *bufio.Reader, draft *presetDraft, keep bool) error {
 	label := "Description: when to use it, what it suits and does not suit"
 	if keep {
 		label += " (Enter keeps the current text)"
@@ -769,20 +769,20 @@ func (a App) askDescription(reader *bufio.Reader, draft *profileDraft, keep bool
 			fmt.Fprintln(a.Stdout, colorize(a.Color, ansiRed, "Error: Description cannot be blank."))
 			continue
 		}
-		draft.profile.Description = value
+		draft.preset.Description = value
 		return nil
 	}
 }
 
-func (a App) askUserConfig(reader *bufio.Reader, draft *profileDraft) error {
+func (a App) askUserConfig(reader *bufio.Reader, draft *presetDraft) error {
 	labels := []string{
 		"Loaded — native agent loads user config, extensions, skills",
 		"Isolated — skip user config, extensions, skills, rules, hooks",
-		"Default — loaded (same as omitting from profile file)",
+		"Default — loaded (same as omitting from preset file)",
 	}
 	selected := 2
-	if draft.profile.UserConfig != nil {
-		if *draft.profile.UserConfig {
+	if draft.preset.UserConfig != nil {
+		if *draft.preset.UserConfig {
 			selected = 0
 		} else {
 			selected = 1
@@ -799,30 +799,30 @@ func (a App) askUserConfig(reader *bufio.Reader, draft *profileDraft) error {
 	switch index {
 	case 0:
 		t := true
-		draft.profile.UserConfig = &t
+		draft.preset.UserConfig = &t
 	case 1:
 		f := false
-		draft.profile.UserConfig = &f
+		draft.preset.UserConfig = &f
 	case 2:
-		draft.profile.UserConfig = nil
+		draft.preset.UserConfig = nil
 	}
 	return nil
 }
 
-func (a App) askFlags(reader *bufio.Reader, draft *profileDraft) error {
+func (a App) askFlags(reader *bufio.Reader, draft *presetDraft) error {
 	current := ""
-	if len(draft.profile.Flags) > 0 {
-		current = " (current: " + strings.Join(draft.profile.Flags, " ") + ")"
+	if len(draft.preset.Flags) > 0 {
+		current = " (current: " + strings.Join(draft.preset.Flags, " ") + ")"
 	}
 	value, err := a.readLine(reader, "Native CLI flags, space-separated (empty clears)"+current+": ")
 	if err != nil {
 		return err
 	}
 	if value == "" {
-		draft.profile.Flags = nil
+		draft.preset.Flags = nil
 		return nil
 	}
-	draft.profile.Flags = strings.Fields(value)
+	draft.preset.Flags = strings.Fields(value)
 	return nil
 }
 
@@ -932,21 +932,21 @@ func deleteWord(line []rune) (remaining, removed []rune) {
 	return line[:i], line[i:]
 }
 
-func (a App) printProfileSummary(draft profileDraft) {
-	p := draft.profile
-	effort := profiles.EffortLabel(p.Effort)
+func (a App) printPresetSummary(draft presetDraft) {
+	p := draft.preset
+	effort := presets.EffortLabel(p.Effort)
 	if draft.effortStatus != "" && p.Effort != "" {
 		effort += " (" + draft.effortStatus + ")"
 	}
-	fmt.Fprintf(a.Stdout, "\n%s\n\n", colorize(a.Color, ansiBold, "Review profile"))
-	a.printProfileFields(p, effort)
+	fmt.Fprintf(a.Stdout, "\n%s\n\n", colorize(a.Color, ansiBold, "Review preset"))
+	a.printPresetFields(p, effort)
 	fmt.Fprintln(a.Stdout)
 	a.printAvailability(p)
 	fmt.Fprintln(a.Stdout, colorize(a.Color, ansiDim, "Saving does not run inference."))
 	fmt.Fprintln(a.Stdout)
 }
 
-func (a App) printProfileFields(p profiles.Profile, effort string) {
+func (a App) printPresetFields(p presets.Preset, effort string) {
 	field := func(name, value string) {
 		fmt.Fprintf(a.Stdout, "%s %s\n", colorize(a.Color, ansiDim, fmt.Sprintf("%-12s", name)), value)
 	}
@@ -956,7 +956,7 @@ func (a App) printProfileFields(p profiles.Profile, effort string) {
 	for _, line := range lines[1:] {
 		fmt.Fprintf(a.Stdout, "%-12s %s\n", "", line)
 	}
-	field("Agent", colorize(a.Color, agentColor(p.Agent), profiles.AgentName(p.Agent)))
+	field("Agent", colorize(a.Color, agentColor(p.Agent), presets.AgentName(p.Agent)))
 	field("Model", p.Model)
 	field("Effort", effort)
 	field("Mode", p.EffectiveModeLabel())
@@ -974,7 +974,7 @@ func (a App) printProfileFields(p profiles.Profile, effort string) {
 	}
 }
 
-func (a App) printAvailability(p profiles.Profile) {
+func (a App) printAvailability(p presets.Preset) {
 	label := func(name string) string { return colorize(a.Color, ansiDim, fmt.Sprintf("%-12s", name)) }
 	execution := "Execution not verified (login and model access are checked only when a session starts)"
 	if agent, err := a.Registry.Get(p.Agent); err == nil {
@@ -990,26 +990,26 @@ func (a App) printAvailability(p profiles.Profile) {
 	fmt.Fprintf(a.Stdout, "%s %s\n", label("MCP"), mcp)
 }
 
-func (a App) profileChangeNote(home string) {
-	fmt.Fprintln(a.Stdout, "New sessions use the saved profiles now.")
+func (a App) presetChangeNote(home string) {
+	fmt.Fprintln(a.Stdout, "New sessions use the saved presets now.")
 	count := len(subagents.Connections(home))
 	var note string
 	switch {
 	case count > 0:
-		note = fmt.Sprintf("MCP: %d running AgentX MCP connection(s) still show the profile list from when they connected. New ExternalSubagent calls already use the saved profiles; reconnect AgentX in Claude (/mcp) or restart Claude to refresh the list.", count)
+		note = fmt.Sprintf("MCP: %d running AgentX MCP connection(s) still show the preset list from when they connected. New ExternalSubagent calls already use the saved presets; reconnect AgentX in Claude (/mcp) or restart Claude to refresh the list.", count)
 	default:
 		note = "MCP: no running AgentX MCP connection; Claude sees this change when it next connects."
 	}
 	fmt.Fprintln(a.Stdout, note)
 }
 
-func (a App) chooseManagedProfile(ctx context.Context, reader *bufio.Reader, home string) (bool, error) {
-	list, problems, err := profiles.Load(home)
+func (a App) chooseManagedPreset(ctx context.Context, reader *bufio.Reader, home string) (bool, error) {
+	list, problems, err := presets.Load(home)
 	if err != nil {
 		return false, err
 	}
 	if len(list)+len(problems) == 0 {
-		fmt.Fprintln(a.Stdout, "No profiles to manage yet. Choose + Create profile… to add one.")
+		fmt.Fprintln(a.Stdout, "No presets to manage yet. Choose + Create preset… to add one.")
 		return false, nil
 	}
 	var labels []string
@@ -1020,37 +1020,37 @@ func (a App) chooseManagedProfile(ctx context.Context, reader *bufio.Reader, hom
 		labels = append(labels, problem.Name+" (invalid)")
 	}
 	labels = append(labels, "Back")
-	choice, err := a.pick(reader, "Manage which profile?", labels)
+	choice, err := a.pick(reader, "Manage which preset?", labels)
 	if err != nil || choice == len(labels)-1 {
 		return false, err
 	}
 	if choice < len(list) {
-		return a.manageProfile(ctx, reader, home, list[choice])
+		return a.managePreset(ctx, reader, home, list[choice])
 	}
 	return false, a.manageProblem(ctx, reader, home, problems[choice-len(list)])
 }
 
-func (a App) manageProfile(ctx context.Context, reader *bufio.Reader, home string, p profiles.Profile) (bool, error) {
+func (a App) managePreset(ctx context.Context, reader *bufio.Reader, home string, p presets.Preset) (bool, error) {
 	actions := []string{"View", "Edit", "Rename", "Duplicate", "Delete", "Start new session", "Back"}
 	for {
-		fmt.Fprintf(a.Stdout, "\n%s\n%s%s\n", colorize(a.Color, ansiBold, "Manage · "+p.Name), colorize(a.Color, agentColor(p.Agent), profiles.AgentName(p.Agent)), colorize(a.Color, ansiDim, " · "+p.Model+" · "+homeEffort(p.Effort)+" · "+p.EffectiveMode()))
+		fmt.Fprintf(a.Stdout, "\n%s\n%s%s\n", colorize(a.Color, ansiBold, "Manage · "+p.Name), colorize(a.Color, agentColor(p.Agent), presets.AgentName(p.Agent)), colorize(a.Color, ansiDim, " · "+p.Model+" · "+homeEffort(p.Effort)+" · "+p.EffectiveMode()))
 		choice, err := a.pick(reader, "", actions)
 		if err != nil {
 			return false, err
 		}
 		switch actions[choice] {
 		case "View":
-			a.viewProfile(home, p)
+			a.viewPreset(home, p)
 			if _, err := a.pick(reader, "", []string{"Back"}); err != nil && !errors.Is(err, errSelectionCancelled) {
 				return false, err
 			}
 		case "Edit":
-			launched, err := a.profileWizard(ctx, reader, home, profileDraft{profile: p}, wizardEdit)
+			launched, err := a.presetWizard(ctx, reader, home, presetDraft{preset: p}, wizardEdit)
 			if launched || (err != nil && !errors.Is(err, errSelectionCancelled)) {
 				return launched, err
 			}
 		case "Rename":
-			renamed, err := a.renameProfile(reader, home, p.Name)
+			renamed, err := a.renamePreset(reader, home, p.Name)
 			if err != nil && !errors.Is(err, errSelectionCancelled) {
 				return false, err
 			}
@@ -1058,41 +1058,41 @@ func (a App) manageProfile(ctx context.Context, reader *bufio.Reader, home strin
 				p.Name = renamed
 			}
 		case "Duplicate":
-			launched, err := a.profileWizard(ctx, reader, home, profileDraft{profile: p}, wizardCopy)
+			launched, err := a.presetWizard(ctx, reader, home, presetDraft{preset: p}, wizardCopy)
 			if launched || (err != nil && !errors.Is(err, errSelectionCancelled)) {
 				return launched, err
 			}
 		case "Delete":
-			deleted, err := a.deleteProfile(reader, home, p.Name)
+			deleted, err := a.deletePreset(reader, home, p.Name)
 			if deleted || (err != nil && !errors.Is(err, errSelectionCancelled)) {
 				return false, err
 			}
 		case "Start new session":
-			return a.startProfile(ctx, reader, home, p)
+			return a.startPreset(ctx, reader, home, p)
 		case "Back":
 			return false, nil
 		}
-		if current, err := profiles.Read(home, p.Name); err == nil {
+		if current, err := presets.Read(home, p.Name); err == nil {
 			p = current
 		}
 	}
 }
 
-func (a App) viewProfile(home string, p profiles.Profile) {
-	fmt.Fprintf(a.Stdout, "\n%s\n\n", colorize(a.Color, ansiBold, "Profile · "+p.Name))
+func (a App) viewPreset(home string, p presets.Preset) {
+	fmt.Fprintf(a.Stdout, "\n%s\n\n", colorize(a.Color, ansiBold, "Preset · "+p.Name))
 	fmt.Fprintln(a.Stdout, colorize(a.Color, ansiDim, "Configuration"))
-	fmt.Fprintf(a.Stdout, "%s %s\n", colorize(a.Color, ansiDim, fmt.Sprintf("%-12s", "File")), profiles.Path(home, p.Name))
+	fmt.Fprintf(a.Stdout, "%s %s\n", colorize(a.Color, ansiDim, fmt.Sprintf("%-12s", "File")), presets.Path(home, p.Name))
 	effort := p.Effort
 	if effort == "" {
-		effort = "native default (profile sets no effort)"
+		effort = "native default (preset sets no effort)"
 	}
-	a.printProfileFields(p, effort)
+	a.printPresetFields(p, effort)
 	fmt.Fprintln(a.Stdout)
 	fmt.Fprintln(a.Stdout, colorize(a.Color, ansiDim, "Status"))
 	a.printAvailability(p)
 }
 
-func (a App) renameProfile(reader *bufio.Reader, home, name string) (string, error) {
+func (a App) renamePreset(reader *bufio.Reader, home, name string) (string, error) {
 	for {
 		value, err := a.readLine(reader, fmt.Sprintf("New name for %s (empty cancels): ", name))
 		if err != nil {
@@ -1101,8 +1101,8 @@ func (a App) renameProfile(reader *bufio.Reader, home, name string) (string, err
 		if value == "" || value == name {
 			return "", errSelectionCancelled
 		}
-		err = profiles.Rename(home, name, value)
-		if errors.Is(err, profiles.ErrExists) {
+		err = presets.Rename(home, name, value)
+		if errors.Is(err, presets.ErrExists) {
 			fmt.Fprintln(a.Stdout, colorize(a.Color, ansiRed, "Error: Name already exists. Choose another name."))
 			continue
 		}
@@ -1111,31 +1111,31 @@ func (a App) renameProfile(reader *bufio.Reader, home, name string) (string, err
 			continue
 		}
 		fmt.Fprintf(a.Stdout, "Renamed %s to %s. Running sessions and ExternalSubagents keep their original combination.\n", name, value)
-		a.profileChangeNote(home)
+		a.presetChangeNote(home)
 		return value, nil
 	}
 }
 
-func (a App) deleteProfile(reader *bufio.Reader, home, name string) (bool, error) {
+func (a App) deletePreset(reader *bufio.Reader, home, name string) (bool, error) {
 	fmt.Fprintf(a.Stdout, "\n%s\n", colorize(a.Color, ansiBold, "Delete · "+name))
-	choice, err := a.pick(reader, "Delete this profile?", []string{"Cancel", "Delete " + name})
+	choice, err := a.pick(reader, "Delete this preset?", []string{"Cancel", "Delete " + name})
 	if err != nil || choice == 0 {
 		return false, err
 	}
-	if err := profiles.Delete(home, name); err != nil {
+	if err := presets.Delete(home, name); err != nil {
 		return false, err
 	}
-	fmt.Fprintf(a.Stdout, "Deleted profile %s. History, native agents, credentials and running work are kept.\n", name)
-	a.profileChangeNote(home)
+	fmt.Fprintf(a.Stdout, "Deleted preset %s. History, native agents, credentials and running work are kept.\n", name)
+	a.presetChangeNote(home)
 	return true, nil
 }
 
-func (a App) manageProblem(ctx context.Context, reader *bufio.Reader, home string, problem profiles.Problem) error {
+func (a App) manageProblem(ctx context.Context, reader *bufio.Reader, home string, problem presets.Problem) error {
 	fmt.Fprintf(a.Stdout, "\n%s\n%s\n%s\n", colorize(a.Color, ansiBold, "Manage · "+problem.Name+" (invalid)"), colorize(a.Color, ansiRed, "Error: "+problem.Err), colorize(a.Color, ansiDim, "Location: "+problem.Path))
-	fmt.Fprintln(a.Stdout, colorize(a.Color, ansiDim, "Other profiles and recent sessions are unaffected."))
+	fmt.Fprintln(a.Stdout, colorize(a.Color, ansiDim, "Other presets and recent sessions are unaffected."))
 	actions := []string{"Delete", "Back"}
-	repairable := profiles.ValidName(problem.Name) == nil
-	if info, err := os.Stat(filepath.Join(profiles.Dir(home), problem.Name)); err != nil || !info.IsDir() {
+	repairable := presets.ValidName(problem.Name) == nil
+	if info, err := os.Stat(filepath.Join(presets.Dir(home), problem.Name)); err != nil || !info.IsDir() {
 		repairable = false
 	}
 	if repairable {
@@ -1147,11 +1147,11 @@ func (a App) manageProblem(ctx context.Context, reader *bufio.Reader, home strin
 	}
 	switch actions[choice] {
 	case "Repair (re-enter fields)":
-		partial, _ := profiles.Read(home, problem.Name)
-		_, err := a.profileWizard(ctx, reader, home, profileDraft{profile: partial}, wizardRepair)
+		partial, _ := presets.Read(home, problem.Name)
+		_, err := a.presetWizard(ctx, reader, home, presetDraft{preset: partial}, wizardRepair)
 		return err
 	case "Delete":
-		_, err := a.deleteProfile(reader, home, problem.Name)
+		_, err := a.deletePreset(reader, home, problem.Name)
 		return err
 	}
 	return nil

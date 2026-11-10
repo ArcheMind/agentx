@@ -16,7 +16,7 @@ import (
 	"sync"
 
 	"github.com/ArcheMind/agentx/internal/drivers"
-	"github.com/ArcheMind/agentx/internal/profiles"
+	"github.com/ArcheMind/agentx/internal/presets"
 	"github.com/ArcheMind/agentx/internal/runtime"
 )
 
@@ -49,7 +49,7 @@ func (e *executionCancelled) Error() string { return e.cause.Error() }
 
 type ExternalSubagentState struct {
 	ID, Name, Session, NativeID, Cwd, Status string
-	Option                                   profiles.Profile
+	Option                                   presets.Preset
 	// Mode is the call-time permission mode, fixed for the ExternalSubagent including continuations.
 	Mode     string
 	evidence string
@@ -168,7 +168,7 @@ func (s *Server) handle(method string, raw json.RawMessage) (any, error) {
 	switch method {
 	case "initialize":
 		s.connectionClient(raw)
-		catalog, _ := ProfileCatalog(s.Home)
+		catalog, _ := PresetCatalog(s.Home)
 		s.mu.Lock()
 		s.snapshot = catalog
 		s.mu.Unlock()
@@ -206,8 +206,8 @@ func (s *Server) handle(method string, raw json.RawMessage) (any, error) {
 }
 
 func (s *Server) tools() any {
-	_, models := ProfileCatalog(s.Home)
-	description := "AgentX delegates to configured ExternalSubagents. model selects a profile. run_in_background (default true) returns immediately; false waits. Background results arrive as channel messages (requires Claude channels opt-in). Continue: SendExternalSubagentMessage; cancel: StopExternalSubagent; list: listExternalSubagentSessions. mode \"normal\" passes no permission or sandbox flags; mode \"yolo\" bypasses the agent's permission checks and sandbox. No context restoration across MCP reconnects.\n\n"
+	_, models := PresetCatalog(s.Home)
+	description := "AgentX delegates to configured ExternalSubagents. model selects a preset. run_in_background (default true) returns immediately; false waits. Background results arrive as channel messages (requires Claude channels opt-in). Continue: SendExternalSubagentMessage; cancel: StopExternalSubagent; list: listExternalSubagentSessions. mode \"normal\" passes no permission or sandbox flags; mode \"yolo\" bypasses the agent's permission checks and sandbox. No context restoration across MCP reconnects.\n\n"
 	description += CatalogIndex(s.Home, HostToolDescriptionLimit-1-len(description))
 	str := func(text string) any { return map[string]any{"type": "string", "description": text} }
 	tool := func(name, desc string, props map[string]any, required ...string) any {
@@ -216,38 +216,38 @@ func (s *Server) tools() any {
 		}
 		return map[string]any{"name": name, "description": desc, "inputSchema": map[string]any{"type": "object", "properties": props, "required": required, "additionalProperties": false}}
 	}
-	modelSchema := map[string]any{"type": "string", "description": "Name of a callable profile from the user's profile collection; no callable profiles means ExternalSubagent will reject work"}
+	modelSchema := map[string]any{"type": "string", "description": "Name of a callable preset from the user's preset collection; no callable presets means ExternalSubagent will reject work"}
 	if len(models) > 0 {
 		modelSchema["enum"] = models
 	}
 	return map[string]any{"tools": []any{
-		tool("StartExternalSubagent", description, map[string]any{"description": str("Short task description"), "prompt": str("Task for the ExternalSubagent"), "model": modelSchema, "run_in_background": map[string]any{"type": "boolean", "default": true}, "name": map[string]any{"type": "string", "pattern": profiles.NamePattern.String()}, "isolation": map[string]any{"type": "string", "enum": []string{IsolationWorktree}, "description": "worktree: new git worktree at ~/.local/state/agentx/worktrees/<id>; kept after completion; omit for no isolation."}, "mode": map[string]any{"type": "string", "enum": []string{ModeNormal, ModeYolo}, "description": "Override the profile's mode for this call. Omit to use the profile's mode (default yolo). normal: no permission or sandbox flags; the agent's own configuration decides. yolo: bypass the agent's permission checks and sandbox; not all agents have a boundary to bypass; per-profile limits say which do."}, "team_name": str("Deprecated, ignored")}, "description", "prompt"),
-		tool("SendExternalSubagentMessage", "Send a text task to an AgentX ExternalSubagent by exact name or ID. Accepted means queued, not completed. Busy ExternalSubagents process messages in order in the same native context. Completed ExternalSubagents resume. The original profile must still exist unchanged; the mode and isolation of the ExternalSubagent are reused. Summary is display-only.", map[string]any{"to": str("AgentX name or ID"), "message": str("Text task"), "summary": str("Optional display summary")}, "to", "message"),
+		tool("StartExternalSubagent", description, map[string]any{"description": str("Short task description"), "prompt": str("Task for the ExternalSubagent"), "model": modelSchema, "run_in_background": map[string]any{"type": "boolean", "default": true}, "name": map[string]any{"type": "string", "pattern": presets.NamePattern.String()}, "isolation": map[string]any{"type": "string", "enum": []string{IsolationWorktree}, "description": "worktree: new git worktree at ~/.local/state/agentx/worktrees/<id>; kept after completion; omit for no isolation."}, "mode": map[string]any{"type": "string", "enum": []string{ModeNormal, ModeYolo}, "description": "Override the preset's mode for this call. Omit to use the preset's mode (default yolo). normal: no permission or sandbox flags; the agent's own configuration decides. yolo: bypass the agent's permission checks and sandbox; not all agents have a boundary to bypass; per-preset limits say which do."}, "team_name": str("Deprecated, ignored")}, "description", "prompt"),
+		tool("SendExternalSubagentMessage", "Send a text task to an AgentX ExternalSubagent by exact name or ID. Accepted means queued, not completed. Busy ExternalSubagents process messages in order in the same native context. Completed ExternalSubagents resume. The original preset must still exist unchanged; the mode and isolation of the ExternalSubagent are reused. Summary is display-only.", map[string]any{"to": str("AgentX name or ID"), "message": str("Text task"), "summary": str("Optional display summary")}, "to", "message"),
 		tool("StopExternalSubagent", "Cancel running and queued work for one AgentX ExternalSubagent by name or ID. Waits for native process termination before confirming. Works while disabled. Already ended is not cancellation.", map[string]any{"task_id": str("AgentX name or ID")}, "task_id"),
 		tool("ListExternalSubagentSessions", "List ExternalSubagent sessions already created in this AgentX MCP connection, with status, report and pending messages. No other users, connections or Claude native subagents.", map[string]any{}),
 	}}
 }
 
-func (s *Server) callableProfile(name string) (profiles.Profile, error) {
+func (s *Server) callablePreset(name string) (presets.Preset, error) {
 	if name == "" {
-		return profiles.Profile{}, fmt.Errorf("model is required: name one profile from the AgentX profile list; there is no default profile")
+		return presets.Preset{}, fmt.Errorf("model is required: name one preset from the AgentX preset list; there is no default preset")
 	}
-	if err := profiles.ValidName(name); err != nil {
-		return profiles.Profile{}, fmt.Errorf("model %q is not a profile name: %w", name, err)
+	if err := presets.ValidName(name); err != nil {
+		return presets.Preset{}, fmt.Errorf("model %q is not a preset name: %w", name, err)
 	}
-	o, err := profiles.Read(s.Home, name)
+	o, err := presets.Read(s.Home, name)
 	if err != nil {
-		return profiles.Profile{}, fmt.Errorf("profile %s unavailable: %w. If it was renamed or deleted after this MCP connection started, reconnect AgentX MCP to refresh the profile list; no other profile was substituted", name, err)
+		return presets.Preset{}, fmt.Errorf("preset %s unavailable: %w. If it was renamed or deleted after this MCP connection started, reconnect AgentX MCP to refresh the preset list; no other preset was substituted", name, err)
 	}
 	return o, Ready(o)
 }
 
 func (s *Server) staleNote() string {
-	current, _ := ProfileCatalog(s.Home)
+	current, _ := PresetCatalog(s.Home)
 	if s.snapshot == "" || current == s.snapshot {
 		return ""
 	}
-	return "\nNote: the profile collection changed after this MCP connection initialized. This call used the saved profile shown above; reconnect AgentX MCP to refresh the profile list."
+	return "\nNote: the preset collection changed after this MCP connection initialized. This call used the saved preset shown above; reconnect AgentX MCP to refresh the preset list."
 }
 
 func (s *Server) target(to string) (*ExternalSubagentState, error) {
@@ -282,7 +282,7 @@ func (s *Server) call(name string, raw json.RawMessage) (string, error) {
 			s.mu.Unlock()
 			return "", fmt.Errorf("description and prompt are required nonempty strings")
 		}
-		if in.Name != "" && !profiles.NamePattern.MatchString(in.Name) {
+		if in.Name != "" && !presets.NamePattern.MatchString(in.Name) {
 			s.mu.Unlock()
 			return "", fmt.Errorf("invalid name")
 		}
@@ -294,7 +294,7 @@ func (s *Server) call(name string, raw json.RawMessage) (string, error) {
 			s.mu.Unlock()
 			return "", fmt.Errorf("mode %q unsupported; supported: %s, %s; no task started", in.Mode, ModeNormal, ModeYolo)
 		}
-		o, err := s.callableProfile(in.Model)
+		o, err := s.callablePreset(in.Model)
 		if err != nil {
 			s.mu.Unlock()
 			return "", err
@@ -359,14 +359,14 @@ func (s *Server) call(name string, raw json.RawMessage) (string, error) {
 			s.mu.Unlock()
 			return "", err
 		}
-		o, err := s.callableProfile(a.Option.Name)
+		o, err := s.callablePreset(a.Option.Name)
 		if err != nil {
 			s.mu.Unlock()
 			return "", err
 		}
 		if !o.Equal(a.Option) {
 			s.mu.Unlock()
-			return "", fmt.Errorf("original profile %s changed; cannot resume this ExternalSubagent without changing its identity", a.Option.Name)
+			return "", fmt.Errorf("original preset %s changed; cannot resume this ExternalSubagent without changing its identity", a.Option.Name)
 		}
 		if a.Status == "failed" || a.Status == "cancelled" {
 			s.mu.Unlock()
@@ -459,7 +459,7 @@ func (s *Server) call(name string, raw json.RawMessage) (string, error) {
 }
 
 func (s *Server) render(a *ExternalSubagentState, j *Job) string {
-	text := fmt.Sprintf("AgentX ExternalSubagent %s (name=%q; profile=%s; agent=%s; actual model=%s; effort=%s; connection=%s)\nMode: %s\nTask %s: %s; ExternalSubagent status: %s.\n", a.ID, a.Name, a.Option.Name, a.Option.Agent, a.Option.Model, describeEffort(a.Option.Effort), s.connectionID, a.Mode, j.ID, j.Status, a.Status)
+	text := fmt.Sprintf("AgentX ExternalSubagent %s (name=%q; preset=%s; agent=%s; actual model=%s; effort=%s; connection=%s)\nMode: %s\nTask %s: %s; ExternalSubagent status: %s.\n", a.ID, a.Name, a.Option.Name, a.Option.Agent, a.Option.Model, describeEffort(a.Option.Effort), s.connectionID, a.Mode, j.ID, j.Status, a.Status)
 	if a.Worktree != nil {
 		text += a.Worktree.describe(a.Cwd)
 	}
@@ -571,8 +571,8 @@ func (s *Server) completion(a *ExternalSubagentState, job *Job) {
 }
 
 func (s *Server) execute(ctx context.Context, a *ExternalSubagentState, prompt string) (string, any, error) {
-	if current, err := profiles.Read(s.Home, a.Option.Name); err != nil || !current.Equal(a.Option) {
-		return "", nil, fmt.Errorf("original profile %s changed or was removed before execution; no replacement selected", a.Option.Name)
+	if current, err := presets.Read(s.Home, a.Option.Name); err != nil || !current.Equal(a.Option) {
+		return "", nil, fmt.Errorf("original preset %s changed or was removed before execution; no replacement selected", a.Option.Name)
 	}
 	a.evidence, a.auth = "", Auth{}
 	if a.Session != "" {

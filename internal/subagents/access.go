@@ -8,13 +8,13 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/ArcheMind/agentx/internal/profiles"
+	"github.com/ArcheMind/agentx/internal/presets"
 	"github.com/ArcheMind/agentx/internal/runtime"
 )
 
 const (
-	ModeNormal = profiles.ModeNormal
-	ModeYolo   = profiles.ModeYolo
+	ModeNormal = presets.ModeNormal
+	ModeYolo   = presets.ModeYolo
 )
 
 // Auth is the native credential source discovered for one turn.
@@ -58,7 +58,7 @@ func AuthEnvironment(auth Auth) (map[string]string, []string) {
 	return map[string]string{auth.Key: auth.Dir}, nil
 }
 
-func (s *Server) discoverAuth(ctx context.Context, o profiles.Profile) (Auth, error) {
+func (s *Server) discoverAuth(ctx context.Context, o presets.Preset) (Auth, error) {
 	return DiscoverAuth(ctx, s.Runner, o.Agent, o.Model)
 }
 
@@ -115,22 +115,22 @@ func DiscoverAuth(ctx context.Context, runner runtime.Runner, agent, model strin
 	return auth, nil
 }
 
-func Limits(o profiles.Profile) string {
+func Limits(o presets.Preset) string {
 	var text strings.Builder
-	fmt.Fprintf(&text, "Mode: profile default is %s. ", profiles.ModeLabel(o.Mode))
+	fmt.Fprintf(&text, "Mode: preset default is %s. ", presets.ModeLabel(o.Mode))
 	text.WriteString("normal passes no permission or sandbox flags, so the agent's own configuration decides; yolo bypasses the agent's permission checks and sandbox. ")
-	if !profiles.Agents[o.Agent].Bypassable {
+	if !presets.Agents[o.Agent].Bypassable {
 		text.WriteString("This agent rejects yolo. ")
 	}
-	text.WriteString("Profile user_config and flags are passed through to the agent. ")
+	text.WriteString("Preset user_config and flags are passed through to the agent. ")
 	text.WriteString("Auth is discovered before each execution; the report names the source. ")
 	text.WriteString(IsolationLimits())
-	text.WriteString("Effort is fixed by the profile.")
+	text.WriteString("Effort is fixed by the preset.")
 	return text.String()
 }
 
-// effectiveMode resolves the call-time mode against the profile default.
-func effectiveMode(o profiles.Profile, callMode string) string {
+// effectiveMode resolves the call-time mode against the preset default.
+func effectiveMode(o presets.Preset, callMode string) string {
 	if callMode != "" {
 		return callMode
 	}
@@ -138,9 +138,9 @@ func effectiveMode(o profiles.Profile, callMode string) string {
 }
 
 // checkMode rejects yolo before any work starts for agents without a permission boundary to bypass.
-func checkMode(o profiles.Profile, mode string) error {
-	if mode == ModeYolo && !profiles.Agents[o.Agent].Bypassable {
-		return fmt.Errorf("mode %q rejected for %s profile %s: %s has no runtime permission boundary to bypass; no task started", ModeYolo, profiles.AgentName(o.Agent), o.Name, profiles.AgentName(o.Agent))
+func checkMode(o presets.Preset, mode string) error {
+	if mode == ModeYolo && !presets.Agents[o.Agent].Bypassable {
+		return fmt.Errorf("mode %q rejected for %s preset %s: %s has no runtime permission boundary to bypass; no task started", ModeYolo, presets.AgentName(o.Agent), o.Name, presets.AgentName(o.Agent))
 	}
 	return nil
 }

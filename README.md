@@ -22,15 +22,15 @@ $ ax codex          # start a new Codex session
 
 ## One list of every agent's work
 
-`ax` with no arguments opens one screen with your profiles and the recent sessions of every agent, grouped by project.
+`ax` with no arguments opens one screen with your presets and the recent sessions of every agent, grouped by project.
 
-Start from a profile or resume recent work:
+Start from a preset or resume recent work:
 
 ```text
-New session · Profiles
+New session · Presets
 › codex-review  Codex · gpt-5.6-luna · low     Read-only research and code review using native …
   pi-review     Pi · openai-codex/gpt-5.6-luna  Read-only independent research and code review u…
-  + Create profile…
+  + Create preset…
 
 Recent sessions · Current workspace
   claude    Sep 11 05:08 (18m)      Design the interactive session-resume experience for the…
@@ -46,7 +46,7 @@ Recent sessions · Global
   gemini    Sep 10 09:40 (2h 30m)   ../mobile-app         Prepare the mobile release checkli…
   pi        Sep 10 06:15 (55m)      ../infrastructure     Add a preflight check before the p…
 
-↑/↓ or j/k select · Enter open · e export session · m manage profiles · q/Esc cancel
+↑/↓ or j/k select · Enter open · e export session · m manage presets · q/Esc cancel
 ```
 
 Non-interactive and filtered:
@@ -92,20 +92,20 @@ ax session import codex work.json      # write into codex's native store, print 
 ax --resume work.json                  # import and resume interactively in one step
 ```
 
-## Call another agent's profile from inside yours
+## Call another agent's preset from inside yours
 
-A profile saves agent, model, effort, and when to use it. The same collection feeds `ax` and the MCP tools, so an agent launched through `ax` (for example `ax claude` or `ax codex`) gets the ExternalSubagent tools automatically and can run your other profiles directly:
+A preset saves agent, model, effort, and when to use it. The same collection feeds `ax` and the MCP tools, so an agent launched through `ax` (for example `ax claude` or `ax codex`) gets the ExternalSubagent tools automatically and can run your other presets directly:
 
 ```console
-$ ax profile list
+$ ax preset list
 claude-review        claude     static requirements satisfied; login and model access verified per execution
 pi-review            pi         static requirements satisfied; login and model access verified per execution
 
 $ ax codex
-> Ask my claude-review profile to review this change.
+> Ask my claude-review preset to review this change.
 ```
 
-Each call runs the profile's own native agent in its own session. No relay inference call, no per-task registration. AgentX passes no permission flags by default (`mode: "normal"`), so each agent's own configuration decides what it may do; `mode: "yolo"` bypasses the agent's permission checks and sandbox. `isolation: "worktree"` runs the subagent in a fresh git worktree; it only changes where the agent works.
+Each call runs the preset's own native agent in its own session. No relay inference call, no per-task registration. AgentX passes no permission flags by default (`mode: "normal"`), so each agent's own configuration decides what it may do; `mode: "yolo"` bypasses the agent's permission checks and sandbox. `isolation: "worktree"` runs the subagent in a fresh git worktree; it only changes where the agent works.
 
 ```text
 ExternalSubagent · SendExternalSubagentMessage · StopExternalSubagent · listExternalSubagentSessions
@@ -118,7 +118,7 @@ Exact inputs, limits, and acceptance evidence: [docs/subagents.md](docs/subagent
 ```text
 ~/.agents/skills/<name>/SKILL.md      codex · dsh · gemini · opencode · pi, Claude via .claude/skills
 ~/.agents/hooks.json                  claude · codex · gemini · pi
-~/.agentx/profiles/<name>/PROFILE.md  ax · the ExternalSubagent tools above
+~/.agentx/presets/<name>/PRESET.md  ax · the ExternalSubagent tools above
 ```
 
 ```console
@@ -130,7 +130,7 @@ user     UserPromptSubmit  echo prompt submitted
 user     Stop              echo stopped
 ```
 
-A profile is one small file:
+A preset is one small file:
 
 ```markdown
 ---
@@ -142,7 +142,7 @@ effort: low
 Read-only research and code review. Not for large refactors.
 ```
 
-`ax` shows `+ Create profile…` on the home screen and `m` edits the highlighted one. Native config stays native: AgentX never merges into your Claude, Codex, Gemini, or Pi configuration; hook and skill bridges are isolated and visible to the agent's own trust review.
+`ax` shows `+ Create preset…` on the home screen and `m` edits the highlighted one. Native config stays native: AgentX never merges into your Claude, Codex, Gemini, or Pi configuration; hook and skill bridges are isolated and visible to the agent's own trust review.
 
 ## Install
 
@@ -189,7 +189,7 @@ ax [--json|--yaml] session <list|show|resume|export|import|continue> [args...]
 ax [--json|--yaml] skill <list|show|install> [args...]
 ax [--json|--yaml] hook list
 ax [--json|--yaml] mcp <list|show|serve> [args...]
-ax [--json|--yaml] profile <list|show> [args...]
+ax [--json|--yaml] preset <list|show> [args...]
 
 ax version
 ```
@@ -212,7 +212,7 @@ ax --json session continue claude --mode yolo --mcp-config mcp.json < transcript
 
 AgentX owns the workflow around agents, not the agents:
 
-- no universal agent settings file beyond the documented skills, hooks, and profiles;
+- no universal agent settings file beyond the documented skills, hooks, and presets;
 - no credential storage or proxying;
 - no replacement package managers or session databases;
 - no invented capabilities or fallbacks when a native source is missing.

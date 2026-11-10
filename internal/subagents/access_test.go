@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ArcheMind/agentx/internal/profiles"
+	"github.com/ArcheMind/agentx/internal/presets"
 	"github.com/ArcheMind/agentx/internal/runtime"
 )
 
@@ -24,7 +24,7 @@ func TestInvalidModesRejectedBeforeAnyWork(t *testing.T) {
 	r := &testRunner{}
 	s := testServer(t, r)
 	installPi(t)
-	saveProfile(t, s.Home, profiles.Profile{Name: "pi-review", Agent: "pi", Model: "provider/model", Description: "d"})
+	savePreset(t, s.Home, presets.Preset{Name: "pi-review", Agent: "pi", Model: "provider/model", Description: "d"})
 	for input, want := range map[string]string{
 		`{"description":"x","prompt":"x","model":"review","mode":"dontAsk"}`:        `mode "dontAsk" unsupported`,
 		`{"description":"x","prompt":"x","model":"review","mode":""}`:               "must not be empty",
@@ -44,7 +44,7 @@ func TestInvalidModesRejectedBeforeAnyWork(t *testing.T) {
 func TestNormalModePassesNoPermissionFlags(t *testing.T) {
 	r := &testRunner{}
 	s := testServer(t, r)
-	saveProfile(t, s.Home, profiles.Profile{Name: "claude-review", Agent: "claude", Model: "opus", Description: "d"})
+	savePreset(t, s.Home, presets.Preset{Name: "claude-review", Agent: "claude", Model: "opus", Description: "d"})
 	text := callTest(t, s, "ExternalSubagent", map[string]any{"description": "read", "prompt": "review", "model": "review", "mode": "normal", "run_in_background": false})
 	s.call("ExternalSubagent", []byte(`{"description":"x","prompt":"x","model":"claude-review","mode":"normal","run_in_background":false}`))
 	r.mu.Lock()
@@ -64,7 +64,7 @@ func TestNormalModePassesNoPermissionFlags(t *testing.T) {
 func TestYoloModeBypassesNativePermissions(t *testing.T) {
 	r := &testRunner{}
 	s := testServer(t, r)
-	saveProfile(t, s.Home, profiles.Profile{Name: "claude-review", Agent: "claude", Model: "opus", Description: "d"})
+	savePreset(t, s.Home, presets.Preset{Name: "claude-review", Agent: "claude", Model: "opus", Description: "d"})
 	text := callTest(t, s, "ExternalSubagent", map[string]any{"description": "x", "prompt": "x", "model": "review", "mode": "yolo", "run_in_background": false})
 	s.call("ExternalSubagent", []byte(`{"description":"x","prompt":"x","model":"claude-review","mode":"yolo","run_in_background":false}`))
 	r.mu.Lock()
@@ -151,7 +151,7 @@ func TestFailedAuthPreflightStartsNoNativeExecution(t *testing.T) {
 		r := &authRunner{pi: status}
 		s := testServer(t, r)
 		installPi(t)
-		saveProfile(t, s.Home, profiles.Profile{Name: "review", Agent: "pi", Model: "provider/model", Description: "d"})
+		savePreset(t, s.Home, presets.Preset{Name: "review", Agent: "pi", Model: "provider/model", Description: "d"})
 		_, err := s.call("ExternalSubagent", []byte(`{"description":"x","prompt":"x","model":"review","run_in_background":false}`))
 		if err == nil || !strings.Contains(err.Error(), "no fallback identity") {
 			t.Fatal(status, err)
@@ -163,7 +163,7 @@ func TestFailedAuthPreflightStartsNoNativeExecution(t *testing.T) {
 	r := &authRunner{pi: `{"status":"ready","provider":"provider","authType":"api_key"}`}
 	s := testServer(t, r)
 	installPi(t)
-	saveProfile(t, s.Home, profiles.Profile{Name: "review", Agent: "pi", Model: "provider/model", Description: "d"})
+	savePreset(t, s.Home, presets.Preset{Name: "review", Agent: "pi", Model: "provider/model", Description: "d"})
 	_, err := s.call("ExternalSubagent", []byte(`{"description":"x","prompt":"x","model":"review","run_in_background":false}`))
 	if err == nil || !strings.Contains(err.Error(), `PI_CODING_AGENT_DIR="`+os.Getenv("PI_CODING_AGENT_DIR")+`" (api_key)`) || len(r.plans) != 1 {
 		t.Fatal("discovered Pi auth not used or reported:", err)
@@ -194,7 +194,7 @@ func TestNativeFailureReturnedToClaudeIsRedacted(t *testing.T) {
 	if err == nil || strings.Contains(err.Error(), "abcdefghijklmnop") || !strings.Contains(err.Error(), "<redacted>") {
 		t.Fatal(err)
 	}
-	a := &ExternalSubagentState{Option: profiles.Profile{Agent: "codex"}}
+	a := &ExternalSubagentState{Option: presets.Preset{Agent: "codex"}}
 	if _, _, err := parseOutput(a, `{"type":"turn.failed","error":{"message":"bad key sk-proj-abcdefghijklmnopqrstuvwxyz"}}`); err == nil || strings.Contains(err.Error(), "abcdefghijklmnop") {
 		t.Fatal(err)
 	}
@@ -204,9 +204,9 @@ func TestUserConfigFalseAddsIsolationFlags(t *testing.T) {
 	r := &testRunner{}
 	s := testServer(t, r)
 	f := false
-	p := reviewProfile
+	p := reviewPreset
 	p.UserConfig = &f
-	saveProfile(t, s.Home, p)
+	savePreset(t, s.Home, p)
 	callTest(t, s, "ExternalSubagent", map[string]any{"description": "x", "prompt": "x", "model": "review", "run_in_background": false})
 	r.mu.Lock()
 	args := strings.Join(r.plans[0].Args, " ")
@@ -218,17 +218,17 @@ func TestUserConfigFalseAddsIsolationFlags(t *testing.T) {
 	}
 }
 
-func TestProfileFlagsAppendedToNativeArgs(t *testing.T) {
+func TestPresetFlagsAppendedToNativeArgs(t *testing.T) {
 	r := &testRunner{}
 	s := testServer(t, r)
-	p := reviewProfile
+	p := reviewPreset
 	p.Flags = []string{"-c", "custom_setting=true"}
-	saveProfile(t, s.Home, p)
+	savePreset(t, s.Home, p)
 	callTest(t, s, "ExternalSubagent", map[string]any{"description": "x", "prompt": "x", "model": "review", "run_in_background": false})
 	r.mu.Lock()
 	args := strings.Join(r.plans[0].Args, " ")
 	r.mu.Unlock()
 	if !strings.Contains(args, "-c custom_setting=true") {
-		t.Fatal("profile flags not appended", args)
+		t.Fatal("preset flags not appended", args)
 	}
 }

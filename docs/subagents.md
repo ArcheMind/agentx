@@ -5,22 +5,22 @@ These are explicitly AgentX tools, not official Claude subagents. The selected
 native agent executes directly, without a Claude relay inference call. Claude chooses
 the combination and any orchestration; AgentX imposes no review/voting workflow.
 
-## Profiles: one collection for `ax` and MCP
+## Presets: one collection for `ax` and MCP
 
-A profile is a named, user-confirmed choice of agent, model and effort plus a
+A preset is a named, user-confirmed choice of agent, model and effort plus a
 description of when to use it. The same collection serves the bare `ax` home
 screen and the `ExternalSubagent` choices; there is no separate MCP list.
 
 ```text
-~/.agentx/profiles/
+~/.agentx/presets/
   deep-review/
-    PROFILE.md
+    PRESET.md
   daily/
-    PROFILE.md
+    PRESET.md
 ```
 
-The directory name is the profile name (an ASCII letter or digit, then letters,
-digits, `_` or `-`, at most 64 characters). `PROFILE.md` holds a front matter
+The directory name is the preset name (an ASCII letter or digit, then letters,
+digits, `_` or `-`, at most 64 characters). `PRESET.md` holds a front matter
 block and the description:
 
 ```markdown
@@ -34,7 +34,7 @@ Read-only research and code review. Not for large refactors.
 ```
 
 - `agent`: `claude`, `codex`, `gemini`, `opencode` or `pi`. Only `codex` and
-  `pi` can run as MCP `ExternalSubagent`. Other profiles appear in `ax` only;
+  `pi` can run as MCP `ExternalSubagent`. Other presets appear in `ax` only;
   the MCP catalog, tool index and `status` leave them out, and a call naming
   one is rejected as `interactive launch only`.
 - `model`: the exact native model ID, passed unchanged to `--model`. Pi needs
@@ -61,13 +61,13 @@ credentials.
 
 ### Create and manage from `ax`
 
-Running `ax` with no arguments shows **New session · Profiles** first, with
-`+ Create profile…` as its last entry, then recent sessions for the current
-workspace and globally. Enter on a profile starts a new native session in the
+Running `ax` with no arguments shows **New session · Presets** first, with
+`+ Create preset…` as its last entry, then recent sessions for the current
+workspace and globally. Enter on a preset starts a new native session in the
 current directory with exactly that agent, model and effort; Enter on a recent
 session continues it as before. `ax <agent>` direct launch is unchanged.
 
-`+ Create profile…` asks for the agent, the model (listed when the agent exposes
+`+ Create preset…` asks for the agent, the model (listed when the agent exposes
 a reliable list; otherwise the limitation is shown and the exact ID is typed),
 the effort, a name and a description, then shows a summary with
 `Save and start`, `Save`, `Back` (change any entry) and `Cancel`. Saving writes
@@ -75,37 +75,37 @@ the directory atomically and runs no inference; listing models only reads model
 metadata. Duplicate or invalid names are rejected with the other entries kept.
 Cancelling leaves nothing behind.
 
-Press `m` on the home screen to manage the highlighted profile (or choose one):
+Press `m` on the home screen to manage the highlighted preset (or choose one):
 View (configuration and availability status separately), Edit, Rename,
 Duplicate (an independent copy, no inheritance), Delete (asks for the named
-profile; never touches sessions, native agents, credentials or running work) and
+preset; never touches sessions, native agents, credentials or running work) and
 Start new session. Invalid entries are listed with their error and file
-location, can be repaired or deleted, and never hide other profiles or recent
-sessions. Hand edits to `PROFILE.md` appear on the next screen or MCP request.
+location, can be repaired or deleted, and never hide other presets or recent
+sessions. Hand edits to `PRESET.md` appear on the next screen or MCP request.
 
 If a native agent is missing at start, AgentX shows the reason and offers to edit
-the profile or go back; it never substitutes another agent, model or effort.
+the preset or go back; it never substitutes another agent, model or effort.
 Native rejection of a model or effort is the native agent's error.
 
-### Profiles and the AgentX server
+### Presets and the AgentX server
 
-The profiles collection (`~/.agentx/profiles/`) is the whole configuration. There is no AgentX switch or
+The presets collection (`~/.agentx/presets/`) is the whole configuration. There is no AgentX switch or
 permission file. Agents launched through `ax` (`ax claude`, `ax codex`) get the
 AgentX MCP server and the ExternalSubagent tools automatically. A plain `claude` started without `ax` gets them only if you register the server yourself: `claude mcp add --scope user agentx -- "$(command -v ax)" mcp serve`.
 
 ```sh
-ax profile list
-ax profile show codex-review
+ax preset list
+ax preset show codex-review
 ax claude
 ```
 
-- `ax profile list` shows the collection with static readiness, limits and
-  invalid entries; `ax profile show <name>` shows a single profile's detail.
+- `ax preset list` shows the collection with static readiness, limits and
+  invalid entries; `ax preset show <name>` shows a single preset's detail.
   Static checks do not verify login or model access; those are established per
   execution. No native-default model or automatic fallback is used.
 
 New work reads the current collection. Existing ExternalSubagents retain their
-original combination: an edited, renamed or deleted profile rejects
+original combination: an edited, renamed or deleted preset rejects
 continuation and queued work instead of rebinding it, and running work is never
 stopped or switched by a change.
 
@@ -116,14 +116,14 @@ stopped or switched by a change.
 ignores the file if it exists and never rewrites it; you can delete it. To
 migrate:
 
-- Move each former option into its own profile once (a former option with
-  several `efforts` becomes one profile per effort you use; a former
+- Move each former option into its own preset once (a former option with
+  several `efforts` becomes one preset per effort you use; a former
   `enabled: false` option is simply not moved):
 
   ```sh
-  mkdir -p ~/.agentx/profiles/codex-review ~/.agentx/profiles/pi-review
-  printf -- '---\nagent: codex\nmodel: gpt-5.6-luna\neffort: low\n---\n\nResearch and code review using native Codex.\n' > ~/.agentx/profiles/codex-review/PROFILE.md
-  printf -- '---\nagent: pi\nmodel: openai-codex/gpt-5.6-luna\n---\n\nIndependent research and code review using Pi.\n' > ~/.agentx/profiles/pi-review/PROFILE.md
+  mkdir -p ~/.agentx/presets/codex-review ~/.agentx/presets/pi-review
+  printf -- '---\nagent: codex\nmodel: gpt-5.6-luna\neffort: low\n---\n\nResearch and code review using native Codex.\n' > ~/.agentx/presets/codex-review/PRESET.md
+  printf -- '---\nagent: pi\nmodel: openai-codex/gpt-5.6-luna\n---\n\nIndependent research and code review using Pi.\n' > ~/.agentx/presets/pi-review/PRESET.md
   rm ~/.config/agentx/subagents.json
   ```
 
@@ -156,11 +156,11 @@ call picks one `mode`, fixed for that ExternalSubagent:
 - `yolo` bypasses the agent's permission checks and sandbox entirely. Use it
   only where the agent may do anything the user could.
 - Pi has no runtime permission boundary to bypass, so `yolo` is rejected for
-  Pi profiles. Pi always runs with its read-only tool allowlist.
+  Pi presets. Pi always runs with its read-only tool allowlist.
 - `isolation` is independent of `mode`: it only chooses where the agent works.
   See [Isolation](#isolation).
 
-The profile's `user_config` and `flags` are passed through unchanged. With
+The preset's `user_config` and `flags` are passed through unchanged. With
 `user_config: false` Codex runs with `--ignore-user-config --ignore-rules
 --disable hooks`, so MCP servers, hooks and `notify` programs from the user's
 `config.toml` are not loaded; user-config defaults such as model effort,
@@ -190,22 +190,22 @@ within the same `CODEX_HOME` or Pi agent directory is not detected.
 
 ## Claude discovery and background delivery
 
-MCP initialization includes a profile DATA catalog read from the collection:
+MCP initialization includes a preset DATA catalog read from the collection:
 names, execution agents, exact models, effort, the user's descriptions, whether
-each profile is callable as ExternalSubagent, its mode and auth behavior,
+each preset is callable as ExternalSubagent, its mode and auth behavior,
 static prerequisites, and invalid entries with their
 location. The same collection supplies the selectable `model` values (callable
-profiles only). `ExternalSubagent` tool metadata
-carries only a compact index (one line per profile: agent, model,
+presets only). `ExternalSubagent` tool metadata
+carries only a compact index (one line per preset: agent, model,
 effort, callability, description) because hosts truncate tool descriptions
 (Claude Code keeps 4096 characters); limits are only in
-the initialization data. With no profiles the catalog says so and that the user
+the initialization data. With no presets the catalog says so and that the user
 creates them in `ax`; none are generated. Static checks do not verify login or
-model access. Session listing reports created objects, not profiles.
-A call result notes when profiles changed since initialization.
+model access. Session listing reports created objects, not presets.
+A call result notes when presets changed since initialization.
 Initialization instructions are a connection snapshot. After saving, renaming or
-deleting a profile, `ax` says whether running AgentX MCP connections still show
-the old list and to reconnect (`/mcp`) or restart Claude. New calls always use the saved profile; a call
+deleting a preset, `ax` says whether running AgentX MCP connections still show
+the old list and to reconnect (`/mcp`) or restart Claude. New calls always use the saved preset; a call
 result notes when the collection changed since the connection initialized. A
 fresh `tools/list` reads the current collection.
 
@@ -250,9 +250,9 @@ listExternalSubagentSessions({})
 ```
 
 `description` and `prompt` are required strings. `model`
-is required and names one callable profile; there is no default profile. The profile
+is required and names one callable preset; there is no default preset. The preset
 fixes agent, model and effort; there is no `effort` parameter and no per-call
-override. Reports name the profile, agent, actual model and effort, and a
+override. Reports name the preset, agent, actual model and effort, and a
 `Native evidence:` line states the executed effort that the
 native records show for that turn. `isolation` accepts only `worktree` (see
 below); any other value is rejected before any work starts. `mode` is
@@ -379,15 +379,15 @@ the ability to delegate subtasks to other agents without user configuration.
   through the same `CODEX_HOME` / `PI_CODING_AGENT_DIR` mechanism. Credential
   environment variables are stripped as usual.
 - **`AX_SUBAGENT_HOME`.** If set in the parent process, it is propagated to
-  the nested MCP server so the same profile collection is used.
+  the nested MCP server so the same preset collection is used.
 
 ## Native execution and permission limits
 
 | Adapter | Boundary | Native continuation | Effort |
 | --- | --- | --- | --- |
-| Claude | `normal`: no permission flags (Claude's own settings); `yolo`: `--dangerously-skip-permissions`; native auth | Exact session UUID (`--resume`) | Profile effort via `--effort`, or native default |
-| Codex | `normal`: only `approval_policy="never"` (sandbox from the user's Codex config); `yolo`: `sandbox_mode="danger-full-access"` plus `approval_policy="never"`; `user_config: false` skips user config/rules/hooks; discovered `CODEX_HOME` | Exact thread UUID | Profile effort via `model_reasoning_effort`, or native default; each turn checked against `response.completed` telemetry; native errors remain errors |
-| Pi | Read-only only, `yolo` rejected: `--tools read,grep,find,ls --no-extensions --no-skills --no-prompt-templates --no-approve`, discovered `PI_CODING_AGENT_DIR`; with an explicit effort, only AgentX's observer extension is added (`--extension`) | Dedicated exact session path and pinned native ID | Profile effort via `--thinking` (`low`..`max`), or native default; each turn checked against the session thinking level and every provider request |
+| Claude | `normal`: no permission flags (Claude's own settings); `yolo`: `--dangerously-skip-permissions`; native auth | Exact session UUID (`--resume`) | Preset effort via `--effort`, or native default |
+| Codex | `normal`: only `approval_policy="never"` (sandbox from the user's Codex config); `yolo`: `sandbox_mode="danger-full-access"` plus `approval_policy="never"`; `user_config: false` skips user config/rules/hooks; discovered `CODEX_HOME` | Exact thread UUID | Preset effort via `model_reasoning_effort`, or native default; each turn checked against `response.completed` telemetry; native errors remain errors |
+| Pi | Read-only only, `yolo` rejected: `--tools read,grep,find,ls --no-extensions --no-skills --no-prompt-templates --no-approve`, discovered `PI_CODING_AGENT_DIR`; with an explicit effort, only AgentX's observer extension is added (`--extension`) | Dedicated exact session path and pinned native ID | Preset effort via `--thinking` (`low`..`max`), or native default; each turn checked against the session thinking level and every provider request |
 
 ### Effort verification
 
@@ -412,7 +412,7 @@ untrusted, and the ExternalSubagent cannot be continued; nothing is retried.
   `off` sends no effort). AgentX loads its own observer extension, which only
   appends an `agentx-provider-request` entry with the request's reasoning
   effort to the Pi session before each provider request. A turn passes only
-  if the session's thinking level equals the profile effort and every provider
+  if the session's thinking level equals the preset effort and every provider
   request of that turn carried exactly that effort. Models whose requests carry
   no reasoning effort field therefore fail explicit effort.
 
@@ -422,7 +422,7 @@ Verified per level on 2026-10-21 (Codex 0.163.0, Pi 0.84.4, see
 | Combination | Runs as | Rejected |
 | --- | --- | --- |
 | Codex `gpt-5.6-luna` | `none`, `low`, `medium`, `high`, `xhigh`, `max` | `minimal` (native 400), `ultra` (silently run as `max`; detected) |
-| Pi `openai-codex/gpt-5.6-luna` | `low`, `medium`, `high`, `xhigh`, `max` | `off`, `minimal` at profile validation (not sent as requested) |
+| Pi `openai-codex/gpt-5.6-luna` | `low`, `medium`, `high`, `xhigh`, `max` | `off`, `minimal` at preset validation (not sent as requested) |
 | Pi `deepseek/deepseek-flash` | not claimed | `max` clamped by Pi to `high`; detected |
 
 Other models are checked the same way at run time; no level is claimed for
@@ -434,7 +434,7 @@ and policies are not inherited from Claude. Other
 agents (including Gemini) remain available for ordinary AgentX launch/exec but
 are not delivered MCP combinations in this integration.
 
-Reports identify profile, execution agent, actual selected model, effort, mode, discovered auth, ExternalSubagent/task
+Reports identify preset, execution agent, actual selected model, effort, mode, discovered auth, ExternalSubagent/task
 IDs, status, failure reason, and continuation/cancellation instructions. Reports
 and channels are labelled untrusted ExternalSubagent content and never user
 authorization. Available native usage is shown as backend-reported external
@@ -453,7 +453,7 @@ make verify
 make test-mcp-race
 make smoke-mcp-management
 make smoke-mcp-contract
-make smoke-profiles
+make smoke-presets
 make smoke-mcp-live
 make smoke-mcp-channel
 make smoke-mcp-host-live
@@ -478,7 +478,7 @@ select the credential directories the live smokes pass to the server as
 `CODEX_HOME`/`PI_CODING_AGENT_DIR` (defaults: `~/.codex`, `~/.pi/agent`).
 
 `smoke-mcp-effort-live` runs every Codex level and Pi
-`low`..`max` on gpt-5.6-luna, a Pi profile that Pi clamps
+`low`..`max` on gpt-5.6-luna, a Pi preset that Pi clamps
 (`AX_MCP_PI_CLAMP_MODEL`, default `deepseek/deepseek-flash`, whose credential
 must be in the same Pi agent directory), and direct Pi `off`/`minimal` runs with the observer to show why those
 stay rejected. Evidence is written to `evidence.json` in the printed directory.
@@ -495,9 +495,9 @@ See [acceptance evidence](subagents-acceptance.md) for scenarios and limitations
 
 The four names above replace the earlier MCP `Agent`, `SendMessage`, `TaskStop`
 and `ListAgents` names. Old names are rejected; there are no compatibility aliases.
-The lifecycle is unchanged; `model` now names a profile
+The lifecycle is unchanged; `model` now names a preset
 from the shared collection and the per-call `effort` key was removed (see
-Profiles above). Reconnect Claude MCP after upgrading
+Presets above). Reconnect Claude MCP after upgrading
 to refresh tool metadata; update any explicit MCP tool permission rules to the
 new names. Native Claude tools retain their own names and behavior.
 
@@ -508,12 +508,12 @@ use the new names. No new live model run is implied by renaming a harness.
 `smoke-mcp-contract` checks the built binary over stdio without creating work;
 set `AX_MCP_BINARY` to verify an installed binary through the same Make target.
 
-`make smoke-mcp-profiles` records an isolated real Claude natural-language
-observation with randomized profile names. Override `MCP_PROFILE_PROMPT` for
+`make smoke-mcp-presets` records an isolated real Claude natural-language
+observation with randomized preset names. Override `MCP_PRESET_PROMPT` for
 reviewer-owned questions; default judgment records content without a prescribed
 answer. The host starts in the temporary directory, not the source repository
-(`MCP_PROFILE_CWD` can override it). Only ToolSearch and readonly external-session
+(`MCP_PRESET_CWD` can override it). Only ToolSearch and readonly external-session
 listing calls are accepted.
-`MCP_PROFILE_JUDGMENT=profiles` enables an optional fixed profile-answer diagnostic,
+`MCP_PRESET_JUDGMENT=presets` enables an optional fixed preset-answer diagnostic,
 not a substitute for semantic review. Evidence records host version/model,
 answer and tool calls; raw private logs stay in the printed temporary directory.

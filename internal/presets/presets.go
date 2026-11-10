@@ -1,4 +1,4 @@
-package profiles
+package presets
 
 import (
 	"bytes"
@@ -16,11 +16,12 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-const FileName = "PROFILE.md"
+const FileName = "PRESET.md"
+const legacyFileName = "PROFILE.md"
 
 var NamePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$`)
 
-var ErrExists = errors.New("a profile with this name already exists")
+var ErrExists = errors.New("a preset with this name already exists")
 
 const (
 	ModeNormal  = "normal"
@@ -30,7 +31,7 @@ const (
 
 var ValidModes = []string{ModeNormal, ModeYolo}
 
-type Profile struct {
+type Preset struct {
 	Name        string   `json:"name" yaml:"-"`
 	Description string   `json:"description" yaml:"-"`
 	Agent       string   `json:"agent" yaml:"agent"`
@@ -41,12 +42,12 @@ type Profile struct {
 	Flags       []string `json:"flags,omitempty" yaml:"flags,omitempty"`
 }
 
-func (p Profile) Equal(o Profile) bool {
+func (p Preset) Equal(o Preset) bool {
 	return p.Name == o.Name && p.Description == o.Description && p.Agent == o.Agent && p.Model == o.Model && p.Effort == o.Effort &&
 		p.Mode == o.Mode && boolEqual(p.UserConfig, o.UserConfig) && slices.Equal(p.Flags, o.Flags)
 }
 
-func (p Profile) EffectiveMode() string {
+func (p Preset) EffectiveMode() string {
 	if p.Mode != "" {
 		return p.Mode
 	}
@@ -63,7 +64,7 @@ func ModeLabel(mode string) string {
 	return mode
 }
 
-func (p Profile) EffectiveModeLabel() string {
+func (p Preset) EffectiveModeLabel() string {
 	effective := p.EffectiveMode()
 	if p.Mode == "" {
 		return effective + " (default)"
@@ -105,7 +106,32 @@ var AgentOrder = []string{"claude", "codex", "gemini", "opencode", "pi"}
 var piModel = regexp.MustCompile(`^[A-Za-z0-9_-]+/[^*?:[:space:]]+$`)
 
 func Dir(home string) string {
+	return filepath.Join(home, ".agentx", "presets")
+}
+
+func legacyDir(home string) string {
 	return filepath.Join(home, ".agentx", "profiles")
+}
+
+// effectiveDir returns Dir if it exists, otherwise legacyDir as fallback.
+func effectiveDir(home string) string {
+	if info, err := os.Stat(Dir(home)); err == nil && info.IsDir() {
+		return Dir(home)
+	}
+	if info, err := os.Stat(legacyDir(home)); err == nil && info.IsDir() {
+		return legacyDir(home)
+	}
+	return Dir(home)
+}
+
+func resolveFile(dir, name string) string {
+	for _, fn := range []string{FileName, legacyFileName} {
+		p := filepath.Join(dir, name, fn)
+		if _, err := os.Stat(p); err == nil {
+			return p
+		}
+	}
+	return filepath.Join(dir, name, FileName)
 }
 
 func Path(home, name string) string {
@@ -119,12 +145,12 @@ func ValidName(name string) error {
 	return nil
 }
 
-func (p Profile) Validate() error {
+func (p Preset) Validate() error {
 	if err := ValidName(p.Name); err != nil {
 		return err
 	}
 	if strings.TrimSpace(p.Description) == "" {
-		return fmt.Errorf("description is empty; write when to use this profile below the front matter")
+		return fmt.Errorf("description is empty; write when to use this preset below the front matter")
 	}
 	rule, ok := Agents[p.Agent]
 	if !ok {
@@ -156,8 +182,8 @@ func (p Profile) Validate() error {
 	return nil
 }
 
-// LaunchArgs maps the profile effort and mode to native interactive flags.
-func (p Profile) LaunchArgs() []string {
+// LaunchArgs maps the preset effort and mode to native interactive flags.
+func (p Preset) LaunchArgs() []string {
 	var args []string
 	if p.EffectiveMode() == ModeYolo {
 		switch p.Agent {
@@ -194,7 +220,7 @@ func EffortLabel(effort string) string {
 	return effort
 }
 
-func Encode(p Profile) ([]byte, error) {
+func Encode(p Preset) ([]byte, error) {
 	front, err := yaml.Marshal(p)
 	if err != nil {
 		return nil, err
@@ -208,17 +234,17 @@ func Encode(p Profile) ([]byte, error) {
 	return out.Bytes(), nil
 }
 
-func Parse(name string, data []byte) (Profile, error) {
+func Parse(name string, data []byte) (Preset, error) {
 	text := strings.ReplaceAll(string(data), "\r\n", "\n")
 	if !strings.HasPrefix(text, "---\n") {
-		return Profile{Name: name}, fmt.Errorf("%s must start with a --- front matter block holding agent, model and optional effort", FileName)
+		return Preset{Name: name}, fmt.Errorf("%s must start with a --- front matter block holding agent, model and optional effort", FileName)
 	}
 	rest := text[len("---\n"):]
 	end := strings.Index(rest, "\n---\n")
 	body := ""
 	if end < 0 {
 		if !strings.HasSuffix(rest, "\n---") {
-			return Profile{Name: name}, fmt.Errorf("%s front matter is not closed with ---", FileName)
+			return Preset{Name: name}, fmt.Errorf("%s front matter is not closed with ---", FileName)
 		}
 		end = len(rest) - len("\n---")
 	} else {
@@ -227,9 +253,9 @@ func Parse(name string, data []byte) (Profile, error) {
 	front := rest[:end]
 	var fields map[string]any
 	if err := yaml.Unmarshal([]byte(front), &fields); err != nil {
-		return Profile{Name: name}, fmt.Errorf("%s front matter is not valid YAML: %w", FileName, err)
+		return Preset{Name: name}, fmt.Errorf("%s front matter is not valid YAML: %w", FileName, err)
 	}
-	p := Profile{Name: name, Description: strings.TrimSpace(body)}
+	p := Preset{Name: name, Description: strings.TrimSpace(body)}
 	keys := make([]string, 0, len(fields))
 	for key := range fields {
 		keys = append(keys, key)
@@ -244,7 +270,7 @@ func Parse(name string, data []byte) (Profile, error) {
 			}
 		case "user_config", "flags":
 		case "name":
-			return p, fmt.Errorf("%s must not set name; the directory name is the profile name", FileName)
+			return p, fmt.Errorf("%s must not set name; the directory name is the preset name", FileName)
 		case "description":
 			return p, fmt.Errorf("%s must not set description in front matter; write it below the front matter", FileName)
 		default:
@@ -282,59 +308,61 @@ func Parse(name string, data []byte) (Profile, error) {
 	return p, p.Validate()
 }
 
-func Read(home, name string) (Profile, error) {
+func Read(home, name string) (Preset, error) {
 	if err := entryName(name); err != nil {
-		return Profile{Name: name}, err
+		return Preset{Name: name}, err
 	}
-	data, err := os.ReadFile(Path(home, name))
+	dir := effectiveDir(home)
+	data, err := os.ReadFile(resolveFile(dir, name))
 	if os.IsNotExist(err) {
-		if info, statErr := os.Stat(filepath.Join(Dir(home), name)); statErr == nil && info.IsDir() {
-			return Profile{Name: name}, fmt.Errorf("%s is missing", FileName)
+		if info, statErr := os.Stat(filepath.Join(dir, name)); statErr == nil && info.IsDir() {
+			return Preset{Name: name}, fmt.Errorf("%s is missing", FileName)
 		}
-		return Profile{Name: name}, fmt.Errorf("profile %q does not exist in %s", name, Dir(home))
+		return Preset{Name: name}, fmt.Errorf("preset %q does not exist in %s", name, dir)
 	}
 	if err != nil {
-		return Profile{Name: name}, err
+		return Preset{Name: name}, err
 	}
 	return Parse(name, data)
 }
 
-// Load returns valid profiles and per-entry problems so one broken entry never hides the others.
-func Load(home string) ([]Profile, []Problem, error) {
-	entries, err := os.ReadDir(Dir(home))
+// Load returns valid presets and per-entry problems so one broken entry never hides the others.
+func Load(home string) ([]Preset, []Problem, error) {
+	dir := effectiveDir(home)
+	entries, err := os.ReadDir(dir)
 	if os.IsNotExist(err) {
 		return nil, nil, nil
 	}
 	if err != nil {
-		return nil, nil, fmt.Errorf("read profiles directory %s: %w", Dir(home), err)
+		return nil, nil, fmt.Errorf("read presets directory %s: %w", dir, err)
 	}
-	var valid []Profile
+	var valid []Preset
 	var problems []Problem
 	for _, entry := range entries {
 		name := entry.Name()
 		if strings.HasPrefix(name, ".") {
 			continue
 		}
-		path := filepath.Join(Dir(home), name)
+		path := filepath.Join(dir, name)
 		if !entry.IsDir() {
-			problems = append(problems, Problem{Name: name, Path: path, Err: "not a profile directory; each profile is a directory containing " + FileName})
+			problems = append(problems, Problem{Name: name, Path: path, Err: "not a preset directory; each preset is a directory containing " + FileName})
 			continue
 		}
 		if err := ValidName(name); err != nil {
 			problems = append(problems, Problem{Name: name, Path: path, Err: "directory " + err.Error()})
 			continue
 		}
-		profile, err := Read(home, name)
+		preset, err := Read(home, name)
 		if err != nil {
-			problems = append(problems, Problem{Name: name, Path: Path(home, name), Err: err.Error()})
+			problems = append(problems, Problem{Name: name, Path: resolveFile(dir, name), Err: err.Error()})
 			continue
 		}
-		valid = append(valid, profile)
+		valid = append(valid, preset)
 	}
 	return valid, problems, nil
 }
 
-func Create(home string, p Profile) error {
+func Create(home string, p Preset) error {
 	if err := p.Validate(); err != nil {
 		return err
 	}
@@ -347,6 +375,9 @@ func Create(home string, p Profile) error {
 	}
 	target := filepath.Join(Dir(home), p.Name)
 	if _, err := os.Lstat(target); err == nil {
+		return ErrExists
+	}
+	if _, err := os.Lstat(filepath.Join(legacyDir(home), p.Name)); err == nil {
 		return ErrExists
 	}
 	staging, err := os.MkdirTemp(Dir(home), ".staging-")
@@ -369,8 +400,8 @@ func Create(home string, p Profile) error {
 	return nil
 }
 
-// Update replaces the profile file in place; previous valid content survives any failure.
-func Update(home string, p Profile) error {
+// Update replaces the preset file in place; previous valid content survives any failure.
+func Update(home string, p Preset) error {
 	if err := p.Validate(); err != nil {
 		return err
 	}
@@ -378,11 +409,12 @@ func Update(home string, p Profile) error {
 	if err != nil {
 		return err
 	}
-	dir := filepath.Join(Dir(home), p.Name)
+	eDir := effectiveDir(home)
+	dir := filepath.Join(eDir, p.Name)
 	if info, err := os.Stat(dir); err != nil || !info.IsDir() {
-		return fmt.Errorf("profile %q does not exist in %s", p.Name, Dir(home))
+		return fmt.Errorf("preset %q does not exist in %s", p.Name, eDir)
 	}
-	file, err := os.CreateTemp(dir, ".PROFILE-*")
+	file, err := os.CreateTemp(dir, ".PRESET-*")
 	if err != nil {
 		return err
 	}
@@ -394,7 +426,7 @@ func Update(home string, p Profile) error {
 	if err := file.Close(); err != nil {
 		return err
 	}
-	return os.Rename(file.Name(), Path(home, p.Name))
+	return os.Rename(file.Name(), resolveFile(eDir, p.Name))
 }
 
 func Rename(home, from, to string) error {
@@ -407,16 +439,17 @@ func Rename(home, from, to string) error {
 	if from == to {
 		return nil
 	}
-	source := filepath.Join(Dir(home), from)
+	eDir := effectiveDir(home)
+	source := filepath.Join(eDir, from)
 	if _, err := os.Stat(source); err != nil {
-		return fmt.Errorf("profile %q does not exist in %s", from, Dir(home))
+		return fmt.Errorf("preset %q does not exist in %s", from, eDir)
 	}
-	target := filepath.Join(Dir(home), to)
+	target := filepath.Join(eDir, to)
 	if _, err := os.Lstat(target); err == nil && !strings.EqualFold(from, to) {
 		return ErrExists
 	}
 	// Two-step rename lets case-only renames work on case-insensitive filesystems.
-	temp := filepath.Join(Dir(home), ".rename-"+randomSuffix())
+	temp := filepath.Join(eDir, ".rename-"+randomSuffix())
 	if err := os.Rename(source, temp); err != nil {
 		return err
 	}
@@ -435,16 +468,17 @@ func Delete(home, name string) error {
 	if err := entryName(name); err != nil {
 		return err
 	}
-	path := filepath.Join(Dir(home), name)
+	eDir := effectiveDir(home)
+	path := filepath.Join(eDir, name)
 	if _, err := os.Lstat(path); err != nil {
-		return fmt.Errorf("profile %q does not exist in %s", name, Dir(home))
+		return fmt.Errorf("preset %q does not exist in %s", name, eDir)
 	}
 	return os.RemoveAll(path)
 }
 
 func entryName(name string) error {
 	if name == "" || name == "." || name == ".." || strings.HasPrefix(name, ".") || filepath.Base(name) != name || strings.ContainsAny(name, `/\`) {
-		return fmt.Errorf("invalid profile entry %q", name)
+		return fmt.Errorf("invalid preset entry %q", name)
 	}
 	return nil
 }

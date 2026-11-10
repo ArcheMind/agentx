@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ArcheMind/agentx/internal/profiles"
+	"github.com/ArcheMind/agentx/internal/presets"
 	"github.com/ArcheMind/agentx/internal/sessions"
 	"golang.org/x/term"
 )
@@ -50,7 +50,7 @@ const (
 	contentRowHeading
 	contentRowEmpty
 	contentRowSession
-	contentRowProfile
+	contentRowPreset
 	contentRowCreate
 	contentRowProblem
 )
@@ -318,8 +318,8 @@ func styledMarker(marker string, row contentRow, color bool) string {
 	if marker == "  " {
 		return marker
 	}
-	if row.kind == contentRowProfile || row.kind == contentRowCreate || row.kind == contentRowProblem {
-		return colorize(color, profileAccent+ansiBold, marker)
+	if row.kind == contentRowPreset || row.kind == contentRowCreate || row.kind == contentRowProblem {
+		return colorize(color, presetAccent+ansiBold, marker)
 	}
 	style := agentColor(row.agent)
 	if style == "" {
@@ -334,15 +334,15 @@ func styledContentRow(row contentRow, selected, color bool) string {
 		return colorize(color, ansiBold, row.text)
 	case contentRowEmpty:
 		return colorize(color, ansiDim, row.text)
-	case contentRowProfile:
+	case contentRowPreset:
 		name := row.title
 		if selected {
-			name = colorize(color, profileAccent+ansiBold, name)
+			name = colorize(color, presetAccent+ansiBold, name)
 		}
-		combo := colorize(color, agentColor(row.agent), profiles.AgentName(row.agent)) + colorize(color, ansiDim, row.updated)
+		combo := colorize(color, agentColor(row.agent), presets.AgentName(row.agent)) + colorize(color, ansiDim, row.updated)
 		return name + "  " + combo + "  " + row.text
 	case contentRowCreate:
-		style := profileAccent
+		style := presetAccent
 		if selected {
 			style += ansiBold
 		}

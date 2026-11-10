@@ -83,7 +83,7 @@ All notable changes to AgentX are documented here. The format follows [Keep a Ch
 
 - ExternalSubagent `write` and `writable_roots` parameters, the deprecated native `mode` values (`acceptEdits`, `auto`, `bypassPermissions`, `default`, `dontAsk`, `plan`), and the AgentX-injected Codex `read-only`/`workspace-write` sandbox with its network and tmpdir restrictions. No compatibility aliases.
 - `make smoke-mcp-policy-live`, which tested the removed write scope.
-- Profile `sandbox` field and its `ax` profile editor entry: it only tuned the removed write-mode Codex sandbox. Profiles that still set `sandbox` are rejected as having an unknown field; delete the line.
+- Preset `sandbox` field and its `ax` preset editor entry: it only tuned the removed write-mode Codex sandbox. Presets that still set `sandbox` are rejected as having an unknown field; delete the line.
 
 ## [0.7.0] - 2026-10-25
 
@@ -115,14 +115,14 @@ All notable changes to AgentX are documented here. The format follows [Keep a Ch
 
 ### Changed
 
-- `ax help` lists each command once and ends with examples for the three main uses: one list of every agent's work, continuing a session in another agent, and calling other agents' profiles from Claude.
+- `ax help` lists each command once and ends with examples for the three main uses: one list of every agent's work, continuing a session in another agent, and calling other agents' presets from Claude.
 
 ## [0.6.0] - 2026-10-25
 
 ### Changed
 
 - `ax preset serve` is now `ax mcp serve`; `ax mcp` gains `serve` beside `list` and `show`.
-- `preset` is now `profile`: `ax profile list|show`, `~/.agentx/profiles/<name>/PROFILE.md`, and the matching interactive home, MCP instructions, and tool descriptions.
+- `preset` is now `preset`: `ax preset list|show`, `~/.agentx/presets/<name>/PRESET.md`, and the matching interactive home, MCP instructions, and tool descriptions.
 - `provider` is now `agent` in `--source <agent>`, the `session list` output and `--sort agent`, the exported filename `<agent>-<title>-<id8>.json`, and the hook `__dispatch --agent` flag.
 - The unified transcript field `provider` is now `agent` (agentx-protocol `go/v0.2.0`, module `github.com/ArcheMind/agentx-protocol/go`); transcripts exported by earlier versions no longer import.
 - `ax list` is now `ax status`.
@@ -258,7 +258,7 @@ All notable changes to AgentX are documented here. The format follows [Keep a Ch
 ### Added
 
 - DeepSeek Harness model discovery, credential-status reporting, and native Web UI credential setup entrypoint.
-- Documentation for DeepSeek Harness profiles and native configuration ownership.
+- Documentation for DeepSeek Harness presets and native configuration ownership.
 
 ## [0.1.0] - 2026-09-10
 

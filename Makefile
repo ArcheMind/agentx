@@ -1,7 +1,7 @@
 .PHONY: fmt check test test-subagents smoke-subagents smoke-subagents-live audit build install smoke smoke-live smoke-clean smoke-hooks-live smoke-skills-clean smoke-skills-live verify clean
 .PHONY: smoke-mcp-management smoke-mcp-live smoke-mcp-channel smoke-mcp-host-live verify-mcp-host-evidence test-mcp-race test-mcp-syntax
 .PHONY: smoke-mcp-contract smoke-transcript-fidelity smoke-transcript-cross smoke-continue-live
-.PHONY: smoke-mcp-profiles smoke-profiles smoke-mcp-effort-live smoke-mcp-isolation-live
+.PHONY: smoke-mcp-presets smoke-presets smoke-mcp-effort-live smoke-mcp-isolation-live
 
 # Schema validation reuses the protocol module's ajv; empty when the module dir is unresolvable, and the smoke reports it skipped.
 AGENTX_PROTOCOL_DIR ?= $(shell go list -m -f '{{.Dir}}' github.com/ArcheMind/agentx-protocol 2>/dev/null)
@@ -51,11 +51,11 @@ smoke-mcp-management: build
 smoke-mcp-contract: build
 	node test/smoke/mcp-contract.mjs "$(CURDIR)/bin/ax"
 
-smoke-mcp-profiles: build
-	node test/smoke/mcp-profiles.mjs "$(CURDIR)/bin/ax"
+smoke-mcp-presets: build
+	node test/smoke/mcp-presets.mjs "$(CURDIR)/bin/ax"
 
-smoke-profiles: build
-	node test/smoke/profiles.mjs "$(CURDIR)/bin/ax"
+smoke-presets: build
+	node test/smoke/presets.mjs "$(CURDIR)/bin/ax"
 
 smoke-transcript-fidelity: build
 	node test/smoke/transcript-fidelity.mjs "$(CURDIR)/bin/ax" "$(AGENTX_PROTOCOL_DIR)"
@@ -76,7 +76,7 @@ test-mcp-race:
 	go test -race ./internal/subagents ./internal/app
 
 test-mcp-syntax:
-	for file in test/smoke/mcp-*.mjs test/smoke/profiles.mjs; do node --check "$$file" || exit 1; done
+	for file in test/smoke/mcp-*.mjs test/smoke/presets.mjs; do node --check "$$file" || exit 1; done
 	python3 -c 'import ast; from pathlib import Path; ast.parse(Path("test/smoke/pty-host.py").read_text())'
 
 smoke: build

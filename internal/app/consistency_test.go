@@ -17,7 +17,7 @@ func TestCrossLayerConsistency(t *testing.T) {
 	}
 	var help bytes.Buffer
 	App{Stdout: &help}.printHelp()
-	for _, entrypoint := range []string{"$ ax codex", "Start from a profile or resume recent work:"} {
+	for _, entrypoint := range []string{"$ ax codex", "Start from a preset or resume recent work:"} {
 		if !strings.Contains(string(readme), entrypoint) {
 			t.Errorf("README does not present daily entry point %q", entrypoint)
 		}
@@ -30,7 +30,7 @@ func TestCrossLayerConsistency(t *testing.T) {
 		"skill <list|show|install>",
 		"hook list",
 		"mcp <list|show|serve>",
-		"profile <list|show>",
+		"preset <list|show>",
 	} {
 		if !strings.Contains(help.String(), command) {
 			t.Errorf("help does not advertise %q", command)

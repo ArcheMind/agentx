@@ -115,8 +115,8 @@ func (a App) Run(ctx context.Context, args []string) error {
 		return a.skill(ctx, args[1:])
 	case "hook":
 		return a.hook(ctx, args[1:])
-	case "profile":
-		return a.profile(ctx, args[1:])
+	case "preset":
+		return a.preset(ctx, args[1:])
 	case "convert":
 		return a.convert(args[1:])
 	default:
@@ -1018,7 +1018,7 @@ Usage:
   ax [--json|--yaml] skill <list|show|install> [args...]
   ax [--json|--yaml] hook list
   ax [--json|--yaml] mcp <list|show|serve> [args...]
-  ax [--json|--yaml] profile <list|show> [args...]
+  ax [--json|--yaml] preset <list|show> [args...]
 
   ax agent exec <codex|pi|gemini> [--model <model>] [--resume <session-id>] [--cwd <path>] [--dry-run] < prompt.txt
   ax --json session continue <claude|codex|pi> [--model <model>] [--mcp-config <file>] [--mode yolo] < transcript.json
@@ -1032,15 +1032,15 @@ Examples:
   # Continue a session in another agent: select it, press Enter, pick the agent
   ax
 
-  # From Codex, hand work to a Claude Code subagent (a profile with agent: claude)
+  # From Codex, hand work to a Claude Code subagent (a preset with agent: claude)
   ax codex
-  > Ask my claude-review profile to review this change.
+  > Ask my claude-review preset to review this change.
 
 Running ax without arguments opens the interactive home: start a new session
-with a profile, create or manage profiles (m), continue a recent session, or
+with a preset, create or manage presets (m), continue a recent session, or
 export one as a unified transcript file (e). ax --resume <transcript-file>
 resumes an exported transcript interactively.
-Profiles live in ~/.agentx/profiles/<name>/PROFILE.md and are shared with MCP
+Presets live in ~/.agentx/presets/<name>/PRESET.md and are shared with MCP
 ExternalSubagents. The ax <agent> shortcut launches an installed agent directly.
 
 Agents: claude, codex, dsh, gemini, opencode, pi
