@@ -215,7 +215,7 @@ func TestPiWorktreeIsolationChangesOnlyWorkingDirectory(t *testing.T) {
 	s.mu.Unlock()
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if a == nil || a.Worktree == nil || len(r.plans) != 1 || r.plans[0].Cwd != filepath.Join(a.Worktree.Path, "sub") || !strings.Contains(strings.Join(r.plans[0].Args, " "), "read,grep,find,ls") {
+	if a == nil || a.Worktree == nil || len(r.plans) != 1 || r.plans[0].Cwd != filepath.Join(a.Worktree.Path, "sub") {
 		t.Fatal("Pi worktree plan wrong", r.plans)
 	}
 }

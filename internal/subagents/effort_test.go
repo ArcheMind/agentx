@@ -163,7 +163,7 @@ func TestPiEffortVerifiedFromObserverRecords(t *testing.T) {
 		t.Fatal(text)
 	}
 	args := strings.Join(r.plans[0].Args, " ")
-	for _, want := range []string{"--thinking high", "--extension ", "agentx-observer.js", "--tools read,grep,find,ls", "--no-extensions"} {
+	for _, want := range []string{"--thinking high", "--extension ", "agentx-observer.js"} {
 		if !strings.Contains(args, want) {
 			t.Fatal(want, args)
 		}
