@@ -8,6 +8,11 @@ require (
 )
 
 require (
+	github.com/clipperhouse/uax29/v2 v2.2.0 // indirect
+	github.com/mattn/go-runewidth v0.0.31 // indirect
+)
+
+require (
 	github.com/ArcheMind/agentx-protocol/go v0.4.0
 	github.com/pelletier/go-toml/v2 v2.2.4
 	github.com/tailscale/hujson v0.0.0-20260302212456-ecc657c15afd

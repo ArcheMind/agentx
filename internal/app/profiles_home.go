@@ -11,8 +11,11 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/ArcheMind/agentx/internal/drivers"
+	"github.com/mattn/go-runewidth"
+	"golang.org/x/term"
 	"github.com/ArcheMind/agentx/internal/profiles"
 	"github.com/ArcheMind/agentx/internal/runtime"
 	"github.com/ArcheMind/agentx/internal/sessions"
@@ -825,6 +828,14 @@ func (a App) askFlags(reader *bufio.Reader, draft *profileDraft) error {
 
 func (a App) readLine(reader *bufio.Reader, label string) (string, error) {
 	fmt.Fprint(a.Stdout, label)
+	file, isFile := a.Stdin.(*os.File)
+	if !isFile || !term.IsTerminal(int(file.Fd())) {
+		return readLineCooked(reader)
+	}
+	return a.readLineRaw(reader)
+}
+
+func readLineCooked(reader *bufio.Reader) (string, error) {
 	value, err := reader.ReadString('\n')
 	if err != nil && !errors.Is(err, io.EOF) {
 		return "", fmt.Errorf("read interactive input: %w", err)
@@ -833,6 +844,92 @@ func (a App) readLine(reader *bufio.Reader, label string) (string, error) {
 		return "", errors.New("interactive input closed")
 	}
 	return strings.TrimSpace(value), nil
+}
+
+func (a App) readLineRaw(reader *bufio.Reader) (string, error) {
+	restore, err := makeRaw(a.Stdin)
+	if err != nil {
+		return readLineCooked(reader)
+	}
+	defer restore()
+
+	var line []rune
+	for {
+		b, err := reader.ReadByte()
+		if err != nil {
+			fmt.Fprint(a.Stdout, "\r\n")
+			if errors.Is(err, io.EOF) && len(line) > 0 {
+				return string(line), nil
+			}
+			return "", fmt.Errorf("read interactive input: %w", err)
+		}
+		switch {
+		case b == '\r' || b == '\n':
+			fmt.Fprint(a.Stdout, "\r\n")
+			return string(line), nil
+		case b == 0x03, b == 0x04:
+			fmt.Fprint(a.Stdout, "\r\n")
+			return "", errors.New("interactive input closed")
+		case b == 0x15:
+			w := displayWidth(line)
+			fmt.Fprint(a.Stdout, strings.Repeat("\b", w)+strings.Repeat(" ", w)+strings.Repeat("\b", w))
+			line = nil
+		case b == 0x17:
+			trimmed, removed := deleteWord(line)
+			w := displayWidth(removed)
+			fmt.Fprint(a.Stdout, strings.Repeat("\b", w)+strings.Repeat(" ", w)+strings.Repeat("\b", w))
+			line = trimmed
+		case b == 0x7F || b == 0x08:
+			if len(line) > 0 {
+				w := runewidth.RuneWidth(line[len(line)-1])
+				line = line[:len(line)-1]
+				fmt.Fprint(a.Stdout, strings.Repeat("\b", w)+strings.Repeat(" ", w)+strings.Repeat("\b", w))
+			}
+		case b == 0x1B:
+			if reader.Buffered() > 0 {
+				if next, err := reader.ReadByte(); err == nil && next == '[' {
+					for {
+						c, err := reader.ReadByte()
+						if err != nil || (c >= 0x40 && c <= 0x7E) {
+							break
+						}
+					}
+				}
+			}
+		case b < 0x20:
+			// ignore other control characters
+		default:
+			_ = reader.UnreadByte()
+			r, _, err := reader.ReadRune()
+			if err != nil {
+				continue
+			}
+			if r == unicode.ReplacementChar {
+				continue
+			}
+			line = append(line, r)
+			fmt.Fprint(a.Stdout, string(r))
+		}
+	}
+}
+
+func displayWidth(runes []rune) int {
+	w := 0
+	for _, r := range runes {
+		w += runewidth.RuneWidth(r)
+	}
+	return w
+}
+
+func deleteWord(line []rune) (remaining, removed []rune) {
+	i := len(line)
+	for i > 0 && line[i-1] == ' ' {
+		i--
+	}
+	for i > 0 && line[i-1] != ' ' {
+		i--
+	}
+	return line[:i], line[i:]
 }
 
 func (a App) printProfileSummary(draft profileDraft) {
