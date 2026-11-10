@@ -184,12 +184,12 @@ One JSON object per LF-terminated line. A basic run:
 | `message_start` | `message` | message started |
 | `message_update` | `usage`, `assistantMessageEvent` | delta-only assistant content update |
 | `message_end` | `message` | authoritative final message |
-| `tool_execution_start` / `_update` / `_end` | `toolCallId`, `toolName`, `args`, `partialResult` / `result`, `isError`, `durationMs` | tool lifecycle |
+| `tool_execution_start` / `_update` / `_end` | `toolCallId`, `toolName`, `args`, `partialResult` / `result`, `isError`, `durationMs` | tool lifecycle; `tool_execution_end.result` is an object `AgentToolResult { content: (TextContent | ImageContent)[], details }` (`@earendil-works/pi-agent-core/dist/types.d.ts:485-492`, AgentToolResult at `:370-374`) |
 | `queue_update` | `steering`, `followUp` | pending queues changed |
 | `entry_appended` | `entry` | extension appended a session entry |
 | `session_info_changed` | `name` | display name changed |
 | `thinking_level_changed` | `level` | thinking level changed |
-| `compaction_start` / `compaction_end` | `reason` / `result`, `aborted`, `willRetry`, `errorMessage` | compaction |
+| `compaction_start` / `compaction_end` | `reason` / `result`, `aborted`, `willRetry`, `errorMessage` | compaction; `compaction_end.result` is `CompactionResult | undefined` (object) (`@earendil-works/pi-coding-agent/dist/core/agent-session.d.ts:73-76`) |
 | `auto_retry_start` / `auto_retry_end` | `attempt`, `maxAttempts`, `delayMs`, `errorMessage` / `success`, `finalError` | assistant-turn retry |
 | `summarization_retry_*` | `attempt`, `source`, `reason`, ... | compaction/branch-summary retry |
 
@@ -204,3 +204,6 @@ AgentX depends only on:
   Other roles are ignored without decoding `content`.
 - `agent_settled` — completion signal; `aborted=true` is a failure.
   `agent_end` is not final.
+
+Events AgentX does not depend on may carry fields of any shape; decoding must
+not fail on them.

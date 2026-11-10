@@ -740,7 +740,9 @@ func TestPiStreamSystemMessageAndSettlement(t *testing.T) {
 	head := `{"type":"session","id":"pi-native"}` + "\n" +
 		`{"type":"message_end","message":{"role":"system","content":"You are pi","sections":{"preamble":"You are pi"},"toolsAdded":[{"name":"read"}]}}` + "\n" +
 		`{"type":"message_end","message":{"role":"user","content":"task"}}` + "\n" +
+		`{"type":"tool_execution_end","toolCallId":"call_1","toolName":"read","result":{"content":[{"type":"text","text":"file body"}],"details":{"truncated":false}},"isError":false}` + "\n" +
 		`{"type":"message_end","message":{"role":"assistant","provider":"provider","model":"model","stopReason":"stop","content":[{"type":"text","text":"report"}]}}` + "\n" +
+		`{"type":"compaction_end","reason":"threshold","result":{"summary":"earlier work","firstKeptEntryId":"e1","tokensBefore":1200,"details":{}},"aborted":false,"willRetry":false}` + "\n" +
 		`{"type":"agent_end"}` + "\n"
 	text, _, err := parseOutput(a, head+`{"type":"agent_settled","aborted":false}`+"\n")
 	if err != nil || text != "report" {

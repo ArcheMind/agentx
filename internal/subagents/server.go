@@ -707,7 +707,6 @@ func parseOutput(a *ExternalSubagentState, output string) (string, any, error) {
 			Thread  string `json:"thread_id"`
 			ID      string `json:"id"`
 			Session string `json:"session_id"`
-			Result  string `json:"result"`
 			IsError bool   `json:"is_error"`
 			Item    struct {
 				Type string `json:"type"`
@@ -740,14 +739,20 @@ func parseOutput(a *ExternalSubagentState, output string) (string, any, error) {
 					a.Session = event.Session
 					sessionSeen = true
 				}
+				var result struct {
+					Result string `json:"result"`
+				}
+				if err := json.Unmarshal(scan.Bytes(), &result); err != nil {
+					return "", nil, fmt.Errorf("invalid %s event: %w", a.Option.Agent, err)
+				}
 				usage = event.Usage
 				if event.IsError {
-					failure = event.Result
+					failure = result.Result
 					if failure == "" {
 						failure = event.Subtype
 					}
 				} else {
-					text = event.Result
+					text = result.Result
 					completed = true
 				}
 			}

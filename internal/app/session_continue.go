@@ -396,7 +396,6 @@ func parseContinueStream(agentID, model, expectSession, output string) (continue
 			Thread  string          `json:"thread_id"`
 			ID      string          `json:"id"`
 			Session string          `json:"session_id"`
-			Result  string          `json:"result"`
 			IsError bool            `json:"is_error"`
 			Error   json.RawMessage `json:"error"`
 			Message json.RawMessage `json:"message"`
@@ -419,7 +418,13 @@ func parseContinueStream(agentID, model, expectSession, output string) (continue
 					run.sessionID = event.Session
 				}
 				if event.IsError {
-					run.failure = event.Result
+					var result struct {
+						Result string `json:"result"`
+					}
+					if err := json.Unmarshal([]byte(line), &result); err != nil {
+						return run, fmt.Errorf("invalid %s event: %w", agentID, err)
+					}
+					run.failure = result.Result
 					if run.failure == "" {
 						run.failure = event.Subtype
 					}
