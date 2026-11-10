@@ -434,7 +434,7 @@ func TestUnconfirmedCancellationDoesNotBecomeCancelled(t *testing.T) {
 func TestExternalSubagentToolNamesAndUnchangedContract(t *testing.T) {
 	s := testServer(t, &testRunner{})
 	tools := s.tools().(map[string]any)["tools"].([]any)
-	want := []string{"StartExternalSubagent", "SendExternalSubagentMessage", "StopExternalSubagent", "ListExternalSubagentSessions", "ListAvailableExternalSubagents"}
+	want := []string{"StartExternalSubagent", "SendExternalSubagentMessage", "StopExternalSubagent", "ListExternalSubagentSessions"}
 	if len(tools) != len(want) {
 		t.Fatal(tools)
 	}

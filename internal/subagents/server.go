@@ -225,7 +225,6 @@ func (s *Server) tools() any {
 		tool("SendExternalSubagentMessage", "Send a text task to an AgentX ExternalSubagent by exact name or ID. Accepted means queued, not completed. Busy ExternalSubagents process messages in order in the same native context. Completed ExternalSubagents resume. The original profile must still exist unchanged; the mode and isolation of the ExternalSubagent are reused. Summary is display-only.", map[string]any{"to": str("AgentX name or ID"), "message": str("Text task"), "summary": str("Optional display summary")}, "to", "message"),
 		tool("StopExternalSubagent", "Cancel running and queued work for one AgentX ExternalSubagent by name or ID. Waits for native process termination before confirming. Works while disabled. Already ended is not cancellation.", map[string]any{"task_id": str("AgentX name or ID")}, "task_id"),
 		tool("ListExternalSubagentSessions", "List ExternalSubagent sessions already created in this AgentX MCP connection, with status, report and pending messages. No other users, connections or Claude native subagents.", map[string]any{}),
-		tool("ListAvailableExternalSubagents", "List ExternalSubagent profiles that can be started, with agent, model, effort, mode and access limits.", map[string]any{}),
 	}}
 }
 
@@ -453,10 +452,6 @@ func (s *Server) call(name string, raw json.RawMessage) (string, error) {
 			return "No AgentX ExternalSubagents in MCP connection " + s.connectionID + ".", nil
 		}
 		return strings.Join(reports, "\n\n"), nil
-	case "ListAvailableExternalSubagents":
-		s.mu.Unlock()
-		catalog, _ := ProfileCatalog(s.Home)
-		return catalog, nil
 	default:
 		s.mu.Unlock()
 		return "", fmt.Errorf("unknown tool %q", name)

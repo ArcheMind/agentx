@@ -27,7 +27,7 @@ func TestClaudeLaunchAttachesAgentXWithoutRegistration(t *testing.T) {
 	if err := json.Unmarshal(output.Bytes(), &plan); err != nil {
 		t.Fatal(err)
 	}
-	if len(plan.Args) != 7 || plan.Args[0] != "--mcp-config" || !strings.Contains(plan.Args[1], `"agentx"`) || plan.Args[2] != "--allowedTools" || plan.Args[3] != "mcp__agentx__ExternalSubagent" {
+	if len(plan.Args) != 2 || plan.Args[0] != "--mcp-config" || !strings.Contains(plan.Args[1], `"agentx"`) {
 		t.Fatalf("plan = %#v", plan)
 	}
 	if err := app.Run(context.Background(), []string{"codex", "--subagents", "--dry-run"}); err == nil {

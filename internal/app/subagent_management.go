@@ -126,7 +126,6 @@ func (a App) injectClaudeAgentX(request *runtime.RunRequest) error {
 	entry, _ := json.Marshal(map[string]any{"mcpServers": map[string]any{"agentx": map[string]any{"type": "stdio", "command": executable, "args": []string{"mcp", "serve"}}}})
 	request.PassthroughArgs = append([]string{
 		"--mcp-config", string(entry),
-		"--allowedTools", "mcp__agentx__ExternalSubagent", "mcp__agentx__SendExternalSubagentMessage", "mcp__agentx__StopExternalSubagent", "mcp__agentx__listExternalSubagentSessions",
 	}, request.PassthroughArgs...)
 	return nil
 }
