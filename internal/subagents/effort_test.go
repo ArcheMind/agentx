@@ -141,7 +141,7 @@ func (r *piRunner) Execute(ctx context.Context, p runtime.CommandPlan, o runtime
 		entry, _ := json.Marshal(map[string]any{"type": "custom", "customType": piObserverEntry, "data": data})
 		file.Write(append(entry, '\n'))
 	}
-	return runtime.CommandResult{Stdout: "{\"type\":\"session\",\"id\":\"pi-native\"}\n{\"type\":\"message_end\",\"message\":{\"role\":\"assistant\",\"provider\":\"provider\",\"model\":\"model\",\"content\":[{\"type\":\"text\",\"text\":\"report\"}]}}\n{\"type\":\"agent_end\"}\n"}, nil
+	return runtime.CommandResult{Stdout: "{\"type\":\"session\",\"id\":\"pi-native\"}\n{\"type\":\"message_end\",\"message\":{\"role\":\"assistant\",\"provider\":\"provider\",\"model\":\"model\",\"content\":[{\"type\":\"text\",\"text\":\"report\"}]}}\n{\"type\":\"agent_end\"}\n{\"type\":\"agent_settled\",\"aborted\":false}\n"}, nil
 }
 
 func piServer(t *testing.T, r runtime.Runner, effort string) *Server {

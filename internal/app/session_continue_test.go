@@ -124,7 +124,8 @@ func (r *continueRunner) runPi(plan runtime.CommandPlan, prompt string) (runtime
 	provider, model, _ := strings.Cut(r.model, "/")
 	stdout := fmt.Sprintf(`{"type":"session","id":"pi-native"}`+"\n"+
 		`{"type":"message_end","message":{"role":"assistant","provider":%q,"model":%q,"stopReason":"stop","content":[{"type":"text","text":"done"}]}}`+"\n"+
-		`{"type":"agent_end"}`+"\n", provider, model)
+		`{"type":"agent_end"}`+"\n"+
+		`{"type":"agent_settled","aborted":false}`+"\n", provider, model)
 	return runtime.CommandResult{Stdout: stdout}, nil
 }
 

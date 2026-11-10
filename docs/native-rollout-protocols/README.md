@@ -20,5 +20,5 @@ diffing.
 |--------|----------|:---:|:---:|-----------------------------------|
 | codex  | 0.163.0  | ✅  | ✅  | codex-0.163.0/PROTOCOL.md         |
 | claude | 2.1.296  | ✅  | ✅  | claude-2.1.296/PROTOCOL.md        |
-| pi     | 0.84.4   | ✅  | ⚠️  | pi-0.84.4/PROTOCOL.md             |
+| pi     | 1.4.0    | ✅  | ⚠️  | pi-1.4.0/PROTOCOL.md              |
 | gemini | —        | —   | —   | (placeholder)                     |

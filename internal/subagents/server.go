@@ -706,8 +706,12 @@ func parseOutput(a *ExternalSubagentState, output string) (string, any, error) {
 			Error   json.RawMessage `json:"error"`
 			Message json.RawMessage `json:"message"`
 			Usage   any             `json:"usage"`
+			Aborted bool            `json:"aborted"`
 		}
 		if err := json.Unmarshal(scan.Bytes(), &event); err != nil {
+			if a.Option.Agent == "pi" {
+				return "", nil, piDecodeError(scan.Text(), err)
+			}
 			return "", nil, fmt.Errorf("invalid %s event: %w", a.Option.Agent, err)
 		}
 		switch {
@@ -767,8 +771,16 @@ func parseOutput(a *ExternalSubagentState, output string) (string, any, error) {
 				a.NativeID = event.ID
 				sessionSeen = true
 			case "message_end":
+				var role struct {
+					Role string `json:"role"`
+				}
+				if err := json.Unmarshal(event.Message, &role); err != nil {
+					return "", nil, piDecodeError(scan.Text(), err)
+				}
+				if role.Role != "assistant" {
+					continue
+				}
 				var message struct {
-					Role         string `json:"role"`
 					Model        string `json:"model"`
 					Provider     string `json:"provider"`
 					StopReason   string `json:"stopReason"`
@@ -780,29 +792,31 @@ func parseOutput(a *ExternalSubagentState, output string) (string, any, error) {
 					Usage any `json:"usage"`
 				}
 				if err := json.Unmarshal(event.Message, &message); err != nil {
-					return "", nil, err
+					return "", nil, piDecodeError(scan.Text(), err)
 				}
-				if message.Role == "assistant" {
-					if message.Provider+"/"+message.Model != a.Option.Model {
-						return "", nil, fmt.Errorf("Pi returned model %s/%s instead of %s", message.Provider, message.Model, a.Option.Model)
-					}
-					if message.StopReason == "error" || message.StopReason == "aborted" {
-						failure = message.ErrorMessage
-						if failure == "" {
-							failure = message.StopReason
-						}
-					}
-					var parts []string
-					for _, part := range message.Content {
-						if part.Type == "text" {
-							parts = append(parts, part.Text)
-						}
-					}
-					text = strings.Join(parts, "\n")
-					usage = message.Usage
+				if message.Provider+"/"+message.Model != a.Option.Model {
+					return "", nil, fmt.Errorf("Pi returned model %s/%s instead of %s", message.Provider, message.Model, a.Option.Model)
 				}
-			case "agent_end":
-				completed = true
+				if message.StopReason == "error" || message.StopReason == "aborted" {
+					failure = message.ErrorMessage
+					if failure == "" {
+						failure = message.StopReason
+					}
+				}
+				var parts []string
+				for _, part := range message.Content {
+					if part.Type == "text" {
+						parts = append(parts, part.Text)
+					}
+				}
+				text = strings.Join(parts, "\n")
+				usage = message.Usage
+			case "agent_settled":
+				if event.Aborted {
+					failure = "pi run aborted"
+				} else {
+					completed = true
+				}
 			}
 		}
 	}
@@ -816,4 +830,11 @@ func parseOutput(a *ExternalSubagentState, output string) (string, any, error) {
 		return "", usage, fmt.Errorf("ExternalSubagent exited without a complete report and native session; no implicit retry")
 	}
 	return text, usage, nil
+}
+
+func piDecodeError(line string, err error) error {
+	if len(line) > 2000 {
+		line = line[:2000] + "...(truncated)"
+	}
+	return fmt.Errorf("invalid pi event: %w; raw: %s", err, line)
 }

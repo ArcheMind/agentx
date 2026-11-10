@@ -734,3 +734,24 @@ func TestToolMetadataFitsHostLimitAtRealisticScale(t *testing.T) {
 		t.Fatal("remote still appears in tool schema or initialization data")
 	}
 }
+
+func TestPiStreamSystemMessageAndSettlement(t *testing.T) {
+	a := &ExternalSubagentState{ID: "pi", Option: profiles.Profile{Name: "review", Agent: "pi", Model: "provider/model", Description: "test"}}
+	head := `{"type":"session","id":"pi-native"}` + "\n" +
+		`{"type":"message_end","message":{"role":"system","content":"You are pi","sections":{"preamble":"You are pi"},"toolsAdded":[{"name":"read"}]}}` + "\n" +
+		`{"type":"message_end","message":{"role":"user","content":"task"}}` + "\n" +
+		`{"type":"message_end","message":{"role":"assistant","provider":"provider","model":"model","stopReason":"stop","content":[{"type":"text","text":"report"}]}}` + "\n" +
+		`{"type":"agent_end"}` + "\n"
+	text, _, err := parseOutput(a, head+`{"type":"agent_settled","aborted":false}`+"\n")
+	if err != nil || text != "report" {
+		t.Fatal(text, err)
+	}
+	a.NativeID = ""
+	if _, _, err := parseOutput(a, head+`{"type":"agent_settled","aborted":true}`+"\n"); err == nil || !strings.Contains(err.Error(), "aborted") {
+		t.Fatal(err)
+	}
+	a.NativeID = ""
+	if _, _, err := parseOutput(a, head); err == nil {
+		t.Fatal("agent_end without agent_settled accepted")
+	}
+}
