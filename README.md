@@ -5,14 +5,20 @@
 [![Release](https://img.shields.io/github/v/release/ArcheMind/agentx?display_name=tag)](https://github.com/ArcheMind/agentx/releases)
 [![License](https://img.shields.io/github/license/ArcheMind/agentx)](LICENSE)
 
-**See every coding agent's work in one place, continue any of it in any agent, and configure them all once.**
+**AgentX maintains reverse-engineered session formats and invocation interfaces of different coding agents. This makes the previously impossible possible.**
+
+Most common use cases:
+
+1. **Load and continue any agent's session in any other agent** — pick up a Claude session in Codex, or vice versa.
+2. **Expose an agent to another agent as a sub-agent** — let Claude call Codex as a tool, or Pi call Claude.
+3. **Export a session and send it to a friend** — they restore it into their own agent and keep going.
+
+Minimal footprint, near-zero dependencies — easy to integrate.
 
 ```console
 $ ax                # every recent session, every agent
 $ ax codex          # start a new Codex session
 ```
-
-Claude Code, Codex CLI, DeepSeek Harness, Gemini CLI, OpenCode, and Pi run through their own executables, configuration, credentials, and session stores.
 
 ## One list of every agent's work
 
