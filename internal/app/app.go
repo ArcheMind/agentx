@@ -913,7 +913,12 @@ func (a App) resumeSession(ctx context.Context, agent runtime.Agent, detail sess
 		}
 	}
 	request := runtime.RunRequest{Cwd: workspace, Model: model, PassthroughArgs: append(extraArgs, sessions.ResumeArgs(agent.ID, resumeToken)...)}
-	if agent.ID == "codex" {
+	switch agent.ID {
+	case "claude":
+		if err := a.injectClaudeAgentX(&request); err != nil {
+			return err
+		}
+	case "codex":
 		injectCodexAgentX(&request)
 	}
 	if err := a.prepareHooks(&request, agent.ID, !dryRun); err != nil {

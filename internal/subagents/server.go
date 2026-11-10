@@ -601,6 +601,7 @@ func (s *Server) execute(ctx context.Context, a *ExternalSubagentState, prompt s
 		if err != nil {
 			return "", nil, err
 		}
+		s.injectClaudeDelegation(&plan)
 	case "codex":
 		plan, err = drivers.CodexPolicyExecPlan(a.Cwd, a.Option.Model, a.Session, a.Mode == ModeYolo, a.Option.Effort, a.Option.UserConfig, a.Option.Flags)
 		if err != nil {
@@ -687,6 +688,21 @@ func (s *Server) injectDelegation(plan *runtime.CommandPlan) {
 			"-c", fmt.Sprintf("mcp_servers.agentx.env.AX_SUBAGENT_HOME=%q", home),
 		)
 	}
+}
+
+func (s *Server) injectClaudeDelegation(plan *runtime.CommandPlan) {
+	if s.axBinary == "" || s.delegationDepth >= MaxDelegationDepth {
+		return
+	}
+	entry, _ := json.Marshal(map[string]any{"mcpServers": map[string]any{"agentx": map[string]any{
+		"type": "stdio", "command": s.axBinary, "args": []string{"mcp", "serve"},
+		"env": map[string]string{"AX_DELEGATION_DEPTH": strconv.Itoa(s.delegationDepth + 1)},
+	}}})
+	plan.Args = append(plan.Args,
+		"--mcp-config", string(entry),
+		"--allowedTools", "mcp__agentx__StartExternalSubagent", "mcp__agentx__SendExternalSubagentMessage", "mcp__agentx__StopExternalSubagent", "mcp__agentx__ListExternalSubagentSessions",
+		"--channels", "server:agentx",
+	)
 }
 
 func parseOutput(a *ExternalSubagentState, output string) (string, any, error) {
