@@ -4,6 +4,17 @@ All notable changes to AgentX are documented here. The format follows [Keep a Ch
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-11-10
+
+### Changed
+
+- **Vocabulary rename: profile → preset.** CLI command is now `ax preset <list|show>`;
+  configuration directory is `~/.agentx/presets/<name>/PRESET.md`; MCP catalog
+  text uses "preset" throughout. Go package `internal/profiles` → `internal/presets`;
+  struct `Profile` → `Preset`. Smoke test files and Makefile targets renamed accordingly.
+- Reads fall back to `~/.agentx/profiles/` and `PROFILE.md` when the new paths
+  do not exist, so existing configurations keep working without migration.
+
 ## [0.8.5] - 2026-11-07
 
 ### Fixed
