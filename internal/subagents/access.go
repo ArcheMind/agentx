@@ -125,7 +125,7 @@ func Limits(o profiles.Profile) string {
 	text.WriteString("Profile user_config and flags are passed through to the agent. ")
 	text.WriteString("Auth is discovered before each execution; the report names the source. ")
 	text.WriteString(IsolationLimits())
-	text.WriteString("Effort is fixed by the profile. Model availability is verified only by execution.")
+	text.WriteString("Effort is fixed by the profile.")
 	return text.String()
 }
 

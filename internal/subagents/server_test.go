@@ -494,7 +494,7 @@ func TestProfileCatalogSharedDataAndRefresh(t *testing.T) {
 	if !strings.Contains(catalog, "interactive-only") || !strings.Contains(CatalogIndex(s.Home, HostToolDescriptionLimit), "interactive-only") {
 		t.Fatal("claude profile missing from MCP data", catalog)
 	}
-	for _, want := range []string{profiles.Dir(s.Home), "No default profile", "no per-call effort override", `execution agent="codex"`, `execution agent="claude"`, `exact configured model ID (including provider prefix)="test-model"`, `effort="low"`, `user description="code review"`, `ExternalSubagent callable=yes`, `Mode: profile default is`, `normal passes no permission or sandbox flags`, `yolo bypasses the agent's permission checks`, `Isolation: worktree creates a new git worktree`, `Model availability is verified only by execution`} {
+	for _, want := range []string{profiles.Dir(s.Home), "No default profile", "no per-call effort override", `execution agent="codex"`, `execution agent="claude"`, `exact configured model ID (including provider prefix)="test-model"`, `effort="low"`, `user description="code review"`, `ExternalSubagent callable=yes`, `Mode: profile default is`, `normal passes no permission or sandbox flags`, `yolo bypasses the agent's permission checks`, `Isolation: worktree creates a new git worktree`, `Effort is fixed by the profile.`} {
 		if !strings.Contains(catalog, want) {
 			t.Fatal("missing profile data", want, catalog)
 		}
