@@ -26,8 +26,6 @@ func TestInvalidModesRejectedBeforeAnyWork(t *testing.T) {
 	installPi(t)
 	saveProfile(t, s.Home, profiles.Profile{Name: "pi-review", Agent: "pi", Model: "provider/model", Description: "d"})
 	for input, want := range map[string]string{
-		`{"description":"x","prompt":"x","model":"pi-review","mode":"yolo"}`:                        "Pi has no runtime permission boundary",
-		`{"description":"x","prompt":"x","model":"pi-review","mode":"yolo","isolation":"worktree"}`: "Pi has no runtime permission boundary",
 		`{"description":"x","prompt":"x","model":"review","mode":"dontAsk"}`:                        `mode "dontAsk" unsupported`,
 		`{"description":"x","prompt":"x","model":"review","mode":""}`:                               "must not be empty",
 		`{"description":"x","prompt":"x","model":"review","write":true}`:                            "unknown field",

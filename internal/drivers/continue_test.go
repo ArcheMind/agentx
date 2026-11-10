@@ -124,9 +124,13 @@ func TestContinuePiPlanUsesSessionFileAndThinking(t *testing.T) {
 	}
 }
 
-func TestContinuePiRejectsYolo(t *testing.T) {
-	if _, err := ContinueExecPlan("pi", "/ws", "anthropic/claude-x", "", "", "", true, MCPConfig{}); err == nil {
-		t.Fatal("expected error")
+func TestContinuePiAcceptsYolo(t *testing.T) {
+	plan, err := ContinueExecPlan("pi", "/ws", "anthropic/claude-x", "", "", "", true, MCPConfig{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.Executable != "pi" {
+		t.Fatalf("expected pi executable, got %s", plan.Executable)
 	}
 }
 

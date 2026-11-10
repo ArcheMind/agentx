@@ -142,10 +142,8 @@ func continuePi(cwd, model, resume, effort, systemPrompt string, yolo bool, mcp 
 	if len(mcp.Servers) > 0 {
 		return runtime.CommandPlan{}, fmt.Errorf("pi has no MCP server mechanism; --mcp-config is not supported for pi")
 	}
-	if yolo {
-		return runtime.CommandPlan{}, fmt.Errorf("yolo is rejected for pi: Pi has no runtime permission boundary")
-	}
 	// --no-approve always: a headless pi would otherwise hang on tool approval.
+	// yolo is a no-op: Pi has no sandbox beyond --no-approve which is always set.
 	args := []string{"--print", "--mode", "json", "--no-approve"}
 	if resume != "" {
 		args = append(args, "--session", resume)
