@@ -212,30 +212,68 @@ func (a App) exportChosenSession(selected sessions.Summary) error {
 	return nil
 }
 
+type resumeChoice struct {
+	kind    int // 0 = profile, 1 = agent
+	profile profiles.Profile
+	agent   runtime.Agent
+}
+
 func (a App) resumeSessionInteractive(ctx context.Context, reader *bufio.Reader, detail sessions.Session) error {
+	home := a.profileHome()
+	profileList, _, _ := profiles.Load(home)
 	agents := make([]runtime.Agent, 0)
 	for _, agent := range a.Registry.All() {
 		if _, err := exec.LookPath(agent.Binary); err == nil {
 			agents = append(agents, agent)
 		}
 	}
-	if len(agents) == 0 {
-		return fmt.Errorf("no supported agents are installed")
+	if len(profileList) == 0 && len(agents) == 0 {
+		return fmt.Errorf("no profiles or agents available")
 	}
-	labels := make([]string, len(agents))
-	for index, agent := range agents {
-		labels[index] = agent.ID
+
+	var rows []contentRow
+	var choices []resumeChoice
+
+	if len(profileList) > 0 {
+		rows = append(rows, contentRow{text: "Resume with profile", itemIndex: -1, kind: contentRowHeading})
+		for _, p := range profileList {
+			idx := len(choices)
+			choices = append(choices, resumeChoice{kind: 0, profile: p})
+			rows = append(rows, contentRow{text: fmt.Sprintf("%-12s %s", p.Name, profileCombo(p)), itemIndex: idx, agent: p.Agent})
+		}
 	}
-	agentIndex, err := a.chooseOptions(reader, "Choose an agent:", labels)
+	if len(agents) > 0 {
+		rows = append(rows, contentRow{text: "", itemIndex: -1})
+		rows = append(rows, contentRow{text: "Resume with agent (no profile)", itemIndex: -1, kind: contentRowHeading})
+		for _, agent := range agents {
+			idx := len(choices)
+			choices = append(choices, resumeChoice{kind: 1, agent: agent})
+			rows = append(rows, contentRow{text: agent.ID, itemIndex: idx, agent: agent.ID})
+		}
+	}
+
+	index, _, err := a.runSelector(reader, selector{title: "Resume session as:", help: selectorHelp, marker: "> "}, rows, len(choices), errors.New("no options available"))
+	if errors.Is(err, errSelectionCancelled) {
+		return errors.New("interactive session resume cancelled")
+	}
 	if err != nil {
 		return err
 	}
-	agent := agents[agentIndex]
-	model, err := a.chooseModel(ctx, reader, agent)
+
+	chosen := choices[index]
+	if chosen.kind == 0 {
+		agent, err := a.Registry.Get(chosen.profile.Agent)
+		if err != nil {
+			return err
+		}
+		return a.resumeSession(ctx, agent, detail, "", chosen.profile.Model, chosen.profile.LaunchArgs(), false)
+	}
+
+	model, err := a.chooseModel(ctx, reader, chosen.agent)
 	if err != nil {
 		return err
 	}
-	return a.resumeSession(ctx, agent, detail, "", model, false)
+	return a.resumeSession(ctx, chosen.agent, detail, "", model, nil, false)
 }
 
 // startProfile reports launched=true once the native agent ran; pre-launch failures return to the home screen.

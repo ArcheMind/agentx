@@ -762,7 +762,7 @@ func (a App) sessionResume(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	return a.resumeSession(ctx, agent, detail, workspace, "", dryRun)
+	return a.resumeSession(ctx, agent, detail, workspace, "", nil, dryRun)
 }
 
 func (a App) sessionExport(args []string) error {
@@ -883,7 +883,7 @@ func transcriptFileName(detail sessions.Session) string {
 	return strings.Join(parts, "-") + ".json"
 }
 
-func (a App) resumeSession(ctx context.Context, agent runtime.Agent, detail sessions.Session, workspace, model string, dryRun bool) error {
+func (a App) resumeSession(ctx context.Context, agent runtime.Agent, detail sessions.Session, workspace, model string, extraArgs []string, dryRun bool) error {
 	var err error
 	if workspace == "" {
 		workspace = detail.Workspace
@@ -912,7 +912,7 @@ func (a App) resumeSession(ctx context.Context, agent runtime.Agent, detail sess
 			return fmt.Errorf("prepare resume session: %w", err)
 		}
 	}
-	request := runtime.RunRequest{Cwd: workspace, Model: model, PassthroughArgs: sessions.ResumeArgs(agent.ID, resumeToken)}
+	request := runtime.RunRequest{Cwd: workspace, Model: model, PassthroughArgs: append(extraArgs, sessions.ResumeArgs(agent.ID, resumeToken)...)}
 	if agent.ID == "codex" {
 		injectCodexAgentX(&request)
 	}
