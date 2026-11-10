@@ -17,7 +17,6 @@ import (
 )
 
 const FileName = "PRESET.md"
-const legacyFileName = "PROFILE.md"
 
 var NamePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$`)
 
@@ -109,33 +108,37 @@ func Dir(home string) string {
 	return filepath.Join(home, ".agentx", "presets")
 }
 
-func legacyDir(home string) string {
-	return filepath.Join(home, ".agentx", "profiles")
-}
-
-// effectiveDir returns Dir if it exists, otherwise legacyDir as fallback.
-func effectiveDir(home string) string {
-	if info, err := os.Stat(Dir(home)); err == nil && info.IsDir() {
-		return Dir(home)
-	}
-	if info, err := os.Stat(legacyDir(home)); err == nil && info.IsDir() {
-		return legacyDir(home)
-	}
-	return Dir(home)
-}
-
-func resolveFile(dir, name string) string {
-	for _, fn := range []string{FileName, legacyFileName} {
-		p := filepath.Join(dir, name, fn)
-		if _, err := os.Stat(p); err == nil {
-			return p
-		}
-	}
-	return filepath.Join(dir, name, FileName)
-}
-
 func Path(home, name string) string {
 	return filepath.Join(Dir(home), name, FileName)
+}
+
+// Migrate renames ~/.agentx/profiles → presets and PROFILE.md → PRESET.md inside each entry.
+// Idempotent: no-op when already migrated or nothing to migrate.
+func Migrate(home string) {
+	legacy := filepath.Join(home, ".agentx", "profiles")
+	target := Dir(home)
+	info, err := os.Stat(legacy)
+	if err != nil || !info.IsDir() {
+		return
+	}
+	if _, err := os.Stat(target); err == nil {
+		return
+	}
+	os.Rename(legacy, target)
+	entries, err := os.ReadDir(target)
+	if err != nil {
+		return
+	}
+	for _, e := range entries {
+		if !e.IsDir() || strings.HasPrefix(e.Name(), ".") {
+			continue
+		}
+		old := filepath.Join(target, e.Name(), "PROFILE.md")
+		neu := filepath.Join(target, e.Name(), FileName)
+		if _, err := os.Stat(old); err == nil {
+			os.Rename(old, neu)
+		}
+	}
 }
 
 func ValidName(name string) error {
@@ -312,13 +315,12 @@ func Read(home, name string) (Preset, error) {
 	if err := entryName(name); err != nil {
 		return Preset{Name: name}, err
 	}
-	dir := effectiveDir(home)
-	data, err := os.ReadFile(resolveFile(dir, name))
+	data, err := os.ReadFile(Path(home, name))
 	if os.IsNotExist(err) {
-		if info, statErr := os.Stat(filepath.Join(dir, name)); statErr == nil && info.IsDir() {
+		if info, statErr := os.Stat(filepath.Join(Dir(home), name)); statErr == nil && info.IsDir() {
 			return Preset{Name: name}, fmt.Errorf("%s is missing", FileName)
 		}
-		return Preset{Name: name}, fmt.Errorf("preset %q does not exist in %s", name, dir)
+		return Preset{Name: name}, fmt.Errorf("preset %q does not exist in %s", name, Dir(home))
 	}
 	if err != nil {
 		return Preset{Name: name}, err
@@ -328,13 +330,12 @@ func Read(home, name string) (Preset, error) {
 
 // Load returns valid presets and per-entry problems so one broken entry never hides the others.
 func Load(home string) ([]Preset, []Problem, error) {
-	dir := effectiveDir(home)
-	entries, err := os.ReadDir(dir)
+	entries, err := os.ReadDir(Dir(home))
 	if os.IsNotExist(err) {
 		return nil, nil, nil
 	}
 	if err != nil {
-		return nil, nil, fmt.Errorf("read presets directory %s: %w", dir, err)
+		return nil, nil, fmt.Errorf("read presets directory %s: %w", Dir(home), err)
 	}
 	var valid []Preset
 	var problems []Problem
@@ -343,7 +344,7 @@ func Load(home string) ([]Preset, []Problem, error) {
 		if strings.HasPrefix(name, ".") {
 			continue
 		}
-		path := filepath.Join(dir, name)
+		path := filepath.Join(Dir(home), name)
 		if !entry.IsDir() {
 			problems = append(problems, Problem{Name: name, Path: path, Err: "not a preset directory; each preset is a directory containing " + FileName})
 			continue
@@ -354,7 +355,7 @@ func Load(home string) ([]Preset, []Problem, error) {
 		}
 		preset, err := Read(home, name)
 		if err != nil {
-			problems = append(problems, Problem{Name: name, Path: resolveFile(dir, name), Err: err.Error()})
+			problems = append(problems, Problem{Name: name, Path: Path(home, name), Err: err.Error()})
 			continue
 		}
 		valid = append(valid, preset)
@@ -375,9 +376,6 @@ func Create(home string, p Preset) error {
 	}
 	target := filepath.Join(Dir(home), p.Name)
 	if _, err := os.Lstat(target); err == nil {
-		return ErrExists
-	}
-	if _, err := os.Lstat(filepath.Join(legacyDir(home), p.Name)); err == nil {
 		return ErrExists
 	}
 	staging, err := os.MkdirTemp(Dir(home), ".staging-")
@@ -409,10 +407,9 @@ func Update(home string, p Preset) error {
 	if err != nil {
 		return err
 	}
-	eDir := effectiveDir(home)
-	dir := filepath.Join(eDir, p.Name)
+	dir := filepath.Join(Dir(home), p.Name)
 	if info, err := os.Stat(dir); err != nil || !info.IsDir() {
-		return fmt.Errorf("preset %q does not exist in %s", p.Name, eDir)
+		return fmt.Errorf("preset %q does not exist in %s", p.Name, Dir(home))
 	}
 	file, err := os.CreateTemp(dir, ".PRESET-*")
 	if err != nil {
@@ -426,7 +423,7 @@ func Update(home string, p Preset) error {
 	if err := file.Close(); err != nil {
 		return err
 	}
-	return os.Rename(file.Name(), resolveFile(eDir, p.Name))
+	return os.Rename(file.Name(), Path(home, p.Name))
 }
 
 func Rename(home, from, to string) error {
@@ -439,17 +436,16 @@ func Rename(home, from, to string) error {
 	if from == to {
 		return nil
 	}
-	eDir := effectiveDir(home)
-	source := filepath.Join(eDir, from)
+	source := filepath.Join(Dir(home), from)
 	if _, err := os.Stat(source); err != nil {
-		return fmt.Errorf("preset %q does not exist in %s", from, eDir)
+		return fmt.Errorf("preset %q does not exist in %s", from, Dir(home))
 	}
-	target := filepath.Join(eDir, to)
+	target := filepath.Join(Dir(home), to)
 	if _, err := os.Lstat(target); err == nil && !strings.EqualFold(from, to) {
 		return ErrExists
 	}
 	// Two-step rename lets case-only renames work on case-insensitive filesystems.
-	temp := filepath.Join(eDir, ".rename-"+randomSuffix())
+	temp := filepath.Join(Dir(home), ".rename-"+randomSuffix())
 	if err := os.Rename(source, temp); err != nil {
 		return err
 	}
@@ -468,10 +464,9 @@ func Delete(home, name string) error {
 	if err := entryName(name); err != nil {
 		return err
 	}
-	eDir := effectiveDir(home)
-	path := filepath.Join(eDir, name)
+	path := filepath.Join(Dir(home), name)
 	if _, err := os.Lstat(path); err != nil {
-		return fmt.Errorf("preset %q does not exist in %s", name, eDir)
+		return fmt.Errorf("preset %q does not exist in %s", name, Dir(home))
 	}
 	return os.RemoveAll(path)
 }

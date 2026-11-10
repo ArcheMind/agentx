@@ -16,6 +16,7 @@ import (
 
 	"github.com/ArcheMind/agentx/internal/drivers"
 	"github.com/ArcheMind/agentx/internal/hooks"
+	"github.com/ArcheMind/agentx/internal/presets"
 	"github.com/ArcheMind/agentx/internal/runtime"
 	"github.com/ArcheMind/agentx/internal/sessions"
 	"github.com/ArcheMind/agentx/internal/skills"
@@ -60,6 +61,7 @@ func New(debug bool, stdin io.Reader, stdout, stderr io.Writer) App {
 }
 
 func (a App) Run(ctx context.Context, args []string) error {
+	presets.Migrate(a.presetHome())
 	output, args, err := parseOutputFormat(args)
 	if err != nil {
 		return err
