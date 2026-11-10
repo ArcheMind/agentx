@@ -177,8 +177,8 @@ func TestUpdateKeepsOriginalOnInvalidInput(t *testing.T) {
 
 func TestLaunchArgsNeverInventEffort(t *testing.T) {
 	cases := map[string][]string{
-		"codex":  {"-c", `model_reasoning_effort="high"`},
-		"claude": {"--effort", "high"},
+		"codex":  {"-c", `sandbox_mode="danger-full-access"`, "-c", `model_reasoning_effort="high"`},
+		"claude": {"--dangerously-skip-permissions", "--effort", "high"},
 		"pi":     {"--thinking", "high"},
 	}
 	for agent, want := range cases {
@@ -186,9 +186,18 @@ func TestLaunchArgsNeverInventEffort(t *testing.T) {
 		if strings.Join(got, " ") != strings.Join(want, " ") {
 			t.Fatalf("%s args = %v", agent, got)
 		}
-		if args := (Profile{Agent: agent}).LaunchArgs(); len(args) != 0 {
-			t.Fatalf("%s native default args = %v", agent, args)
-		}
+	}
+	// Bypassable agents with no effort still get mode flags; non-bypassable get nothing.
+	codexDefault := Profile{Agent: "codex"}.LaunchArgs()
+	if strings.Join(codexDefault, " ") != `-c sandbox_mode="danger-full-access"` {
+		t.Fatalf("codex native default args = %v", codexDefault)
+	}
+	claudeDefault := Profile{Agent: "claude"}.LaunchArgs()
+	if strings.Join(claudeDefault, " ") != "--dangerously-skip-permissions" {
+		t.Fatalf("claude native default args = %v", claudeDefault)
+	}
+	if args := (Profile{Agent: "pi"}).LaunchArgs(); len(args) != 0 {
+		t.Fatalf("pi native default args = %v", args)
 	}
 }
 

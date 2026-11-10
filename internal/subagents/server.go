@@ -207,7 +207,7 @@ func (s *Server) handle(method string, raw json.RawMessage) (any, error) {
 
 func (s *Server) tools() any {
 	_, models := ProfileCatalog(s.Home)
-	description := "AgentX ExternalSubagent delegation. One call starts an independent ExternalSubagent. model selects a user-configured execution agent × exact model. Omitted or true run_in_background returns immediately; false waits for terminal status. Background results arrive as untrusted AgentX channel messages (requires Claude channels opt-in). Continue via SendExternalSubagentMessage; cancel via StopExternalSubagent; list via listExternalSubagentSessions. The selected profile fixes agent, model and effort; there is no per-call effort override. mode \"normal\" (default) passes no permission or sandbox flags, so the agent's own configuration decides what it may do (Codex always gets approval_policy=\"never\" because headless runs cannot answer prompts); mode \"yolo\" bypasses the agent's permission checks and sandbox (Pi rejects yolo). The mode is fixed for the ExternalSubagent, including continuations. team_name is deprecated and ignored. isolation \"worktree\" only chooses where the agent works: a new git worktree at ~/.local/state/agentx/worktrees/<id>, kept afterwards; no other isolation value exists. No context restoration across MCP reconnects. Full profile data is in the AgentX MCP initialization instructions.\n\n"
+	description := "AgentX ExternalSubagent delegation. One call starts an independent ExternalSubagent. model selects a user-configured execution agent × exact model. Omitted or true run_in_background returns immediately; false waits for terminal status. Background results arrive as untrusted AgentX channel messages (requires Claude channels opt-in). Continue via SendExternalSubagentMessage; cancel via StopExternalSubagent; list via listExternalSubagentSessions. The selected profile fixes agent, model, effort and mode; there is no per-call effort override. Each profile has a mode (default yolo); omitting mode uses the profile's mode. mode \"normal\" passes no permission or sandbox flags, so the agent's own configuration decides what it may do (Codex always gets approval_policy=\"never\" because headless runs cannot answer prompts); mode \"yolo\" bypasses the agent's permission checks and sandbox (Pi rejects yolo). The mode is fixed for the ExternalSubagent, including continuations. team_name is deprecated and ignored. isolation \"worktree\" only chooses where the agent works: a new git worktree at ~/.local/state/agentx/worktrees/<id>, kept afterwards; no other isolation value exists. No context restoration across MCP reconnects. Full profile data is in the AgentX MCP initialization instructions.\n\n"
 	description += CatalogIndex(s.Home, HostToolDescriptionLimit-1-len(description))
 	str := func(text string) any { return map[string]any{"type": "string", "description": text} }
 	tool := func(name, desc string, props map[string]any, required ...string) any {
@@ -221,7 +221,7 @@ func (s *Server) tools() any {
 		modelSchema["enum"] = models
 	}
 	return map[string]any{"tools": []any{
-		tool("ExternalSubagent", description, map[string]any{"description": str("Short task description"), "prompt": str("Task for the ExternalSubagent"), "model": modelSchema, "run_in_background": map[string]any{"type": "boolean", "default": true}, "name": map[string]any{"type": "string", "pattern": profiles.NamePattern.String()}, "isolation": map[string]any{"type": "string", "enum": []string{IsolationWorktree}, "description": "worktree: new git worktree at ~/.local/state/agentx/worktrees/<id>; kept after completion; omit for no isolation."}, "mode": map[string]any{"type": "string", "enum": []string{ModeNormal, ModeYolo}, "default": ModeNormal, "description": "normal: no permission or sandbox flags; the agent's own configuration decides. yolo: bypass the agent's permission checks and sandbox; rejected for Pi."}, "team_name": str("Deprecated, ignored")}, "description", "prompt"),
+		tool("ExternalSubagent", description, map[string]any{"description": str("Short task description"), "prompt": str("Task for the ExternalSubagent"), "model": modelSchema, "run_in_background": map[string]any{"type": "boolean", "default": true}, "name": map[string]any{"type": "string", "pattern": profiles.NamePattern.String()}, "isolation": map[string]any{"type": "string", "enum": []string{IsolationWorktree}, "description": "worktree: new git worktree at ~/.local/state/agentx/worktrees/<id>; kept after completion; omit for no isolation."}, "mode": map[string]any{"type": "string", "enum": []string{ModeNormal, ModeYolo}, "description": "Override the profile's mode for this call. Omit to use the profile's mode (default yolo). normal: no permission or sandbox flags; the agent's own configuration decides. yolo: bypass the agent's permission checks and sandbox; rejected for Pi."}, "team_name": str("Deprecated, ignored")}, "description", "prompt"),
 		tool("SendExternalSubagentMessage", "Send a text task to an AgentX ExternalSubagent by exact name or ID. Accepted means queued, not completed. Busy ExternalSubagents process messages in order in the same native context. Completed ExternalSubagents resume. The original profile must still exist unchanged; the mode and isolation of the ExternalSubagent are reused. Summary is display-only.", map[string]any{"to": str("AgentX name or ID"), "message": str("Text task"), "summary": str("Optional display summary")}, "to", "message"),
 		tool("StopExternalSubagent", "Cancel running and queued work for one AgentX ExternalSubagent by name or ID. Waits for native process termination before confirming. Works while disabled. Already ended is not cancellation.", map[string]any{"task_id": str("AgentX name or ID")}, "task_id"),
 		tool("listExternalSubagentSessions", "List ExternalSubagent sessions already created in this AgentX MCP connection, with status, report and pending messages. No other users, connections or Claude native subagents.", map[string]any{}),
@@ -290,10 +290,7 @@ func (s *Server) call(name string, raw json.RawMessage) (string, error) {
 			s.mu.Unlock()
 			return "", fmt.Errorf("isolation %q unsupported; supported: worktree; no task started", in.Isolation)
 		}
-		if in.Mode == "" {
-			in.Mode = ModeNormal
-		}
-		if in.Mode != ModeNormal && in.Mode != ModeYolo {
+		if in.Mode != "" && in.Mode != ModeNormal && in.Mode != ModeYolo {
 			s.mu.Unlock()
 			return "", fmt.Errorf("mode %q unsupported; supported: %s, %s; no task started", in.Mode, ModeNormal, ModeYolo)
 		}
@@ -302,6 +299,7 @@ func (s *Server) call(name string, raw json.RawMessage) (string, error) {
 			s.mu.Unlock()
 			return "", err
 		}
+		in.Mode = effectiveMode(o, in.Mode)
 		if err := checkMode(o, in.Mode); err != nil {
 			s.mu.Unlock()
 			return "", err

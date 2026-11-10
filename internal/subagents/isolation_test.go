@@ -74,7 +74,7 @@ func TestWorktreeIsolationIsIndependentOfMode(t *testing.T) {
 	r := &gitRunner{testRunner: &testRunner{}}
 	s := testServer(t, r)
 	dirtyRepo(t, s)
-	text := callTest(t, s, "ExternalSubagent", map[string]any{"description": "x", "prompt": "x", "name": "n", "model": "review", "isolation": "worktree", "run_in_background": false})
+	text := callTest(t, s, "ExternalSubagent", map[string]any{"description": "x", "prompt": "x", "name": "n", "model": "review", "isolation": "worktree", "mode": "normal", "run_in_background": false})
 	callTest(t, s, "ExternalSubagent", map[string]any{"description": "x", "prompt": "x", "name": "y", "model": "review", "isolation": "worktree", "mode": "yolo", "run_in_background": false})
 	s.mu.Lock()
 	n, _ := s.target("n")
@@ -96,7 +96,7 @@ func TestWorktreeIsolationRunsInWorktreeAndKeepsOriginalChanges(t *testing.T) {
 	s := testServer(t, r)
 	repo := dirtyRepo(t, s)
 	before := gitCmd(t, repo, "status", "--porcelain")
-	text := callTest(t, s, "ExternalSubagent", map[string]any{"description": "write", "prompt": "edit", "name": "iso", "model": "review", "isolation": "worktree", "run_in_background": false})
+	text := callTest(t, s, "ExternalSubagent", map[string]any{"description": "write", "prompt": "edit", "name": "iso", "model": "review", "isolation": "worktree", "mode": "normal", "run_in_background": false})
 	s.mu.Lock()
 	a, _ := s.target("iso")
 	w := a.Worktree

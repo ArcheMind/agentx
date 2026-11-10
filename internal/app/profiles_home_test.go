@@ -71,7 +71,7 @@ func TestHomeListsProfilesBeforeHistoryWithCreateLast(t *testing.T) {
 		t.Fatal("cancel started work")
 	}
 	output := stdout.String()
-	order := []string{"New session · Profiles", "› daily        Claude · opus                Everyday development\r\n", "  deep-review  Codex · gpt-5.6-luna · high  Review complex changes and edge cases\r\n", "  + Create profile…", "Recent sessions · Current workspace", "Fix login state", "Recent sessions · Global"}
+	order := []string{"New session · Profiles", "› daily        Claude · opus · yolo                Everyday development\r\n", "  deep-review  Codex · gpt-5.6-luna · high · yolo  Review complex changes and edge cases\r\n", "  + Create profile…", "Recent sessions · Current workspace", "Fix login state", "Recent sessions · Global"}
 	position := 0
 	for _, want := range order {
 		next := strings.Index(output[position:], want)
@@ -99,11 +99,11 @@ func TestProfileRowsStayOneLineAndTruncateOnlyDescription(t *testing.T) {
 	}
 	for _, selected := range []bool{false, true} {
 		line := styledContentRow(rows[1], selected, false)
-		if !strings.HasPrefix(line, "long    Codex · gpt-5.6-luna · low ") || strings.Contains(line, "END") || !strings.HasSuffix(line, "…") || len([]rune(line))+2 > profileLineWidth {
+		if !strings.HasPrefix(line, "long    Codex · gpt-5.6-luna · low · yolo ") || strings.Contains(line, "END") || !strings.HasSuffix(line, "…") || len([]rune(line))+2 > profileLineWidth {
 			t.Fatalf("selected=%t line = %q", selected, line)
 		}
 	}
-	if line := styledContentRow(rows[2], false, false); line != "multi   Pi · openai-code…gpt-5.6-luna  First line Second line" || middleTruncate("short", profileModelWidth) != "short" {
+	if line := styledContentRow(rows[2], false, false); line != "multi   Pi · openai-code…gpt-5.6-luna · normal  First line Second line" || middleTruncate("short", profileModelWidth) != "short" {
 		t.Fatalf("line = %q", line)
 	}
 }
@@ -157,7 +157,7 @@ func TestMissingAgentFailsWithoutSubstitution(t *testing.T) {
 }
 
 func TestCreateWithManualModelSavesWithoutInference(t *testing.T) {
-	input := "\r" + "\r" + "opus-4\n" + "j\r" + "deep review\n" + "deep-review\n" + "Review complex changes\n" + "j\r" + "q"
+	input := "\r" + "\r" + "opus-4\n" + "j\r" + "\r" + "deep review\n" + "deep-review\n" + "Review complex changes\n" + "j\r" + "q"
 	application, stdout, runner := profileApp(t, input)
 	if err := application.Run(context.Background(), nil); err == nil {
 		t.Fatal("expected home cancel after save")
@@ -171,7 +171,7 @@ func TestCreateWithManualModelSavesWithoutInference(t *testing.T) {
 		t.Fatalf("creation ran external commands: %#v", runner.plans)
 	}
 	output := stdout.String()
-	for _, want := range []string{"Claude Code is not installed, so its models cannot be listed", "Enter the exact model ID", "unverified for this model", "Error: Invalid name", "Your other entries are kept", "Review profile", "Effort       low (unverified for this model)", "Availability Execution not verified; Claude Code is not installed", "MCP          Not callable as MCP ExternalSubagent: claude executable unavailable", "Saving does not run inference.", "Save and start", "Saved ", "New sessions use the saved profiles now.", "› deep-review  Claude · opus-4 · low  Review complex changes\r\n"} {
+	for _, want := range []string{"Claude Code is not installed, so its models cannot be listed", "Enter the exact model ID", "unverified for this model", "Error: Invalid name", "Your other entries are kept", "Review profile", "Effort       low (unverified for this model)", "Mode         yolo (default)", "Availability Execution not verified; Claude Code is not installed", "MCP          Not callable as MCP ExternalSubagent: claude executable unavailable", "Saving does not run inference.", "Save and start", "Saved ", "New sessions use the saved profiles now.", "› deep-review  Claude · opus-4 · low · yolo  Review complex changes\r\n"} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("missing %q in %q", want, output)
 		}
@@ -179,7 +179,7 @@ func TestCreateWithManualModelSavesWithoutInference(t *testing.T) {
 }
 
 func TestCreateOffersOnlyListedCodexEfforts(t *testing.T) {
-	input := "\r" + "j\r" + "\r" + "jj\r" + "listed\n" + "Use listed\n" + "\r"
+	input := "\r" + "j\r" + "\r" + "jj\r" + "\r" + "listed\n" + "Use listed\n" + "\r"
 	application, stdout, runner := profileApp(t, input, "codex")
 	runner.response = `{"id":2,"result":{"data":[{"model":"gpt-a","supportedReasoningEfforts":[{"reasoningEffort":"low"},{"reasoningEffort":"max"}],"defaultReasoningEffort":"low"}]}}`
 	if err := application.Run(context.Background(), nil); err != nil {
@@ -217,7 +217,7 @@ func TestPiEffortChoicesAreOnlyCheckableLevels(t *testing.T) {
 }
 
 func TestCreateCancelAndDuplicateNeverLeaveOrOverwrite(t *testing.T) {
-	input := "j\r" + "\r" + "opus\n" + "\r" + "deep-review\n" + "\n" + "\r" + "\r" + "\n" + "q"
+	input := "j\r" + "\r" + "opus\n" + "\r" + "\r" + "deep-review\n" + "\n" + "\r" + "\r" + "\n" + "q"
 	application, stdout, _ := profileApp(t, input)
 	mustCreate(t, application.Hooks.Home, deepReview)
 	application.Run(context.Background(), nil)

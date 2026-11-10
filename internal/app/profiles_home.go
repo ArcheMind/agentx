@@ -103,6 +103,7 @@ func profileCombo(p profiles.Profile) string {
 	if p.Effort != "" {
 		combo += " · " + p.Effort
 	}
+	combo += " · " + p.EffectiveMode()
 	return combo
 }
 
@@ -276,10 +277,10 @@ func (a App) startProfile(ctx context.Context, reader *bufio.Reader, home string
 	if err != nil {
 		return a.startFailure(ctx, reader, home, p, err.Error(), true)
 	}
-	fmt.Fprintf(a.Stdout, "Starting a new %s session with profile %s: model %s · effort %s · %s\n", profiles.AgentName(p.Agent), p.Name, p.Model, profiles.EffortLabel(p.Effort), cwd)
+	fmt.Fprintf(a.Stdout, "Starting a new %s session with profile %s: model %s · effort %s · mode %s · %s\n", profiles.AgentName(p.Agent), p.Name, p.Model, profiles.EffortLabel(p.Effort), p.EffectiveMode(), cwd)
 	result, err := a.Runner.Execute(ctx, plan, runtime.ExecuteOptions{Interactive: true, Stdin: a.Stdin, Stdout: a.Stdout, Stderr: a.Stderr})
 	if err != nil {
-		fmt.Fprintf(a.Stderr, "ax: %s exited with an error after starting profile %s (model %s, effort %s). AgentX did not substitute another agent, model or effort. If the model or effort was rejected, edit the profile (run ax, select it, press m) or log in with ax auth login %s.\n", agent.Name, p.Name, p.Model, profiles.EffortLabel(p.Effort), agent.ID)
+		fmt.Fprintf(a.Stderr, "ax: %s exited with an error after starting profile %s (model %s, effort %s, mode %s). AgentX did not substitute another agent, model or effort. If the model or effort was rejected, edit the profile (run ax, select it, press m) or log in with ax auth login %s.\n", agent.Name, p.Name, p.Model, profiles.EffortLabel(p.Effort), p.EffectiveMode(), agent.ID)
 		return true, &ExitError{Code: result.ExitCode, Err: err}
 	}
 	return true, nil
@@ -335,6 +336,9 @@ func (a App) profileWizard(ctx context.Context, reader *bufio.Reader, home strin
 			return cancelled()
 		}
 		if err := a.askEffort(ctx, reader, &draft); err != nil {
+			return cancelled()
+		}
+		if err := a.askMode(reader, &draft); err != nil {
 			return cancelled()
 		}
 		if mode == wizardCreate {
@@ -403,7 +407,7 @@ func (a App) profileWizard(ctx context.Context, reader *bufio.Reader, home strin
 }
 
 func (a App) changeField(ctx context.Context, reader *bufio.Reader, home string, draft *profileDraft, mode wizardMode) error {
-	fields := []string{"Agent (then model and effort)", "Model (then effort)", "Effort"}
+	fields := []string{"Agent (then model and effort)", "Model (then effort)", "Effort", "Mode"}
 	if mode == wizardCreate || mode == wizardCopy {
 		fields = append(fields, "Name")
 	}
@@ -429,6 +433,8 @@ func (a App) changeField(ctx context.Context, reader *bufio.Reader, home string,
 		}
 	case "Effort":
 		err = a.askEffort(ctx, reader, draft)
+	case "Mode":
+		err = a.askMode(reader, draft)
 	case "Name":
 		err = a.askName(reader, home, draft)
 	case "User config":
@@ -649,6 +655,38 @@ func (a App) askEffort(ctx context.Context, reader *bufio.Reader, draft *profile
 	return nil
 }
 
+func (a App) askMode(reader *bufio.Reader, draft *profileDraft) error {
+	rule := profiles.Agents[draft.profile.Agent]
+	if !rule.Bypassable {
+		fmt.Fprintln(a.Stdout, colorize(a.Color, ansiDim, fmt.Sprintf("%s has no runtime permission boundary; mode is always normal.", rule.Name)))
+		draft.profile.Mode = profiles.ModeNormal
+		return nil
+	}
+	labels := []string{
+		"yolo — bypass the agent's permission checks and sandbox (default)",
+		"normal — no permission flags; the agent's own configuration decides",
+	}
+	selected := 0
+	if draft.profile.EffectiveMode() == profiles.ModeNormal {
+		selected = 1
+	}
+	rows := make([]contentRow, len(labels))
+	for i, label := range labels {
+		rows[i] = contentRow{text: label, itemIndex: i}
+	}
+	index, _, err := a.runSelector(reader, selector{title: "Choose mode:", help: selectorHelp, marker: "> ", selected: selected}, rows, len(rows), nil)
+	if err != nil {
+		return err
+	}
+	switch index {
+	case 0:
+		draft.profile.Mode = "" // empty = yolo default
+	case 1:
+		draft.profile.Mode = profiles.ModeNormal
+	}
+	return nil
+}
+
 func (a App) askName(reader *bufio.Reader, home string, draft *profileDraft) error {
 	for {
 		value, err := a.readLine(reader, "Profile name (letters, digits, _ or -; empty cancels): ")
@@ -786,6 +824,7 @@ func (a App) printProfileFields(p profiles.Profile, effort string) {
 	field("Agent", colorize(a.Color, agentColor(p.Agent), profiles.AgentName(p.Agent)))
 	field("Model", p.Model)
 	field("Effort", effort)
+	field("Mode", p.EffectiveModeLabel())
 	if p.UserConfig != nil {
 		if *p.UserConfig {
 			field("User config", "loaded")
@@ -859,7 +898,7 @@ func (a App) chooseManagedProfile(ctx context.Context, reader *bufio.Reader, hom
 func (a App) manageProfile(ctx context.Context, reader *bufio.Reader, home string, p profiles.Profile) (bool, error) {
 	actions := []string{"View", "Edit", "Rename", "Duplicate", "Delete", "Start new session", "Back"}
 	for {
-		fmt.Fprintf(a.Stdout, "\n%s\n%s%s\n", colorize(a.Color, ansiBold, "Manage · "+p.Name), colorize(a.Color, agentColor(p.Agent), profiles.AgentName(p.Agent)), colorize(a.Color, ansiDim, " · "+p.Model+" · "+homeEffort(p.Effort)))
+		fmt.Fprintf(a.Stdout, "\n%s\n%s%s\n", colorize(a.Color, ansiBold, "Manage · "+p.Name), colorize(a.Color, agentColor(p.Agent), profiles.AgentName(p.Agent)), colorize(a.Color, ansiDim, " · "+p.Model+" · "+homeEffort(p.Effort)+" · "+p.EffectiveMode()))
 		choice, err := a.pick(reader, "", actions)
 		if err != nil {
 			return false, err

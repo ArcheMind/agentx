@@ -22,19 +22,53 @@ var NamePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$`)
 
 var ErrExists = errors.New("a profile with this name already exists")
 
+const (
+	ModeNormal  = "normal"
+	ModeYolo    = "yolo"
+	ModeDefault = ModeYolo
+)
+
+var ValidModes = []string{ModeNormal, ModeYolo}
+
 type Profile struct {
 	Name        string   `json:"name" yaml:"-"`
 	Description string   `json:"description" yaml:"-"`
 	Agent       string   `json:"agent" yaml:"agent"`
 	Model       string   `json:"model" yaml:"model"`
 	Effort      string   `json:"effort,omitempty" yaml:"effort,omitempty"`
+	Mode        string   `json:"mode,omitempty" yaml:"mode,omitempty"`
 	UserConfig  *bool    `json:"user_config,omitempty" yaml:"user_config,omitempty"`
 	Flags       []string `json:"flags,omitempty" yaml:"flags,omitempty"`
 }
 
 func (p Profile) Equal(o Profile) bool {
 	return p.Name == o.Name && p.Description == o.Description && p.Agent == o.Agent && p.Model == o.Model && p.Effort == o.Effort &&
-		boolEqual(p.UserConfig, o.UserConfig) && slices.Equal(p.Flags, o.Flags)
+		p.Mode == o.Mode && boolEqual(p.UserConfig, o.UserConfig) && slices.Equal(p.Flags, o.Flags)
+}
+
+func (p Profile) EffectiveMode() string {
+	if p.Mode != "" {
+		return p.Mode
+	}
+	if rule, ok := Agents[p.Agent]; ok && !rule.Bypassable {
+		return ModeNormal
+	}
+	return ModeDefault
+}
+
+func ModeLabel(mode string) string {
+	if mode == "" {
+		return ModeDefault + " (default)"
+	}
+	return mode
+}
+
+func (p Profile) EffectiveModeLabel() string {
+	effective := p.EffectiveMode()
+	if p.Mode == "" {
+		return effective + " (default)"
+	}
+	return effective
 }
 
 func boolEqual(a, b *bool) bool {
@@ -113,23 +147,37 @@ func (p Profile) Validate() error {
 			return fmt.Errorf("effort %q is not a %s level; supported: %s", p.Effort, rule.Name, strings.Join(rule.Efforts, ", "))
 		}
 	}
+	if p.Mode != "" && !Contains(ValidModes, p.Mode) {
+		return fmt.Errorf("mode %q is not supported; supported: %s", p.Mode, strings.Join(ValidModes, ", "))
+	}
+	if p.Mode == ModeYolo && !rule.Bypassable {
+		return fmt.Errorf("mode %q is not supported for %s: %s has no runtime permission boundary to bypass", ModeYolo, rule.Name, rule.Name)
+	}
 	return nil
 }
 
-// LaunchArgs maps the profile effort to native interactive flags.
+// LaunchArgs maps the profile effort and mode to native interactive flags.
 func (p Profile) LaunchArgs() []string {
-	if p.Effort == "" {
-		return nil
+	var args []string
+	if p.EffectiveMode() == ModeYolo {
+		switch p.Agent {
+		case "claude":
+			args = append(args, "--dangerously-skip-permissions")
+		case "codex":
+			args = append(args, "-c", `sandbox_mode="danger-full-access"`)
+		}
 	}
-	switch p.Agent {
-	case "codex":
-		return []string{"-c", fmt.Sprintf("model_reasoning_effort=%q", p.Effort)}
-	case "claude":
-		return []string{"--effort", p.Effort}
-	case "pi":
-		return []string{"--thinking", p.Effort}
+	if p.Effort != "" {
+		switch p.Agent {
+		case "codex":
+			args = append(args, "-c", fmt.Sprintf("model_reasoning_effort=%q", p.Effort))
+		case "claude":
+			args = append(args, "--effort", p.Effort)
+		case "pi":
+			args = append(args, "--thinking", p.Effort)
+		}
 	}
-	return nil
+	return args
 }
 
 func AgentName(agent string) string {
@@ -190,7 +238,7 @@ func Parse(name string, data []byte) (Profile, error) {
 	for _, key := range keys {
 		value, ok := fields[key].(string)
 		switch key {
-		case "agent", "model", "effort":
+		case "agent", "model", "effort", "mode":
 			if !ok {
 				return p, fmt.Errorf("%s field %q must be a string", FileName, key)
 			}
@@ -200,7 +248,7 @@ func Parse(name string, data []byte) (Profile, error) {
 		case "description":
 			return p, fmt.Errorf("%s must not set description in front matter; write it below the front matter", FileName)
 		default:
-			return p, fmt.Errorf("%s has unknown field %q; allowed: agent, model, effort, user_config, flags", FileName, key)
+			return p, fmt.Errorf("%s has unknown field %q; allowed: agent, model, effort, mode, user_config, flags", FileName, key)
 		}
 		switch key {
 		case "agent":
@@ -209,6 +257,8 @@ func Parse(name string, data []byte) (Profile, error) {
 			p.Model = value
 		case "effort":
 			p.Effort = value
+		case "mode":
+			p.Mode = value
 		case "user_config":
 			b, ok := fields[key].(bool)
 			if !ok {

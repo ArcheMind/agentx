@@ -13,8 +13,8 @@ import (
 )
 
 const (
-	ModeNormal = "normal"
-	ModeYolo   = "yolo"
+	ModeNormal = profiles.ModeNormal
+	ModeYolo   = profiles.ModeYolo
 )
 
 // Auth is the native credential source discovered for one turn.
@@ -117,7 +117,8 @@ func DiscoverAuth(ctx context.Context, runner runtime.Runner, agent, model strin
 
 func Limits(o profiles.Profile) string {
 	var text strings.Builder
-	text.WriteString("Mode: normal (default) passes no permission or sandbox flags, so the agent's own configuration decides; yolo bypasses the agent's permission checks and sandbox. ")
+	fmt.Fprintf(&text, "Mode: profile default is %s. ", profiles.ModeLabel(o.Mode))
+	text.WriteString("normal passes no permission or sandbox flags, so the agent's own configuration decides; yolo bypasses the agent's permission checks and sandbox. ")
 	if !profiles.Agents[o.Agent].Bypassable {
 		text.WriteString("This agent rejects yolo. ")
 	}
@@ -126,6 +127,14 @@ func Limits(o profiles.Profile) string {
 	text.WriteString(IsolationLimits())
 	text.WriteString("Effort is fixed by the profile. Model availability is verified only by execution.")
 	return text.String()
+}
+
+// effectiveMode resolves the call-time mode against the profile default.
+func effectiveMode(o profiles.Profile, callMode string) string {
+	if callMode != "" {
+		return callMode
+	}
+	return o.EffectiveMode()
 }
 
 // checkMode rejects yolo before any work starts for agents without a permission boundary to bypass.

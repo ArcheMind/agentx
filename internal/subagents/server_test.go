@@ -455,7 +455,7 @@ func TestExternalSubagentToolNamesAndUnchangedContract(t *testing.T) {
 			t.Fatal("changed parameter", key)
 		}
 	}
-	if mode := props["mode"].(map[string]any); mode["default"] != ModeNormal || !slices.Equal(mode["enum"].([]string), []string{ModeNormal, ModeYolo}) {
+	if mode := props["mode"].(map[string]any); mode["default"] != nil || !slices.Equal(mode["enum"].([]string), []string{ModeNormal, ModeYolo}) || !strings.Contains(mode["description"].(string), "profile's mode") {
 		t.Fatal("mode schema changed", mode)
 	}
 	if len(props) != 8 || props["effort"] != nil || props["subagent_type"] != nil || !profiles.Contains(props["model"].(map[string]any)["enum"].([]string), "review") {
@@ -494,7 +494,7 @@ func TestProfileCatalogSharedDataAndRefresh(t *testing.T) {
 	if !strings.Contains(catalog, "interactive-only") || !strings.Contains(CatalogIndex(s.Home, HostToolDescriptionLimit), "interactive-only") {
 		t.Fatal("claude profile missing from MCP data", catalog)
 	}
-	for _, want := range []string{profiles.Dir(s.Home), "also used for interactive ax launch", "No default profile", "no per-call effort override", `execution agent="codex"`, `execution agent="claude"`, `exact configured model ID (including provider prefix)="test-model"`, `effort="low"`, `user description="code review"`, `ExternalSubagent callable=yes`, `Mode: normal (default) passes no permission or sandbox flags`, `yolo bypasses the agent's permission checks`, `Isolation: worktree creates a new git worktree`, `login and model access are verified per execution`} {
+	for _, want := range []string{profiles.Dir(s.Home), "also used for interactive ax launch", "No default profile", "no per-call effort override", `execution agent="codex"`, `execution agent="claude"`, `exact configured model ID (including provider prefix)="test-model"`, `effort="low"`, `user description="code review"`, `ExternalSubagent callable=yes`, `Mode: profile default is`, `normal passes no permission or sandbox flags`, `yolo bypasses the agent's permission checks`, `Isolation: worktree creates a new git worktree`, `login and model access are verified per execution`} {
 		if !strings.Contains(catalog, want) {
 			t.Fatal("missing profile data", want, catalog)
 		}
@@ -575,7 +575,7 @@ func TestToolMetadataFitsHostLimitInTheWorstCase(t *testing.T) {
 	if len(description) >= HostToolDescriptionLimit {
 		t.Fatalf("ExternalSubagent description is %d bytes; Claude Code truncates at %d", len(description), HostToolDescriptionLimit)
 	}
-	for _, want := range []string{`mode "normal" (default) passes no permission or sandbox flags`, `mode "yolo" bypasses`, "more entries omitted; full catalog in initialization data."} {
+	for _, want := range []string{`mode "normal" passes no permission or sandbox flags`, `mode "yolo" bypasses`, "more entries omitted; full catalog in initialization data."} {
 		if !strings.Contains(description, want) {
 			t.Fatalf("description lost %q:\n%s", want, description)
 		}

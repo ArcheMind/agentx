@@ -47,7 +47,7 @@ func TestNormalModePassesNoPermissionFlags(t *testing.T) {
 	r := &testRunner{}
 	s := testServer(t, r)
 	saveProfile(t, s.Home, profiles.Profile{Name: "claude-review", Agent: "claude", Model: "opus", Description: "d"})
-	text := callTest(t, s, "ExternalSubagent", map[string]any{"description": "read", "prompt": "review", "model": "review", "run_in_background": false})
+	text := callTest(t, s, "ExternalSubagent", map[string]any{"description": "read", "prompt": "review", "model": "review", "mode": "normal", "run_in_background": false})
 	s.call("ExternalSubagent", []byte(`{"description":"x","prompt":"x","model":"claude-review","mode":"normal","run_in_background":false}`))
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -84,7 +84,7 @@ func TestModeIsFixedForContinuation(t *testing.T) {
 	r := &testRunner{}
 	s := testServer(t, r)
 	callTest(t, s, "ExternalSubagent", map[string]any{"description": "x", "prompt": "x", "model": "review", "name": "y", "mode": "yolo", "run_in_background": false})
-	callTest(t, s, "ExternalSubagent", map[string]any{"description": "x", "prompt": "x", "model": "review", "name": "n", "run_in_background": false})
+	callTest(t, s, "ExternalSubagent", map[string]any{"description": "x", "prompt": "x", "model": "review", "name": "n", "mode": "normal", "run_in_background": false})
 	for _, name := range []string{"y", "n"} {
 		callTest(t, s, "SendExternalSubagentMessage", map[string]any{"to": name, "message": "again"})
 		waitAgent(t, s, name)
