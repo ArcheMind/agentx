@@ -27,7 +27,7 @@ const (
 	presetLineWidth  = 96
 	presetMinDesc    = 20
 	presetModelWidth = 24
-	homeHelp          = "↑/↓ or j/k select · Enter open · e export session · m manage presets · q/Esc cancel"
+	homeHelp         = "↑/↓ or j/k select · Enter open · e export session · m manage presets · q/Esc cancel"
 	emptyPresetsHint = "Save an agent, model and effort for reuse."
 )
 
@@ -44,7 +44,7 @@ const (
 
 type homeItem struct {
 	kind    homeKind
-	preset presets.Preset
+	preset  presets.Preset
 	problem presets.Problem
 	session sessions.Summary
 }
@@ -216,9 +216,9 @@ func (a App) exportChosenSession(selected sessions.Summary) error {
 }
 
 type resumeChoice struct {
-	kind    int // 0 = preset, 1 = agent
+	kind   int // 0 = preset, 1 = agent
 	preset presets.Preset
-	agent   runtime.Agent
+	agent  runtime.Agent
 }
 
 func (a App) resumeSessionInteractive(ctx context.Context, reader *bufio.Reader, detail sessions.Session) error {
@@ -352,7 +352,7 @@ const (
 )
 
 type presetDraft struct {
-	preset      presets.Preset
+	preset       presets.Preset
 	listed       *runtime.Model
 	unlisted     string
 	effortStatus string
