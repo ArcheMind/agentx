@@ -19,7 +19,7 @@ try{
  assert(init.serverInfo.name==='AgentX'&&init.protocolVersion==='2024-11-05','server/protocol identity changed')
  child.stdin.write(JSON.stringify({jsonrpc:'2.0',method:'notifications/initialized'})+'\n')
  const {tools}=await rpc('tools/list')
- const expected=['ExternalSubagent','SendExternalSubagentMessage','StopExternalSubagent','listExternalSubagentSessions']
+ const expected=['StartExternalSubagent','SendExternalSubagentMessage','StopExternalSubagent','ListExternalSubagentSessions']
  assert(JSON.stringify(tools.map(tool=>tool.name))===JSON.stringify(expected),'tools/list did not expose exactly four renamed tools')
  assert(JSON.stringify(Object.keys(tools[0].inputSchema.properties).sort())===JSON.stringify(['description','prompt','model','run_in_background','name','isolation','team_name','mode'].sort()),'ExternalSubagent input keys changed')
  const props=tools[0].inputSchema.properties

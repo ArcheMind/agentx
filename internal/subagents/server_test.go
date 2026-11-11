@@ -353,7 +353,7 @@ func (w *lockedOutput) Write(data []byte) (int, error) {
 }
 func (w *lockedOutput) text() string { w.mu.Lock(); defer w.mu.Unlock(); return w.Buffer.String() }
 
-func TestQueuedCancellationNotifiesEveryAcceptedTask(t *testing.T) {
+func TestQueuedCancellationWritesResultFileForEveryAcceptedTask(t *testing.T) {
 	r := &testRunner{started: make(chan int, 4), release: make(chan struct{})}
 	s := testServer(t, r)
 	out := &lockedOutput{}
@@ -363,24 +363,26 @@ func TestQueuedCancellationNotifiesEveryAcceptedTask(t *testing.T) {
 	callTest(t, s, "SendExternalSubagentMessage", map[string]any{"to": "worker", "message": "second"})
 	callTest(t, s, "StopExternalSubagent", map[string]any{"task_id": "worker"})
 	s.workers.Wait()
-	lines := strings.Split(strings.TrimSpace(out.text()), "\n")
-	if len(lines) != 2 {
-		t.Fatalf("expected two terminal notifications, got %s", out.text())
+	paths, _ := filepath.Glob(filepath.Join(s.Home, ".local", "state", "agentx", "connections", s.connectionID, "jobs", "*.json"))
+	if len(paths) != 2 {
+		t.Fatalf("expected two terminal result files, got %v", paths)
 	}
-	for _, line := range lines {
-		var event struct {
-			Method string `json:"method"`
-			Params struct {
-				Meta map[string]string `json:"meta"`
-			} `json:"params"`
-		}
-		if err := json.Unmarshal([]byte(line), &event); err != nil {
+	for _, path := range paths {
+		data, err := os.ReadFile(path)
+		if err != nil {
 			t.Fatal(err)
 		}
-		if event.Method != "notifications/claude/channel" || event.Params.Meta["status"] != "cancelled" || event.Params.Meta["report_origin"] != "agentx-subagent" {
-			t.Fatal(line)
+		var doc struct {
+			Content string            `json:"content"`
+			Meta    map[string]string `json:"meta"`
 		}
-		if _, ok := event.Params.Meta["source"]; ok {
+		if err := json.Unmarshal(data, &doc); err != nil {
+			t.Fatal(err)
+		}
+		if doc.Meta["status"] != "cancelled" || doc.Meta["report_origin"] != "agentx-subagent" || doc.Content == "" || !strings.HasSuffix(path, doc.Meta["task_id"]+".json") {
+			t.Fatal(string(data))
+		}
+		if _, ok := doc.Meta["source"]; ok {
 			t.Fatal("collides with host source attribute")
 		}
 	}

@@ -10,14 +10,13 @@ import (
 )
 
 type Connection struct {
-	ID              string `json:"id"`
-	ClientInfo      any    `json:"client_info,omitempty"`
-	PID             int    `json:"pid"`
-	Cwd             string `json:"cwd"`
-	Started         string `json:"started"`
-	Protocol        string `json:"protocol"`
-	Status          string `json:"status"`
-	ChannelDelivery string `json:"channel_delivery"`
+	ID         string `json:"id"`
+	ClientInfo any    `json:"client_info,omitempty"`
+	PID        int    `json:"pid"`
+	Cwd        string `json:"cwd"`
+	Started    string `json:"started"`
+	Protocol   string `json:"protocol"`
+	Status     string `json:"status"`
 }
 
 func (s *Server) recordConnection() (func(), error) {
@@ -28,7 +27,7 @@ func (s *Server) recordConnection() (func(), error) {
 	path := filepath.Join(dir, fmt.Sprintf("%d-%s.json", os.Getpid(), randomID()))
 	s.connectionPath = path
 	s.connectionID = "connection-" + randomID()
-	data, _ := json.Marshal(Connection{ID: s.connectionID, PID: os.Getpid(), Cwd: s.Cwd, Started: time.Now().UTC().Format(time.RFC3339), Protocol: "2024-11-05", Status: "MCP server process running; host handshake not yet verified", ChannelDelivery: "unverified; host controls channel opt-in and feature/org gates"})
+	data, _ := json.Marshal(Connection{ID: s.connectionID, PID: os.Getpid(), Cwd: s.Cwd, Started: time.Now().UTC().Format(time.RFC3339), Protocol: "2024-11-05", Status: "MCP server process running; host handshake not yet verified"})
 	if err := os.WriteFile(path, data, 0600); err != nil {
 		return nil, err
 	}

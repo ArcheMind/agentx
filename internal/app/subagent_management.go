@@ -37,7 +37,11 @@ func (a App) mcpServe(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	return (&subagents.Server{Home: a.presetHome(), Cwd: cwd, Runner: a.Runner}).Serve(ctx, a.Stdin, a.Stdout)
+	server := &subagents.Server{Home: a.presetHome(), Cwd: cwd, Runner: a.Runner}
+	if r, ok := a.Runner.(runtime.ExecRunner); ok && r.Debug {
+		server.Log = a.Stderr
+	}
+	return server.Serve(ctx, a.Stdin, a.Stdout)
 }
 
 func presetUsageError() error {
@@ -128,9 +132,6 @@ func (a App) injectClaudeAgentX(request *runtime.RunRequest) error {
 		"--mcp-config", string(entry),
 		"--allowedTools", "mcp__agentx__StartExternalSubagent", "mcp__agentx__SendExternalSubagentMessage", "mcp__agentx__StopExternalSubagent", "mcp__agentx__ListExternalSubagentSessions",
 	}, request.PassthroughArgs...)
-	if os.Getenv("AX_CLAUDE_CHANNELS") == "1" {
-		request.PassthroughArgs = append([]string{"--channels", "server:agentx", "--dangerously-load-development-channels", "server:agentx"}, request.PassthroughArgs...)
-	}
 	return nil
 }
 

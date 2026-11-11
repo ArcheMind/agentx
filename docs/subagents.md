@@ -210,30 +210,30 @@ fresh `tools/list` reads the current collection.
 Restart or reconnect the host for tool discovery. `ax claude`
 adds the MCP connection and allows exactly the four AgentX tools for that session
 with `--allowedTools`; Claude's persistent `settings.json` is not modified.
-Background delivery additionally needs Claude's channel opt-in, which AgentX does
-not add. That opt-in alone is:
+Background delivery is file based and host agnostic. When a task ends
+(completed, failed or cancelled, including queued work cancelled before it
+started), AgentX atomically writes one JSON document to:
 
-```sh
-claude --dangerously-load-development-channels server:agentx
+```text
+~/.local/state/agentx/connections/<connection-id>/jobs/<task-id>.json
 ```
 
-The channel path requires interactive Claude Code, first-party provider access,
-host feature approval, and organization approval where applicable. AgentX
-negotiates MCP `2024-11-05` (legacy); modern protocol revisions do not support
-this unsolicited path in Claude Code 2.1.296. Tool discovery alone does not prove
-channel delivery. `status` distinguishes live MCP server
-connections, static native prerequisites, and unverified host channel delivery.
-Each tool response and background report includes a connection ID. Match it to
-`status.connections` to identify the current host, its client name/version and
-whether it sent `notifications/initialized`. A running server without that
-handshake is not reported as an initialized host.
-Claude's debug log should show `Channel notifications registered`; an actual
-completion report confirms delivery. Headless (print) Claude has no channel
-handler, so there a task is a foreground call: `run_in_background:false` waits
-for the terminal result and returns it, the same semantics as a native
-subagent in headless Claude. Background delivery is an interactive-session
-feature, not a pending headless gap. Other MCP clients may consume the named
-notification themselves; background push in other hosts is not claimed.
+The document is `{"content": <rendered report>, "meta": {"report_origin":
+"agentx-subagent", "agent_id", "task_id", "status"}}`. The immediate response of
+`ExternalSubagent` (background) and `SendExternalSubagentMessage` includes the
+absolute path and a wait command:
+
+```sh
+until [ -f "<abs-path>" ]; do sleep 1; done; cat "<abs-path>"
+```
+
+Run it in the background (Claude Code: `Bash` with `run_in_background: true`) so
+the host is woken once with the report. Every follow-up message has its own task
+ID and result file. Each tool response and report includes a connection ID. Match
+it to `status.connections` to identify the current host, its client name/version
+and whether it sent `notifications/initialized`. Foreground calls
+(`run_in_background:false`) wait and return the terminal result directly.
+Set `AX_LOG=debug` to log each result file path and write error to stderr.
 
 ## Tool contract
 
@@ -367,7 +367,7 @@ the ability to delegate subtasks to other agents without user configuration.
   injects depth 1; a depth-1 server injects depth 2; a depth-2 server does
   not inject further. The initialization instructions report the current depth
   and whether further delegation is available.
-- **Foreground only.** Nested hosts (Codex exec) have no channel delivery, so
+- **Foreground only.** Nested hosts (Codex exec) do not wait on result files, so
   `run_in_background` is forced to false regardless of the caller's request.
   The dispatched agent waits for each sub-agent to complete before continuing.
 - **Independent mode.** Each nested ExternalSubagent call picks its own
@@ -434,7 +434,7 @@ are not delivered MCP combinations in this integration.
 
 Reports identify preset, execution agent, actual selected model, effort, mode, discovered auth, ExternalSubagent/task
 IDs, status, failure reason, and continuation/cancellation instructions. Reports
-and channels are labelled untrusted ExternalSubagent content and never user
+are labelled untrusted ExternalSubagent content and never user
 authorization. Available native usage is shown as backend-reported external
 usage with native field names; unknown usage stays unknown. Codex resume usage
 may include context/cumulative fields; AgentX does not reinterpret it as Claude
@@ -453,8 +453,7 @@ make smoke-mcp-management
 make smoke-mcp-contract
 make smoke-presets
 make smoke-mcp-live
-make smoke-mcp-channel
-make smoke-mcp-host-live
+make smoke-mcp-jobfile
 make smoke-mcp-effort-live
 make smoke-mcp-isolation-live
 ```
@@ -463,11 +462,8 @@ The live backend suite uses existing native logins, isolated AgentX configuratio
 and Codex `gpt-5.6-luna` / Pi `openai-codex/gpt-5.6-luna`. Override
 `AX_MCP_CODEX_MODEL` / `AX_MCP_PI_MODEL` with exact accessible models. It verifies
 native inference, independent memory continuation and actual cancellation. The
-channel suite starts real interactive Claude in a PTY with a deterministic
-delayed backend fixture; it requires both channel registration and a subsequent
-assistant transcript containing a token absent from its prompt. This separates
-host-consumption evidence from actual-backend evidence. Neither fixture tests
-nor a server notification alone prove native execution or host delivery.
+job-file smoke starts a background task against a deterministic fixture over MCP
+stdio and asserts the result file appears with the expected fields.
 
 Live smokes that read Codex rollouts (`$CODEX_HOME/sessions/**/rollout-*-<thread>.jsonl`)
 do so because Codex code mode keeps nested shell and patch calls out of
