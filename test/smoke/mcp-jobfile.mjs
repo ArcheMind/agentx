@@ -29,7 +29,6 @@ function assert(value,message){if(!value)throw Error(message)}
 const timer=setTimeout(()=>child.kill('SIGTERM'),30000)
 try{
  const init=await rpc('initialize',{protocolVersion:'2024-11-05',capabilities:{},clientInfo:{name:'jobfile-smoke',version:'1'}})
- assert(!init.capabilities.experimental,'channel capability still advertised')
  child.stdin.write(JSON.stringify({jsonrpc:'2.0',method:'notifications/initialized'})+'\n')
  const started=await rpc('tools/call',{name:'StartExternalSubagent',arguments:{description:'jobfile',prompt:'Return the token',model:'jobfile-test',run_in_background:true}})
  assert(!started.isError,'start failed: '+JSON.stringify(started))

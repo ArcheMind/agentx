@@ -397,28 +397,6 @@ Raw native command/debug evidence was retained at
 observations above and reproducible source harness are the durable record.
 Debug logs contain native plans, stdin, stdout, stderr and errors.
 
-*Superseded 2026-11-10: channel delivery was removed; background completion is now a result file under `connections/<connection-id>/jobs/<task-id>.json` (backlog 032). The runs below remain as historical evidence.*
-
-`make smoke-mcp-channel` passed with actual interactive Claude and a delayed
-deterministic Pi-shaped fixture. The fixture token was absent from the user's
-task. Claude invoked Agent once, got its immediate queued response, then consumed
-a separate completion channel and produced `CHANNEL_RECEIVED_8f326c` in a later
-assistant message. Debug lines included:
-
-```text
-MCP server "agentx": Channel notifications registered
-MCP server "agentx": notifications/claude/channel: AgentX subagent ...
-```
-
-Host transcript:
-`/Users/agent/.claude/projects/-Users-agent-work-agentx/0800b2c3-e18c-4e6c-9153-b4f9492a64f7.jsonl`.
-PTY/debug evidence:
-`/var/folders/34/yf5zv4k133l7nrksmz2flmw00000gn/T/agentx-channel-rlzfCJ/`.
-The final harness additionally asserts the registration debug line. Channel
-metadata was later renamed from `source` to `report_origin` to avoid duplicating
-Claude's authoritative `<channel source="agentx">` attribute; a regression
-asserts no `source` metadata key remains.
-
 `make smoke-mcp-management` passed using the real Claude MCP configuration CLI
 under isolated HOME. It preserved an unrelated server, enabled twice, disabled
 and re-enabled without losing options, and rejected a conflicting user-owned
@@ -426,31 +404,6 @@ AgentX entry without mutation. Evidence:
 `/var/folders/34/yf5zv4k133l7nrksmz2flmw00000gn/T/agentx-mcp-management-aswCF4/`.
 This management test did not install a live entry in normal user settings.
 Native Claude startup may update its own ordinary caches.
-
-The integrated actual-host/both-engine run established actual Claude→Codex/Pi
-creation, busy SendMessage acceptance on each worker, both IDs running in the
-same ListAgents observation, and both backend-only recalled labels in later
-assistant output. A strict transcript parser rechecked exact tool call IDs,
-names/models, result identities and actual channel attachments:
-
-| Worker | AgentX object | Label known only to native backend until recall |
-| --- | --- | --- |
-| codex-worker | `ax-6e768c3ee59fd7e7b02b05c821633dfb` | `f22f62eb-5a25-4843-917e-8ce7065993b6` |
-| pi-worker | `ax-9339206f5690d83c2d49028a62deaa9e` | `17662fa4-a1e6-434a-b5a0-562c371ad9b9` |
-
-Neither first-turn label appeared in the parent task; each was read by its native
-backend from a separate public test-data file. The parsed parent assistant made
-no Read/Bash call. Exactly one Agent and one busy SendMessage per named worker
-were observed. Both completed-recall channel attachments and final assistant
-labels were verified. Evidence directory:
-`/var/folders/34/yf5zv4k133l7nrksmz2flmw00000gn/T/agentx-channel-1FfUv1/`;
-transcript:
-`/Users/agent/.claude/projects/-Users-agent-work-agentx/724aadfa-c0d2-4c5b-9fb0-204fb2dc80cc.jsonl`.
-`make verify-mcp-host-evidence` passed with these paths in `MCP_EVIDENCE_DIR` and
-`MCP_TRANSCRIPT`. The original combined run's extra cancellation target finished
-naturally before TaskStop, so that particular cancellation assertion failed and
-is not counted as a successful cancellation. The maintained host-live harness
-now concentrates on host/both-engine/busy-continuation delivery.
 
 The extended `make smoke-mcp-live` subsequently passed real concurrent
 cancellation independently: ListAgents showed Pi survivor
