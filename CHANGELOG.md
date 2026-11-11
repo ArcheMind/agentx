@@ -4,6 +4,8 @@ All notable changes to AgentX are documented here. The format follows [Keep a Ch
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-11-11
+
 ### Changed
 
 - Background ExternalSubagent completion is delivered as a result file
