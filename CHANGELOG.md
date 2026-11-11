@@ -4,6 +4,20 @@ All notable changes to AgentX are documented here. The format follows [Keep a Ch
 
 ## [Unreleased]
 
+### Changed
+
+- Background ExternalSubagent completion is delivered as a result file
+  (`~/.local/state/agentx/connections/<connection-id>/jobs/<task-id>.json`).
+  Background tool responses include the path and a shell wait command, so any
+  host (claude, codex, pi) can wait with a background shell instead of polling.
+
+### Removed
+
+- `notifications/claude/channel` delivery, the `experimental/claude/channel`
+  capability, `AX_CLAUDE_CHANNELS` flag injection, and the
+  `smoke-mcp-channel` / `smoke-mcp-host-live` / `verify-mcp-host-evidence`
+  targets (replaced by `smoke-mcp-jobfile`).
+
 ## [0.9.2] - 2026-11-10
 
 ### Fixed

@@ -12,8 +12,7 @@ The current tools are `ExternalSubagent`, `SendExternalSubagentMessage`,
 `StopExternalSubagent`, and `listExternalSubagentSessions`. They replace the
 earlier `Agent`, `SendMessage`, `TaskStop`, and `ListAgents` MCP names without
 aliases. Parameter keys, configured combination names, permissions and lifecycle
-semantics remain unchanged. The server identity and channel source remain AgentX
-and `agentx`; native Claude tools are not renamed.
+semantics remain unchanged. The server identity remains AgentX and `agentx`; native Claude tools are not renamed.
 
 The live observations and quoted tool names below are historical pre-rename
 records. They establish lifecycle behavior before this naming change, not a new
@@ -398,6 +397,8 @@ Raw native command/debug evidence was retained at
 observations above and reproducible source harness are the durable record.
 Debug logs contain native plans, stdin, stdout, stderr and errors.
 
+*Superseded 2026-11-10: channel delivery was removed; background completion is now a result file under `connections/<connection-id>/jobs/<task-id>.json` (backlog 032). The runs below remain as historical evidence.*
+
 `make smoke-mcp-channel` passed with actual interactive Claude and a delayed
 deterministic Pi-shaped fixture. The fixture token was absent from the user's
 task. Claude invoked Agent once, got its immediate queued response, then consumed
@@ -474,9 +475,9 @@ checks are not a sandbox penetration test.
 | A02 Single call | Actual Claude creates each real backend object in one Agent call. Separate live foreground calls return terminal native reports, identities and hints. |
 | A03 Defaults | Historical (pre-002): configured-default execution. Since 002 there is no default preset; an omitted `model` is rejected (deterministic server test). |
 | A04 Constraints | Unknown/disabled choices and unsupported role/effort/isolation reject; capabilities/limits visible in generated tool description. |
-| A05 Fore/background | Live both engines false waits; real Claude true returns queued then consumes channel. Deterministic omitted background returns queued immediately. |
+| A05 Fore/background | Live both engines false waits; real Claude true returns queued then the result file is written when the task ends. Deterministic omitted background returns queued immediately. |
 | A06 Memory | Live distinct first-turn labels recalled via both native sessions, no caller history replay. |
-| A07 Busy message | Actual Claude's exact SendMessage results report each matching real worker running and message accepted/queued; both later recall their own context through channel results. |
+| A07 Busy message | Actual Claude's exact SendMessage results report each matching real worker running and message accepted/queued; both later recall their own context through result files. |
 | A08 Parallel/addressing | Live different engines parallel with distinct contexts; deterministic same-combination fresh sessions, name reassignment and old-ID access. |
 | A09 Cancellation | Real ListAgents shows Pi survivor and Codex target running together; cancelling Codex terminates it while Pi later completes. Deterministic per-queued-task notifications and unknown/already-ended cases supplement this. |
 | A10 Disable/re-enable | Live isolated management preserves the presets collection (`make smoke-mcp-management`); deterministic new-work rejection and completion of accepted queue while disabled. |
@@ -494,14 +495,14 @@ see [Roles and effort](#roles-and-effort-backlog-004-g04-g09).
 
 | Requirements | Implementation / checks |
 | --- | --- |
-| U01–U05 | Persistent strict user configuration; management and exact-entry MCP registration; connection IDs/clientInfo/initialized status identify current host separately from channel gate. Live management/discovery. |
+| U01–U05 | Persistent strict user configuration; management and exact-entry MCP registration; connection IDs/clientInfo/initialized status identify current host; completion is delivered as a result file. Live management/discovery. |
 | U06 | Explicit default or model-required error; default/no-default regression. |
 | U07–U08 | Gate read on every new Agent/SendMessage; accepted queue may finish; TaskStop works disabled. |
 | U09 | Original option/model/native session pinned; configuration/session mismatch rejected. |
 | U10 | Distinct queued/running/completed/failed/cancelled states; failed/cancelled foreground tool errors. |
 | C01–C04 | Four MCP tools; familiar exact Agent fields; model contains configured combination; visible strengths and limits; no registration or extra agent field. |
 | C05–C08 | General-purpose role independent of model; no forced orchestration; strict inputs; unsupported values reject; deprecated fields never grant permission. |
-| L01–L04 | Fresh objects, immediate backgrounds, terminal foregrounds, exact native resume; live memory and host channel consumption. |
+| L01–L04 | Fresh objects, immediate backgrounds, terminal foregrounds, exact native resume; live memory and result-file consumption. |
 | L05–L07 | FIFO messages and per-task terminal notifications; native completed-object resume; names/IDs and name reassignment. |
 | L08–L10 | Targeted process-group cancellation waits; unconfirmed cancellation honest; independent objects; lost session never silently recreated or replayed. |
 | R01–R03 | Readable reports, provenance and interaction hints; injected/native failures distinct from successful reports. |
@@ -510,12 +511,10 @@ see [Roles and effort](#roles-and-effort-backlog-004-g04-g09).
 
 ## Explicit limits
 
-- Background delivery is verified for interactive first-party Claude Code
-  2.1.296 with allowed channel policy. Headless print did not register this
-  handler; use foreground there. No organization/feature policy is bypassed.
-- MCP has no channel presentation acknowledgement. Status identifies live
-  initialized connections, but cannot certify their host UI gate. Actual
-  completion evidence independently establishes that path.
+- Background delivery is a result file written once when the task ends; any
+  host can wait on it with a shell. No host UI gate or opt-in is involved.
+- MCP has no delivery acknowledgement. Status identifies live initialized
+  connections; the result file's existence is the completion evidence.
 - General-purpose and declared roles (Codex and Pi), local native execution
   under each grant, worktree isolation, and explicit effort verified per turn
   (Codex levels; Pi `low`..`max`) are supported. Pi `off`/`minimal`, any effort
@@ -531,5 +530,5 @@ see [Roles and effort](#roles-and-effort-backlog-004-g04-g09).
 
 Reproduce deterministic/management checks with
 `make verify test-mcp-race smoke-mcp-management`. Paid native/host checks use
-`make smoke-mcp-live smoke-mcp-channel smoke-mcp-host-live smoke-mcp-isolation-live`
+`make smoke-mcp-live smoke-mcp-jobfile smoke-mcp-isolation-live`
 and the logins selected by each grant's auth source.
