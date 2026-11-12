@@ -4,6 +4,35 @@ All notable changes to AgentX are documented here. The format follows [Keep a Ch
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-11-12
+
+### Added
+
+- **Pi delegation bridge**: Pi gains sub-agent delegation through an embedded
+  TypeScript extension that bridges all four ExternalSubagent MCP tools as
+  Pi-native tools. Injected in all `ax` launch paths (interactive run, session
+  resume, preset home, MCP subagent dispatch), matching Claude and Codex parity.
+
+- **Fresh resume offloads history**: selector key `f` (and the >250K-token
+  choice on Enter) resumes a session freshly — the full transcript is written
+  to `~/.local/state/agentx/history/<id>.json`, the first two and last three
+  user turns are kept with tool results stubbed to the history path, and a
+  pointer message is injected between them.
+
+### Fixed
+
+- Codex incremental rollout files (multi-agent v2) sharing the same
+  `session_meta.id` are now deduplicated — only the newest rollout per session
+  is kept, eliminating "session ID is ambiguous" errors on load.
+
+- `ax session continue codex` resolves the Codex home directory via auth
+  discovery, fixing resume and import when `CODEX_HOME` is not set.
+
+- Pi session serialization now includes system messages (`SerializePi`).
+
+- Invariant assertion added: picker selection must resolve uniquely at
+  resume/export time.
+
 ## [0.10.0] - 2026-11-11
 
 ### Changed
