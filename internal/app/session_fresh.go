@@ -14,7 +14,8 @@ import (
 
 const (
 	freshTokenThreshold = 250_000
-	freshUserWindow     = 4
+	freshHeadUsers      = 2
+	freshTailUsers      = 3
 )
 
 // estimateContextTokens approximates resume context as text bytes / 4; only
@@ -43,10 +44,27 @@ func exceedsFreshThreshold(messages []sessions.Message) (int, bool) {
 	return tokens, tokens > freshTokenThreshold
 }
 
-// freshWindowStart is the index of the freshUserWindow-th user message from
-// the end; with fewer user messages the whole transcript is kept.
-func freshWindowStart(messages []sessions.Message) int {
-	remaining := freshUserWindow
+// freshHeadEnd returns the index just past the last message belonging to the
+// first n user turns (each user message plus its following non-user messages).
+func freshHeadEnd(messages []sessions.Message, n int) int {
+	seen := 0
+	end := 0
+	for i, m := range messages {
+		if m.Role == "user" {
+			seen++
+			if seen > n {
+				return end
+			}
+		}
+		end = i + 1
+	}
+	return end
+}
+
+// freshTailStart is the index of the freshTailUsers-th user message from the
+// end; with fewer user messages the whole transcript is kept.
+func freshTailStart(messages []sessions.Message) int {
+	remaining := freshTailUsers
 	for i := len(messages) - 1; i >= 0; i-- {
 		if messages[i].Role == "user" {
 			remaining--
@@ -113,8 +131,17 @@ func (a App) freshSessionDetail(detail sessions.Session) (sessions.Session, erro
 		return sessions.Session{}, fmt.Errorf("write history file: %w", err)
 	}
 
-	window := offloadToolResults(detail.Messages[freshWindowStart(detail.Messages):], historyPath)
-	messages := append([]sessions.Message{freshHistoryMessage(historyPath)}, window...)
+	headEnd := freshHeadEnd(detail.Messages, freshHeadUsers)
+	tailStart := freshTailStart(detail.Messages)
+	if tailStart < headEnd {
+		tailStart = headEnd
+	}
+	head := offloadToolResults(detail.Messages[:headEnd], historyPath)
+	tail := offloadToolResults(detail.Messages[tailStart:], historyPath)
+	messages := make([]sessions.Message, 0, len(head)+1+len(tail))
+	messages = append(messages, head...)
+	messages = append(messages, freshHistoryMessage(historyPath))
+	messages = append(messages, tail...)
 	detail.Messages = sessions.SanitizeMessageIDs(sessions.SanitizeToolIDs(sessions.RechainMessages(fillTimestamps(messages))))
 	detail.MessageCount = len(detail.Messages)
 	return detail, nil

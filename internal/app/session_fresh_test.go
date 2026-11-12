@@ -26,7 +26,30 @@ func toolMsg(id, toolUseID string, result any) sessions.Message {
 	return sessions.Message{ID: id, Role: "tool", ToolUseID: toolUseID, Result: result}
 }
 
-func TestFreshWindowStartLocatesFourthUserFromEnd(t *testing.T) {
+func TestFreshHeadEndLocatesFirstNUserTurns(t *testing.T) {
+	messages := []sessions.Message{
+		userMsg("u1", "first"),
+		assistantMsg("a1", "answer1"),
+		toolMsg("t1", "call1", "output"),
+		userMsg("u2", "second"),
+		assistantMsg("a2", "answer2"),
+		userMsg("u3", "third"),
+	}
+	if end := freshHeadEnd(messages, 2); end != 5 {
+		t.Fatalf("headEnd(2) = %d, want 5 (up to and including a2)", end)
+	}
+	if end := freshHeadEnd(messages, 1); end != 3 {
+		t.Fatalf("headEnd(1) = %d, want 3 (up to and including t1)", end)
+	}
+	if end := freshHeadEnd(messages, 10); end != 6 {
+		t.Fatalf("headEnd(10) = %d, want 6 (whole slice)", end)
+	}
+	if end := freshHeadEnd(nil, 2); end != 0 {
+		t.Fatalf("headEnd(nil) = %d, want 0", end)
+	}
+}
+
+func TestFreshTailStartLocatesThirdUserFromEnd(t *testing.T) {
 	messages := []sessions.Message{
 		userMsg("u1", "first"),
 		assistantMsg("a1", "answer"),
@@ -39,19 +62,19 @@ func TestFreshWindowStartLocatesFourthUserFromEnd(t *testing.T) {
 		assistantMsg("a3", "answer"),
 		userMsg("u5", "fifth"),
 	}
-	if start := freshWindowStart(messages); start != 3 {
-		t.Fatalf("start = %d, want 3 (u2)", start)
+	if start := freshTailStart(messages); start != 5 {
+		t.Fatalf("start = %d, want 5 (u3)", start)
 	}
-	// Exactly four user prompts: the window is the whole transcript.
-	if start := freshWindowStart(messages[3:]); start != 0 {
+	// Exactly three user prompts: the window is the whole transcript.
+	if start := freshTailStart(messages[5:]); start != 0 {
 		t.Fatalf("start = %d, want 0", start)
 	}
-	// Fewer than four user prompts: no trim.
-	short := []sessions.Message{userMsg("u1", "a"), assistantMsg("a1", "b"), toolMsg("t1", "c1", "r"), userMsg("u2", "c")}
-	if start := freshWindowStart(short); start != 0 {
+	// Fewer than three user prompts: no trim.
+	short := []sessions.Message{userMsg("u1", "a"), assistantMsg("a1", "b"), userMsg("u2", "c")}
+	if start := freshTailStart(short); start != 0 {
 		t.Fatalf("start = %d, want 0", start)
 	}
-	if start := freshWindowStart(nil); start != 0 {
+	if start := freshTailStart(nil); start != 0 {
 		t.Fatalf("start = %d, want 0", start)
 	}
 }
@@ -148,20 +171,23 @@ func TestFreshSessionDetailOffloadsAndRechains(t *testing.T) {
 		t.Fatalf("history file lost content: %#v", history.Messages)
 	}
 
-	// Window from u2 (4th user from the end) plus the injected header.
-	if len(out.Messages) != 8 || out.MessageCount != 8 {
-		t.Fatalf("messages = %d count = %d, want 8", len(out.Messages), out.MessageCount)
+	// Head (u1,t1,u2,a1) + history pointer + tail (u3,t2,u4,a2,u5) = 10.
+	if len(out.Messages) != 10 || out.MessageCount != 10 {
+		t.Fatalf("messages = %d count = %d, want 10", len(out.Messages), out.MessageCount)
 	}
-	header := out.Messages[0]
-	if header.Role != "user" || header.ParentID != "" {
+	if out.Messages[0].Content[0].Text != "first" {
+		t.Fatalf("head starts at %#v, want u1", out.Messages[0])
+	}
+	header := out.Messages[4]
+	if header.Role != "user" {
 		t.Fatalf("header = %#v", header)
 	}
 	want := fmt.Sprintf("Full conversation history: %s — read it when earlier context is needed.", historyPath)
 	if len(header.Content) != 1 || header.Content[0].Text != want {
 		t.Fatalf("header text = %#v", header.Content)
 	}
-	if out.Messages[1].Content[0].Text != "second" {
-		t.Fatalf("window starts at %#v, want u2", out.Messages[1])
+	if out.Messages[5].Content[0].Text != "third" {
+		t.Fatalf("tail starts at %#v, want u3", out.Messages[5])
 	}
 	stub := "[offloaded: " + historyPath + "]"
 	stubbed := 0
@@ -173,8 +199,8 @@ func TestFreshSessionDetailOffloadsAndRechains(t *testing.T) {
 			}
 		}
 	}
-	if stubbed != 1 {
-		t.Fatalf("stubbed = %d, want 1 (only t2 is inside the window)", stubbed)
+	if stubbed != 2 {
+		t.Fatalf("stubbed = %d, want 2 (t1 in head, t2 in tail)", stubbed)
 	}
 	for i, message := range out.Messages {
 		if message.Timestamp == "" {
@@ -206,10 +232,17 @@ func TestFreshSessionDetailKeepsShortTranscriptsWhole(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(out.Messages) != 4 {
-		t.Fatalf("messages = %d, want header + 3 originals", len(out.Messages))
+		t.Fatalf("messages = %d, want 3 originals (head) + header", len(out.Messages))
 	}
-	if out.Messages[2].Result != "[offloaded: "+historyPath+"]" {
-		t.Fatalf("tool result = %#v", out.Messages[2].Result)
+	if out.Messages[0].Content[0].Text != "only" {
+		t.Fatalf("head[0] = %#v, want u1", out.Messages[0])
+	}
+	if out.Messages[1].Result != "[offloaded: "+historyPath+"]" {
+		t.Fatalf("tool result = %#v", out.Messages[1].Result)
+	}
+	wantHeader := fmt.Sprintf("Full conversation history: %s — read it when earlier context is needed.", historyPath)
+	if out.Messages[3].Content[0].Text != wantHeader {
+		t.Fatalf("header not at end: %#v", out.Messages[3])
 	}
 }
 

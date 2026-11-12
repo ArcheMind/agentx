@@ -362,23 +362,26 @@ func TestUnlistedModelEffortNoteIsHonest(t *testing.T) {
 func TestPickedSessionDuplicateIDViolatesInvariant(t *testing.T) {
 	home := t.TempDir()
 	workspace := t.TempDir()
+	// Same-agent codex duplicates are now deduplicated by loadCodex, so use
+	// Claude where duplicate session IDs across workspace directories still
+	// produce multiple Matches results.
 	paths := []string{
-		filepath.Join(home, ".codex", "sessions", "2026", "09", "01", "a.jsonl"),
-		filepath.Join(home, ".codex", "sessions", "2026", "09", "02", "b.jsonl"),
+		filepath.Join(home, ".claude", "projects", "proj-a", "dup-id.jsonl"),
+		filepath.Join(home, ".claude", "projects", "proj-b", "dup-id.jsonl"),
 	}
 	for _, path := range paths {
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		meta := fmt.Sprintf(`{"type":"session_meta","timestamp":"2026-09-01T11:00:00Z","payload":{"id":"dup-id","cwd":%q,"timestamp":"2026-09-01T11:00:00Z"}}`, workspace)
-		if err := os.WriteFile(path, []byte(meta+"\n"), 0o600); err != nil {
+		line := fmt.Sprintf(`{"type":"user","sessionId":"dup-id","cwd":%q,"timestamp":"2026-09-01T11:00:00Z","message":{"role":"user","content":"hello"}}`, workspace)
+		if err := os.WriteFile(path, []byte(line+"\n"), 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}
 	var stdout bytes.Buffer
 	application := New(false, strings.NewReader(""), &stdout, &bytes.Buffer{})
 	application.Sessions = sessions.Service{HomeDir: home}
-	selected := sessions.Summary{ID: "dup-id", Agent: "codex"}
+	selected := sessions.Summary{ID: "dup-id", Agent: "claude"}
 	t.Chdir(t.TempDir())
 
 	for name, err := range map[string]error{
