@@ -32,8 +32,21 @@ func WriteSessionFile(detail Session, agentID, dir, homeDir string) (string, err
 		return newID, writeJSONLFile(path, SerializeClaude(detail))
 	case "pi":
 		newID := newUUID()
-		path := filepath.Join(dir, newID+".jsonl")
+		workspace := detail.Workspace
+		if workspace == "" {
+			wd, err := os.Getwd()
+			if err != nil {
+				return "", fmt.Errorf("resolve pi session workspace: %w", err)
+			}
+			workspace = wd
+		}
+		piDir := filepath.Join(homeDir, ".pi", "agent", "sessions", piSessionDirName(workspace))
+		if err := os.MkdirAll(piDir, 0700); err != nil {
+			return "", fmt.Errorf("create pi session directory: %w", err)
+		}
+		path := filepath.Join(piDir, newID+".jsonl")
 		detail.ID = newID
+		detail.Workspace = workspace
 		return path, writeJSONLFile(path, SerializePi(detail))
 	case "gemini":
 		path := filepath.Join(dir, newUUID()+".json")
@@ -60,6 +73,15 @@ func WriteSessionFile(detail Session, agentID, dir, homeDir string) (string, err
 	default:
 		return "", fmt.Errorf("unsupported resume target %q", agentID)
 	}
+}
+
+// piSessionDirName mirrors pi's getDefaultSessionDirPath (pi-coding-agent
+// dist/core/session-manager.js) so pi's own session picker finds the file.
+func piSessionDirName(workspace string) string {
+	if len(workspace) > 0 && (workspace[0] == '/' || workspace[0] == '\\') {
+		workspace = workspace[1:]
+	}
+	return "--" + strings.NewReplacer("/", "-", "\\", "-", ":", "-").Replace(workspace) + "--"
 }
 
 func WriteCodexSessionFile(detail Session, codexHome string) (string, error) {
