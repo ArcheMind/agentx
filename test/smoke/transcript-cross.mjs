@@ -77,8 +77,7 @@ function splitReasoning(m){
 function degrade(dst,messages){
   let list=structuredClone(messages)
   if(dst==='codex')list=list.flatMap(splitReasoning)
-  // Spec Pi table maps no system role, so system messages are dropped.
-  if(dst==='pi')list=list.filter(m=>m.role!=='system')
+  // Pi now serializes and parses system messages (b945e49).
   return list.map(m=>{
     if(dst==='pi'){
       // pi user content is text blocks only; image blocks in user messages are dropped.
@@ -237,6 +236,7 @@ function lintPi(records,file,warnings){
     if(m.role==='user')shape(m,{required:{role:literal('user'),content:arrayOf(userBlocks),timestamp:isNum}},where+' message',errors)
     else if(m.role==='assistant')shape(m,{required:{role:literal('assistant'),content:arrayOf(assistantBlocks),timestamp:isNum,usage:v=>{const e=[];shape(v,usage,'usage',e);return e.length===0}},optional:{api:isStr,provider:isStr,model:isStr,stopReason:isStr,rawStopReason:isStr,responseId:isStr}},where+' message',errors)
     else if(m.role==='toolResult')shape(m,{required:{role:literal('toolResult'),toolCallId:isStr,toolName:isStr,content:arrayOf(userBlocks),isError:v=>typeof v==='boolean',timestamp:isNum},optional:{details:isObj}},where+' message',errors)
+    else if(m.role==='system')shape(m,{required:{role:literal('system')},optional:{content:v=>typeof v==='string'||Array.isArray(v),sections:v=>Array.isArray(v),timestamp:isNum}},where+' message',errors)
     else errors.push(`${where}: message role not in pi PROTOCOL`)
     if(r.parentId!==null&&!ids.has(r.parentId))warnings.push(`${where}: parentId ${r.parentId} does not resolve to an earlier entry`)
     if(ids.has(r.id))errors.push(`${where}: duplicate id ${r.id}`)
