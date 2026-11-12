@@ -813,8 +813,7 @@ func (a App) sessionImport(args []string) error {
 	if err != nil {
 		return err
 	}
-	stateDir := filepath.Join(a.Sessions.HomeDir, ".local", "state", "agentx", "resume")
-	token, err := sessions.WriteSessionFile(detail, agent.ID, stateDir, a.Sessions.HomeDir)
+	token, err := a.writeResumeSession(detail, agent.ID)
 	if err != nil {
 		return err
 	}
@@ -913,8 +912,7 @@ func (a App) resumeSession(ctx context.Context, agent runtime.Agent, detail sess
 	if detail.Provider == agent.ID {
 		resumeToken = detail.ID
 	} else {
-		stateDir := filepath.Join(a.Sessions.HomeDir, ".local", "state", "agentx", "resume")
-		resumeToken, err = sessions.WriteSessionFile(detail, agent.ID, stateDir, a.Sessions.HomeDir)
+		resumeToken, err = a.writeResumeSession(detail, agent.ID)
 		if err != nil {
 			return fmt.Errorf("prepare resume session: %w", err)
 		}

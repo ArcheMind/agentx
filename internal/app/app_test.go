@@ -839,6 +839,34 @@ func TestSessionImportWritesNativeStore(t *testing.T) {
 	}
 }
 
+func TestSessionImportCodexWritesToConfiguredHome(t *testing.T) {
+	home := t.TempDir()
+	codexHome := t.TempDir()
+	t.Setenv("CODEX_HOME", codexHome)
+	workspace := t.TempDir()
+	input := `{"id":"s1","agent":"claude","workspace":"` + workspace + `","messageCount":1,"messages":[{"id":"m1","role":"user","content":[{"type":"text","text":"hello"}]}]}`
+	var stdout bytes.Buffer
+	application := New(false, strings.NewReader(input), &stdout, &bytes.Buffer{})
+	application.Sessions = sessions.Service{HomeDir: home}
+	if err := application.Run(context.Background(), []string{"session", "import", "codex"}); err != nil {
+		t.Fatal(err)
+	}
+	matches, err := filepath.Glob(filepath.Join(codexHome, "sessions", "*", "*", "*", "rollout-*.jsonl"))
+	if err != nil || len(matches) != 1 {
+		t.Fatalf("imported session files = %v, err = %v", matches, err)
+	}
+	data, err := os.ReadFile(matches[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "hello") {
+		t.Fatalf("imported session %q lacks the message", string(data))
+	}
+	if _, err := os.Stat(filepath.Join(home, ".codex")); !os.IsNotExist(err) {
+		t.Fatalf("expected no writes under the service home, stat error = %v", err)
+	}
+}
+
 func TestSessionImportUsage(t *testing.T) {
 	application := New(false, strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{})
 	err := application.Run(context.Background(), []string{"session", "import"})

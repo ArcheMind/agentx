@@ -30,8 +30,6 @@ func WriteSessionFile(detail Session, agentID, dir, homeDir string) (string, err
 		path := filepath.Join(claudeDir, newID+".jsonl")
 		detail.ID = newID
 		return newID, writeJSONLFile(path, SerializeClaude(detail))
-	case "codex":
-		return WriteCodexSessionFile(detail, filepath.Join(homeDir, ".codex"))
 	case "pi":
 		newID := newUUID()
 		path := filepath.Join(dir, newID+".jsonl")

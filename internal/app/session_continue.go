@@ -119,7 +119,6 @@ func (a App) sessionContinue(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	stateDir := filepath.Join(a.Sessions.HomeDir, ".local", "state", "agentx", "resume")
 	token := ""
 	prefix := 0
 	// Pi always gets a session file (even an empty one): --session is how pi
@@ -134,11 +133,7 @@ func (a App) sessionContinue(ctx context.Context, args []string) error {
 		// the Codex item id cap are shortened.
 		imported.Messages = sessions.SanitizeMessageIDs(sessions.SanitizeToolIDs(sessions.RechainMessages(fillTimestamps(history))))
 		imported.MessageCount = len(history)
-		if agent.ID == "codex" {
-			token, err = sessions.WriteCodexSessionFile(imported, auth.Dir)
-		} else {
-			token, err = sessions.WriteSessionFile(imported, agent.ID, stateDir, a.Sessions.HomeDir)
-		}
+		token, err = a.writeResumeSession(imported, agent.ID)
 		if err != nil {
 			return err
 		}
@@ -221,6 +216,21 @@ func (a App) sessionContinue(ctx context.Context, args []string) error {
 		out.ID = full.ID
 	}
 	return writeStructured(a.Stdout, out, a.structuredDefault())
+}
+
+// writeResumeSession materializes a transcript as a native session file.
+// Codex sessions go to the auth-discovered home (CODEX_HOME when set),
+// because that is the store the codex CLI reads.
+func (a App) writeResumeSession(detail sessions.Session, agentID string) (string, error) {
+	if agentID == "codex" {
+		auth, err := subagents.DiscoverAuth(agentID)
+		if err != nil {
+			return "", err
+		}
+		return sessions.WriteCodexSessionFile(detail, auth.Dir)
+	}
+	stateDir := filepath.Join(a.Sessions.HomeDir, ".local", "state", "agentx", "resume")
+	return sessions.WriteSessionFile(detail, agentID, stateDir, a.Sessions.HomeDir)
 }
 
 func fillTimestamps(messages []sessions.Message) []sessions.Message {
