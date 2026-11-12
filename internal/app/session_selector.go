@@ -169,7 +169,7 @@ func (a App) chooseInteractive(reader *bufio.Reader, title string, rows []conten
 	return index, err
 }
 
-// runSelector reports the key that ended the loop: selectionConfirm, or selectionManage/selectionExport when enabled.
+// runSelector reports the key that ended the loop: selectionConfirm, or selectionManage/selectionExport/selectionFresh when enabled.
 func (a App) runSelector(reader *bufio.Reader, options selector, allRows []contentRow, itemCount int, emptyErr error) (int, selectionKey, error) {
 	selected := options.selected
 	viewStart := 0
@@ -307,6 +307,11 @@ func (a App) runSelector(reader *bufio.Reader, options selector, allRows []conte
 				fmt.Fprint(a.Stdout, "\r\n")
 				return selected, selectionExport, nil
 			}
+		case selectionFresh:
+			if options.manage {
+				fmt.Fprint(a.Stdout, "\r\n")
+				return selected, selectionFresh, nil
+			}
 		case selectionCancel:
 			fmt.Fprint(a.Stdout, "\r\n")
 			return 0, selectionConfirm, errSelectionCancelled
@@ -388,6 +393,7 @@ const (
 	selectionCancel
 	selectionManage
 	selectionExport
+	selectionFresh
 )
 
 func readSelectionKey(reader *bufio.Reader) (selectionKey, error) {
@@ -411,6 +417,8 @@ func readSelectionKey(reader *bufio.Reader) (selectionKey, error) {
 		return selectionManage, nil
 	case 'e', 'E':
 		return selectionExport, nil
+	case 'f', 'F':
+		return selectionFresh, nil
 	case 27:
 		if reader.Buffered() < 2 {
 			return selectionCancel, nil

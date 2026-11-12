@@ -382,7 +382,7 @@ func TestPickedSessionDuplicateIDViolatesInvariant(t *testing.T) {
 	t.Chdir(t.TempDir())
 
 	for name, err := range map[string]error{
-		"resume": application.resumeChosenSession(context.Background(), bufio.NewReader(strings.NewReader("")), selected),
+		"resume": application.resumeChosenSession(context.Background(), bufio.NewReader(strings.NewReader("")), selected, false),
 		"export": application.exportChosenSession(selected),
 	} {
 		if err == nil {

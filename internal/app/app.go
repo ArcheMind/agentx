@@ -769,7 +769,7 @@ func (a App) sessionResume(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	return a.resumeSession(ctx, agent, detail, workspace, "", nil, dryRun)
+	return a.resumeSession(ctx, agent, detail, workspace, "", nil, false, dryRun)
 }
 
 func (a App) sessionExport(args []string) error {
@@ -861,7 +861,7 @@ func (a App) resumeTranscriptFile(ctx context.Context, path string) error {
 		}
 	}
 	reader := bufio.NewReader(a.Stdin)
-	return a.resumeSessionInteractive(ctx, reader, detail)
+	return a.resumeSessionInteractive(ctx, reader, detail, false)
 }
 
 func transcriptFileName(detail sessions.Session) string {
@@ -889,7 +889,7 @@ func transcriptFileName(detail sessions.Session) string {
 	return strings.Join(parts, "-") + ".json"
 }
 
-func (a App) resumeSession(ctx context.Context, agent runtime.Agent, detail sessions.Session, workspace, model string, extraArgs []string, dryRun bool) error {
+func (a App) resumeSession(ctx context.Context, agent runtime.Agent, detail sessions.Session, workspace, model string, extraArgs []string, fresh, dryRun bool) error {
 	var err error
 	if workspace == "" {
 		workspace = detail.Workspace
@@ -908,8 +908,15 @@ func (a App) resumeSession(ctx context.Context, agent runtime.Agent, detail sess
 	if err != nil || !info.IsDir() {
 		return fmt.Errorf("session workspace %s is not an accessible directory", workspace)
 	}
+	if fresh {
+		if detail, err = a.freshSessionDetail(detail); err != nil {
+			return err
+		}
+	}
 	var resumeToken string
-	if detail.Provider == agent.ID {
+	// Fresh sessions never take the native-id shortcut: the trimmed transcript
+	// must be written as a new native session even for the same agent.
+	if detail.Provider == agent.ID && !fresh {
 		resumeToken = detail.ID
 	} else {
 		resumeToken, err = a.writeResumeSession(detail, agent.ID)
