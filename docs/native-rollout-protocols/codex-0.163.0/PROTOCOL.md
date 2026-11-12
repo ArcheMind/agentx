@@ -20,6 +20,32 @@ Source files consulted:
 The UUID in the filename MUST be a valid UUID v4. `parse_timestamp_uuid_from_filename`
 scans from the right for a `-` whose suffix parses as UUID.
 
+### Incremental rollout chain (multi-agent v2)
+
+A single session may span multiple rollout files. The first file uses the
+session's thread ID as its filename UUID:
+
+```
+rollout-<ts>-<session-id>.jsonl                      # initial rollout
+rollout-<ts>-<session-id>_<turn-uuid>.jsonl           # continuation rollouts
+```
+
+Every continuation file carries the same `session_meta.id` / `session_meta.session_id`
+as the initial file, plus two extra fields:
+
+| Field | Type | Meaning |
+|-------|------|---------|
+| `multi_agent_version` | `"v2"` | Marks the incremental protocol |
+| `history_base` | `{ thread_id, end_ordinal_exclusive, end_byte_offset }` | Pointer to the preceding rollout; `thread_id` is that file's UUID, offsets delimit where its content ends |
+
+The continuation files form a singly-linked chain through `history_base.thread_id`.
+Each file only contains the delta from its predecessor. Codex reconstructs the
+full conversation by walking the chain from the newest file backward.
+
+For listing/discovery purposes (as opposed to full reconstruction), only the
+newest file per `session_meta.id` is authoritative — it has the latest timestamp
+and its messages are a superset when combined with the chain.
+
 ## Session discovery
 
 codex looks up sessions in this order:

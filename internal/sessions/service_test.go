@@ -349,6 +349,47 @@ func TestStructuredContentPreservesToolCalls(t *testing.T) {
 	})
 }
 
+func TestCodexIncrementalRolloutsAreDeduplicated(t *testing.T) {
+	home := t.TempDir()
+	workspace := t.TempDir()
+	day := filepath.Join(home, ".codex", "sessions", "2026", "11", "06")
+
+	// Initial rollout
+	writeFixture(t, filepath.Join(day, "rollout-2026-11-06T12-00-00-sess-uuid.jsonl"), strings.Join([]string{
+		fmt.Sprintf(`{"type":"session_meta","timestamp":"2026-11-06T12:00:00Z","payload":{"id":"sess-uuid","session_id":"sess-uuid","cwd":%q,"timestamp":"2026-11-06T12:00:00Z"}}`, workspace),
+		`{"type":"response_item","timestamp":"2026-11-06T12:01:00Z","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"initial turn"}]}}`,
+	}, "\n"))
+
+	// Continuation rollout — same session_meta.id, newer timestamp
+	writeFixture(t, filepath.Join(day, "rollout-2026-11-06T13-00-00-sess-uuid_turn-uuid.jsonl"), strings.Join([]string{
+		fmt.Sprintf(`{"type":"session_meta","timestamp":"2026-11-06T13:00:00Z","payload":{"id":"sess-uuid","session_id":"sess-uuid","cwd":%q,"timestamp":"2026-11-06T12:00:00Z","multi_agent_version":"v2","history_base":{"thread_id":"sess-uuid","end_ordinal_exclusive":10,"end_byte_offset":500}}}`, workspace),
+		`{"type":"response_item","timestamp":"2026-11-06T13:01:00Z","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"continuation turn"}]}}`,
+	}, "\n"))
+
+	service := Service{HomeDir: home}
+
+	// List should show exactly one session
+	items, err := service.List(ListOptions{All: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("expected 1 session, got %d: %#v", len(items), items)
+	}
+	if items[0].ID != "sess-uuid" {
+		t.Fatalf("session ID = %q", items[0].ID)
+	}
+
+	// Info should not report ambiguous
+	detail, err := service.Info("sess-uuid", "codex")
+	if err != nil {
+		t.Fatalf("Info should succeed: %v", err)
+	}
+	if detail.ID != "sess-uuid" {
+		t.Fatalf("detail ID = %q", detail.ID)
+	}
+}
+
 func writeFixture(t *testing.T, path, content string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {

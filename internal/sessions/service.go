@@ -366,7 +366,11 @@ func parseClaude(path string, records []map[string]any) (Session, bool) {
 
 func loadCodex(home string) ([]Session, error) {
 	pattern := filepath.Join(home, ".codex", "sessions", "*", "*", "*", "*.jsonl")
-	return loadJSONLGlob(pattern, parseCodex)
+	details, err := loadJSONLGlob(pattern, parseCodex)
+	if err != nil {
+		return nil, err
+	}
+	return dedup(details), nil
 }
 
 func parseCodex(path string, records []map[string]any) (Session, bool) {
@@ -1083,6 +1087,24 @@ func timeValue(value any) string {
 	default:
 		return ""
 	}
+}
+
+// dedup keeps only the newest Session per ID. Codex multi-agent v2 writes
+// multiple rollout files for the same session_meta.id; only the chain tail
+// (newest UpdatedAt) matters for listing and info.
+func dedup(details []Session) []Session {
+	best := map[string]int{}
+	for i, d := range details {
+		if prev, ok := best[d.ID]; !ok || d.UpdatedAt > details[prev].UpdatedAt {
+			best[d.ID] = i
+		}
+	}
+	out := make([]Session, 0, len(best))
+	for _, i := range best {
+		out = append(out, details[i])
+	}
+	sortDetails(out)
+	return out
 }
 
 func sortDetails(details []Session) {
