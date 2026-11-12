@@ -43,7 +43,7 @@ type Summary struct {
 	Source       string `json:"source" yaml:"source"`
 }
 
-func summaryOf(detail Session) Summary {
+func SummaryOf(detail Session) Summary {
 	return Summary{
 		ID: detail.ID, Agent: detail.Provider, IsSubagent: detail.IsSubagent,
 		Workspace: detail.Workspace, Title: detail.Title,
@@ -124,7 +124,7 @@ func (s Service) List(options ListOptions) ([]Summary, error) {
 			if workspace != "" && !matchesWorkspace(detail, workspace) {
 				continue
 			}
-			all = append(all, summaryOf(detail))
+			all = append(all, SummaryOf(detail))
 		}
 	}
 
@@ -157,26 +157,9 @@ func (s Service) List(options ListOptions) ([]Summary, error) {
 }
 
 func (s Service) Info(id, source string) (Session, error) {
-	if id == "" {
-		return Session{}, errors.New("session ID is required")
-	}
-	if source != "" && agentSpecByID(source) == nil {
-		return Session{}, fmt.Errorf("unknown session agent %q", source)
-	}
-	var matches []Session
-	for _, spec := range agentSpecs {
-		if source != "" && spec.id != source {
-			continue
-		}
-		details, err := spec.load(s.HomeDir)
-		if err != nil {
-			return Session{}, fmt.Errorf("load %s sessions: %w", spec.id, err)
-		}
-		for _, detail := range details {
-			if detail.ID == id || strings.HasPrefix(detail.ID, id) {
-				matches = append(matches, detail)
-			}
-		}
+	matches, err := s.Matches(id, source)
+	if err != nil {
+		return Session{}, err
 	}
 	if len(matches) == 0 {
 		return Session{}, fmt.Errorf("session %q was not found", id)
@@ -185,6 +168,31 @@ func (s Service) Info(id, source string) (Session, error) {
 		return Session{}, fmt.Errorf("session ID %q is ambiguous; pass --source <agent>", id)
 	}
 	return matches[0], nil
+}
+
+func (s Service) Matches(id, source string) ([]Session, error) {
+	if id == "" {
+		return nil, errors.New("session ID is required")
+	}
+	if source != "" && agentSpecByID(source) == nil {
+		return nil, fmt.Errorf("unknown session agent %q", source)
+	}
+	var matches []Session
+	for _, spec := range agentSpecs {
+		if source != "" && spec.id != source {
+			continue
+		}
+		details, err := spec.load(s.HomeDir)
+		if err != nil {
+			return nil, fmt.Errorf("load %s sessions: %w", spec.id, err)
+		}
+		for _, detail := range details {
+			if detail.ID == id || strings.HasPrefix(detail.ID, id) {
+				matches = append(matches, detail)
+			}
+		}
+	}
+	return matches, nil
 }
 
 func (s Service) lookPath(binary string) (string, error) {

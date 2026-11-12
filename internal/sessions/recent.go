@@ -83,7 +83,7 @@ func recentAgentSummaries(spec agentSpec, home string, includeSubagents bool) ([
 		}
 		items := make([]Summary, len(details))
 		for index, detail := range details {
-			items[index] = summaryOf(detail)
+			items[index] = SummaryOf(detail)
 		}
 		return items, nil
 	}

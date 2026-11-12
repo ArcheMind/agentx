@@ -14,6 +14,7 @@ import (
 	"unicode"
 
 	"github.com/ArcheMind/agentx/internal/drivers"
+	"github.com/ArcheMind/agentx/internal/invariant"
 	"github.com/ArcheMind/agentx/internal/presets"
 	"github.com/ArcheMind/agentx/internal/runtime"
 	"github.com/ArcheMind/agentx/internal/sessions"
@@ -189,8 +190,24 @@ func (a App) interactiveResume(ctx context.Context, includeSubagents bool) error
 	}
 }
 
+func (a App) pickedSession(selected sessions.Summary) (sessions.Session, error) {
+	matches, err := a.Sessions.Matches(selected.ID, selected.Agent)
+	if err != nil {
+		return sessions.Session{}, err
+	}
+	// Summaries carry the source path without transcript bodies.
+	summaries := make([]sessions.Summary, len(matches))
+	for i, match := range matches {
+		summaries[i] = sessions.SummaryOf(match)
+	}
+	if err := invariant.Equal("picker-selection-resolves", len(matches), 1, summaries); err != nil {
+		return sessions.Session{}, err
+	}
+	return matches[0], nil
+}
+
 func (a App) resumeChosenSession(ctx context.Context, reader *bufio.Reader, selected sessions.Summary) error {
-	detail, err := a.Sessions.Info(selected.ID, selected.Agent)
+	detail, err := a.pickedSession(selected)
 	if err != nil {
 		return err
 	}
@@ -198,7 +215,7 @@ func (a App) resumeChosenSession(ctx context.Context, reader *bufio.Reader, sele
 }
 
 func (a App) exportChosenSession(selected sessions.Summary) error {
-	detail, err := a.Sessions.Info(selected.ID, selected.Agent)
+	detail, err := a.pickedSession(selected)
 	if err != nil {
 		return err
 	}

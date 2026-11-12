@@ -358,3 +358,41 @@ func TestUnlistedModelEffortNoteIsHonest(t *testing.T) {
 		t.Fatal(output)
 	}
 }
+
+func TestPickedSessionDuplicateIDViolatesInvariant(t *testing.T) {
+	home := t.TempDir()
+	workspace := t.TempDir()
+	paths := []string{
+		filepath.Join(home, ".codex", "sessions", "2026", "09", "01", "a.jsonl"),
+		filepath.Join(home, ".codex", "sessions", "2026", "09", "02", "b.jsonl"),
+	}
+	for _, path := range paths {
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		meta := fmt.Sprintf(`{"type":"session_meta","timestamp":"2026-09-01T11:00:00Z","payload":{"id":"dup-id","cwd":%q,"timestamp":"2026-09-01T11:00:00Z"}}`, workspace)
+		if err := os.WriteFile(path, []byte(meta+"\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var stdout bytes.Buffer
+	application := New(false, strings.NewReader(""), &stdout, &bytes.Buffer{})
+	application.Sessions = sessions.Service{HomeDir: home}
+	selected := sessions.Summary{ID: "dup-id", Agent: "codex"}
+	t.Chdir(t.TempDir())
+
+	for name, err := range map[string]error{
+		"resume": application.resumeChosenSession(context.Background(), bufio.NewReader(strings.NewReader("")), selected),
+		"export": application.exportChosenSession(selected),
+	} {
+		if err == nil {
+			t.Fatalf("%s: expected invariant error", name)
+		}
+		for _, want := range append([]string{"Invariant: picker-selection-resolves", "presets_home.go:"}, paths...) {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("%s: missing %q in:\n%s", name, want, err)
+			}
+		}
+		t.Logf("%s error:\n%s", name, err)
+	}
+}
