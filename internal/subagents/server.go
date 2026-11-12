@@ -665,7 +665,7 @@ func (s *Server) execute(ctx context.Context, a *ExternalSubagentState, prompt s
 		}
 		plan.Args = append(plan.Args, "--session", a.Session, "--no-approve")
 		if a.Option.UserConfig != nil && !*a.Option.UserConfig {
-			plan.Args = append(plan.Args, "--no-skills", "--no-prompt-templates", "--no-extensions")
+			plan.Args = append(plan.Args, "--no-skills", "--no-prompt-templates")
 		}
 		if roleInstructions != "" {
 			plan.Args = append(plan.Args, "--append-system-prompt", roleInstructions)
@@ -673,6 +673,11 @@ func (s *Server) execute(ctx context.Context, a *ExternalSubagentState, prompt s
 		plan.Args = append(plan.Args, a.Option.Flags...)
 	}
 	plan.Env, plan.UnsetEnv = AuthEnvironment(auth)
+	if a.Option.Agent == "pi" {
+		if err := s.injectPiDelegation(&plan, a); err != nil {
+			return "", nil, err
+		}
+	}
 	observed := a.Option.Agent == "pi" && a.Option.Effort != ""
 	var piOffset int64
 	if observed {
