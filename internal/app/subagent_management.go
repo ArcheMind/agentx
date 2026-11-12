@@ -135,6 +135,15 @@ func (a App) injectClaudeAgentX(request *runtime.RunRequest) error {
 	return nil
 }
 
+func injectPiAgentX(home string, request *runtime.RunRequest) error {
+	path, err := subagents.WritePiBridge(home)
+	if err != nil {
+		return err
+	}
+	request.PassthroughArgs = append(request.PassthroughArgs, "--extension", path)
+	return nil
+}
+
 func injectCodexAgentX(request *runtime.RunRequest) {
 	bin, err := os.Executable()
 	if err != nil {

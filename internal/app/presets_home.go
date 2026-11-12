@@ -311,6 +311,11 @@ func (a App) startPreset(ctx context.Context, reader *bufio.Reader, home string,
 			return a.startFailure(ctx, reader, home, p, err.Error(), false)
 		}
 	}
+	if agent.ID == "pi" {
+		if err := injectPiAgentX(a.Sessions.HomeDir, &request); err != nil {
+			return a.startFailure(ctx, reader, home, p, err.Error(), false)
+		}
+	}
 	if err := a.prepareHooks(&request, agent.ID, true); err != nil {
 		return false, err
 	}

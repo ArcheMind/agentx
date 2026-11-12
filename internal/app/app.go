@@ -390,6 +390,11 @@ func (a App) runAgent(ctx context.Context, args []string) error {
 			return err
 		}
 	}
+	if agent.ID == "pi" {
+		if err := injectPiAgentX(a.Sessions.HomeDir, &request); err != nil {
+			return err
+		}
+	}
 	if err := a.prepareHooks(&request, agent.ID, !dryRun); err != nil {
 		return err
 	}
@@ -922,6 +927,10 @@ func (a App) resumeSession(ctx context.Context, agent runtime.Agent, detail sess
 		}
 	case "codex":
 		injectCodexAgentX(&request)
+	case "pi":
+		if err := injectPiAgentX(a.Sessions.HomeDir, &request); err != nil {
+			return err
+		}
 	}
 	if err := a.prepareHooks(&request, agent.ID, !dryRun); err != nil {
 		return err
