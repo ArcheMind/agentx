@@ -501,20 +501,10 @@ func SerializePi(detail Session) []map[string]any {
 		"cwd":       detail.Workspace,
 		"timestamp": detail.StartedAt,
 	}}
-	// Dropped messages' children are rechained to the dropped message's parent so links stay resolvable.
-	droppedParent := map[string]string{}
 	envelope := func(m Message, msg map[string]any) map[string]any {
 		var parent any
-		pid := m.ParentID
-		for {
-			next, dropped := droppedParent[pid]
-			if !dropped {
-				break
-			}
-			pid = next
-		}
-		if pid != "" {
-			parent = pid
+		if m.ParentID != "" {
+			parent = m.ParentID
 		}
 		if parsed, err := time.Parse(time.RFC3339Nano, m.Timestamp); err == nil {
 			msg["timestamp"] = parsed.UnixMilli()
@@ -531,8 +521,7 @@ func SerializePi(detail Session) []map[string]any {
 	for _, m := range detail.Messages {
 		switch m.Role {
 		case "system":
-			// Pi has no system role (spec Pi table), so system messages are dropped.
-			droppedParent[m.ID] = m.ParentID
+			records = append(records, envelope(m, map[string]any{"role": "system", "content": textContent(m.Content)}))
 		case "user":
 			var content []any
 			for _, b := range m.Content {

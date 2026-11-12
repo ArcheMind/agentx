@@ -164,7 +164,8 @@ func testSerializePiRoundTrip(t *testing.T) {
 
 	writeFixture(t, filepath.Join(home, ".pi", "agent", "sessions", "p", "session.jsonl"), strings.Join([]string{
 		fmt.Sprintf(`{"type":"session","id":"pi1","cwd":%q,"timestamp":"2026-09-01T14:00:00Z"}`, workspace),
-		`{"type":"message","id":"m1","parentId":null,"timestamp":"2026-09-01T14:00:00Z","message":{"role":"user","timestamp":1788271200000,"content":[{"type":"text","text":"run ls"}]}}`,
+		`{"type":"message","id":"m0","parentId":null,"timestamp":"2026-09-01T14:00:00Z","message":{"role":"system","timestamp":1788271200000,"content":"be helpful"}}`,
+		`{"type":"message","id":"m1","parentId":"m0","timestamp":"2026-09-01T14:00:00Z","message":{"role":"user","timestamp":1788271200000,"content":[{"type":"text","text":"run ls"}]}}`,
 		`{"type":"message","id":"m2","parentId":"m1","timestamp":"2026-09-01T14:01:00Z","message":{"role":"assistant","timestamp":1788271260000,"stopReason":"toolUse","content":[{"type":"thinking","thinking":"reasoning","thinkingSignature":"sig-abc"},{"type":"text","text":"calling"},{"type":"toolCall","id":"pc-1","name":"shell","arguments":{"cmd":"ls"}}]}}`,
 		`{"type":"message","id":"m3","parentId":"m2","timestamp":"2026-09-01T14:02:00Z","message":{"role":"toolResult","timestamp":1788271320000,"toolCallId":"pc-1","toolName":"shell","content":[{"type":"text","text":"file1.txt"}],"isError":false}}`,
 		`{"type":"message","id":"m4","parentId":"m3","timestamp":"2026-09-01T14:03:00Z","message":{"role":"assistant","timestamp":1788271380000,"stopReason":"stop","content":[{"type":"text","text":"done"}]}}`,
@@ -177,16 +178,22 @@ func testSerializePiRoundTrip(t *testing.T) {
 		writeFixture(t, filepath.Join(home2, ".pi", "agent", "sessions", "p", "session.jsonl"), content)
 	})
 
-	assertMessageRoles(t, detail.Messages, []string{"user", "assistant", "tool", "assistant"})
-	assertBlockTypes(t, detail.Messages[1].Content, []string{"thinking", "text", "tool_use"})
-	if detail.Messages[1].Content[0].Text != "reasoning" {
-		t.Fatalf("thinking text = %q", detail.Messages[1].Content[0].Text)
+	assertMessageRoles(t, detail.Messages, []string{"system", "user", "assistant", "tool", "assistant"})
+	if textContent(detail.Messages[0].Content) != "be helpful" {
+		t.Fatalf("system text = %q", textContent(detail.Messages[0].Content))
 	}
-	if detail.Messages[1].Content[0].Signature != "sig-abc" {
-		t.Fatalf("thinking signature = %q", detail.Messages[1].Content[0].Signature)
+	if detail.Messages[1].ParentID != "m0" {
+		t.Fatalf("user parentId = %q", detail.Messages[1].ParentID)
 	}
-	if detail.Messages[2].ToolUseID != "pc-1" || detail.Messages[2].ToolName != "shell" {
-		t.Fatalf("tool message: useID=%q name=%q", detail.Messages[2].ToolUseID, detail.Messages[2].ToolName)
+	assertBlockTypes(t, detail.Messages[2].Content, []string{"thinking", "text", "tool_use"})
+	if detail.Messages[2].Content[0].Text != "reasoning" {
+		t.Fatalf("thinking text = %q", detail.Messages[2].Content[0].Text)
+	}
+	if detail.Messages[2].Content[0].Signature != "sig-abc" {
+		t.Fatalf("thinking signature = %q", detail.Messages[2].Content[0].Signature)
+	}
+	if detail.Messages[3].ToolUseID != "pc-1" || detail.Messages[3].ToolName != "shell" {
+		t.Fatalf("tool message: useID=%q name=%q", detail.Messages[3].ToolUseID, detail.Messages[3].ToolName)
 	}
 }
 
