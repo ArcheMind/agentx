@@ -236,7 +236,6 @@ var agentSpecs = []agentSpec{
 	{id: "agy", name: "Antigravity CLI", binary: "agy", root: agyRoot, load: loadAgy},
 	{id: "claude", name: "Claude Code", binary: "claude", root: func(home string) string { return filepath.Join(home, ".claude", "projects") }},
 	{id: "codex", name: "Codex CLI", binary: "codex", root: func(home string) string { return filepath.Join(home, ".codex", "sessions") }},
-	{id: "gemini", name: "Gemini CLI", binary: "gemini", root: func(home string) string { return filepath.Join(home, ".gemini", "tmp") }, load: loadGemini},
 	{id: "opencode", name: "OpenCode", binary: "opencode", root: func(home string) string { return filepath.Join(home, ".local", "share", "opencode", "project") }, load: loadOpenCode},
 	{id: "pi", name: "Pi Coding Agent", binary: "pi", root: func(home string) string { return filepath.Join(home, ".pi", "agent", "sessions") }},
 }
@@ -493,37 +492,6 @@ func parseCodex(path string, records []map[string]any) (Session, bool) {
 		lastID = msgID
 	}
 	return finishDetail(detail)
-}
-
-func loadGemini(home string) ([]Session, error) {
-	pattern := filepath.Join(home, ".gemini", "tmp", "*", "chats", "session-*.json")
-	paths, err := filepath.Glob(pattern)
-	if err != nil {
-		return nil, err
-	}
-	var details []Session
-	for _, path := range paths {
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return nil, err
-		}
-		var record map[string]any
-		if json.Unmarshal(data, &record) != nil {
-			continue
-		}
-		detail, ok := parseGeminiRecord(record)
-		if !ok {
-			continue
-		}
-		detail.Source = path
-		rootFile := filepath.Join(filepath.Dir(filepath.Dir(path)), ".project_root")
-		if data, err := os.ReadFile(rootFile); err == nil {
-			detail.Workspace = strings.TrimSpace(string(data))
-		}
-		details = append(details, detail)
-	}
-	sortDetails(details)
-	return details, nil
 }
 
 func parsePi(path string, records []map[string]any) (Session, bool) {
@@ -1116,7 +1084,6 @@ func nonEmpty(values []string) []string {
 
 // ParseRecords parses raw records from a native agent format into a unified Session.
 // For JSONL agents (claude, codex, pi), records is the list of parsed JSON objects.
-// For JSON agents (gemini), records should contain a single top-level object.
 // For opencode, this returns false since opencode uses a file-per-message layout.
 func ParseRecords(agent string, records []map[string]any) (Session, bool) {
 	switch agent {
@@ -1126,90 +1093,7 @@ func ParseRecords(agent string, records []map[string]any) (Session, bool) {
 		return parseCodex("stdin", records)
 	case "pi":
 		return parsePi("stdin", records)
-	case "gemini":
-		if len(records) == 0 {
-			return Session{}, false
-		}
-		return parseGeminiRecord(records[0])
 	default:
 		return Session{}, false
 	}
-}
-
-func parseGeminiRecord(record map[string]any) (Session, bool) {
-	detail := newDetail("gemini", "stdin")
-	detail.ID = stringValue(record["sessionId"])
-	detail.IsSubagent = stringValue(record["kind"]) == "subagent"
-	detail.Title = stringValue(record["summary"])
-	detail.StartedAt = timeValue(record["startTime"])
-	detail.UpdatedAt = timeValue(record["lastUpdated"])
-
-	var lastID string
-	values, _ := record["messages"].([]any)
-	for _, value := range values {
-		message, _ := value.(map[string]any)
-		role := stringValue(message["type"])
-		if role == "gemini" {
-			role = "assistant"
-		}
-		if role != "user" && role != "assistant" {
-			continue
-		}
-		ts := timeValue(message["timestamp"])
-		msgID := fmt.Sprintf("gemini-%d", len(detail.Messages))
-
-		if role == "assistant" {
-			var blocks []ContentBlock
-			var toolMessages []Message
-			if text := extractText(message["content"]); text != "" {
-				blocks = append(blocks, ContentBlock{Type: "text", Text: text})
-			}
-			if toolCalls, ok := message["toolCalls"].([]any); ok {
-				for _, tc := range toolCalls {
-					call, _ := tc.(map[string]any)
-					callID := stringValue(call["id"])
-					callName := stringValue(call["name"])
-					blocks = append(blocks, ContentBlock{Type: "tool_use", ID: callID, Name: callName, Input: call["args"]})
-					if results, ok := call["result"].([]any); ok {
-						for _, r := range results {
-							resp, _ := r.(map[string]any)
-							fr, _ := resp["functionResponse"].(map[string]any)
-							toolMsg := Message{
-								ParentID: msgID, Role: "tool",
-								Result:    extractText(fr["response"]),
-								Timestamp: ts, ToolUseID: callID, ToolName: callName,
-							}
-							toolMessages = append(toolMessages, toolMsg)
-						}
-					}
-				}
-			}
-			if len(blocks) == 0 {
-				continue
-			}
-			m := Message{ID: msgID, ParentID: lastID, Role: role, Content: blocks, Timestamp: ts}
-			detail.Messages = append(detail.Messages, m)
-			updateTimeBounds(&detail, ts)
-			lastID = msgID
-			for _, toolMessage := range toolMessages {
-				toolMessage.ID = fmt.Sprintf("gemini-%d", len(detail.Messages))
-				detail.Messages = append(detail.Messages, toolMessage)
-				updateTimeBounds(&detail, ts)
-				lastID = toolMessage.ID
-			}
-		} else {
-			var blocks []ContentBlock
-			if text := extractText(message["content"]); text != "" {
-				blocks = append(blocks, ContentBlock{Type: "text", Text: text})
-			}
-			if len(blocks) == 0 {
-				continue
-			}
-			m := Message{ID: msgID, ParentID: lastID, Role: role, Content: blocks, Timestamp: ts}
-			detail.Messages = append(detail.Messages, m)
-			updateTimeBounds(&detail, ts)
-			lastID = msgID
-		}
-	}
-	return finishDetail(detail)
 }

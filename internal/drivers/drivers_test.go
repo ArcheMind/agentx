@@ -15,7 +15,7 @@ import (
 
 func TestRegistryContainsSupportedAgents(t *testing.T) {
 	registry := NewRegistry()
-	want := []string{"agy", "claude", "codex", "dsh", "gemini", "opencode", "pi"}
+	want := []string{"agy", "claude", "codex", "dsh", "opencode", "pi"}
 	all := registry.All()
 	got := make([]string, 0, len(all))
 	for _, agent := range all {
@@ -32,7 +32,6 @@ func TestNativeAuthPlansUseAgentOAuthFlows(t *testing.T) {
 		"claude":   {Executable: "claude", Args: []string{"auth", "login", "--claudeai"}},
 		"codex":    {Executable: "codex", Args: []string{"login"}},
 		"dsh":      {Executable: "dsh", Args: []string{"web"}},
-		"gemini":   {Executable: "gemini"},
 		"opencode": {Executable: "opencode", Args: []string{"auth", "login"}},
 		"pi":       {Executable: "node", Args: []string{"<Pi SDK login adapter>"}},
 	}
@@ -56,7 +55,6 @@ func TestNativeAuthLogoutPlans(t *testing.T) {
 		"agy":      {Executable: "agy"},
 		"claude":   {Executable: "claude", Args: []string{"auth", "logout"}},
 		"codex":    {Executable: "codex", Args: []string{"logout"}},
-		"gemini":   {Executable: "gemini"},
 		"opencode": {Executable: "opencode", Args: []string{"auth", "logout"}},
 		"pi":       {Executable: "pi"},
 	}
@@ -152,15 +150,6 @@ func TestAuthStatusCapabilitiesMatchNativeSupport(t *testing.T) {
 		}
 		if !agent.Auth.SupportsStatus() || !containsCapability(agent.Capabilities, runtime.CapabilityAuthStatus) {
 			t.Fatalf("%s should support auth status", id)
-		}
-	}
-	for _, id := range []string{"gemini"} {
-		agent, err := registry.Get(id)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if agent.Auth.SupportsStatus() || containsCapability(agent.Capabilities, runtime.CapabilityAuthStatus) {
-			t.Fatalf("%s should not support auth status", id)
 		}
 	}
 }
@@ -300,5 +289,11 @@ func TestCodexModelCapabilitiesUseNativeAccountCatalog(t *testing.T) {
 	}
 	if !containsCapability(agent.Capabilities, runtime.CapabilityModelList) || !containsCapability(agent.Capabilities, runtime.CapabilityModelSelect) {
 		t.Fatalf("Codex capabilities = %#v", agent.Capabilities)
+	}
+}
+
+func TestRegistryRejectsRemovedGeminiCLI(t *testing.T) {
+	if _, err := NewRegistry().Get("gemini"); err == nil || !strings.Contains(err.Error(), `unknown agent "gemini"`) {
+		t.Fatalf("lookup gemini = %v", err)
 	}
 }

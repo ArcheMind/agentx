@@ -39,10 +39,6 @@ func TestSubagentMarkerDiscovery(t *testing.T) {
 				fmt.Sprintf(`{"type":"message","id":"first","message":{"role":"user","content":%q}}`, tc.first),
 				fmt.Sprintf(`{"type":"message","id":"second","parentId":"first","message":{"role":"user","content":%q}}`, tc.second),
 			}, "\n"))
-			geminiDir := filepath.Join(home, ".gemini", "tmp", "project")
-			writeFixture(t, filepath.Join(geminiDir, ".project_root"), workspace)
-			writeFixture(t, filepath.Join(geminiDir, "chats", "session-child.json"),
-				fmt.Sprintf(`{"sessionId":"gemini-child","summary":"Existing title","messages":[{"type":"user","content":%q},{"type":"user","content":%q}]}`, tc.first, tc.second))
 			root := filepath.Join(home, ".local", "share", "opencode", "project", "project", "storage", "session")
 			writeFixture(t, filepath.Join(root, "info", "opencode-child.json"), `{"id":"opencode-child","title":"Existing title"}`)
 			for i, text := range []string{tc.first, tc.second} {
@@ -54,7 +50,7 @@ func TestSubagentMarkerDiscovery(t *testing.T) {
 
 			service := Service{HomeDir: home}
 			for _, include := range []bool{false, true} {
-				want := 5
+				want := 4
 				if tc.child && !include {
 					want = 0
 				}

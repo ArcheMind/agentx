@@ -1,7 +1,6 @@
 package sessions
 
 import (
-	"crypto/sha256"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -20,8 +19,8 @@ func TestBuiltInAgents(t *testing.T) {
 		},
 	}
 	agents := service.Agents()
-	if len(agents) != 6 {
-		t.Fatalf("agents = %d, want 6", len(agents))
+	if len(agents) != 5 {
+		t.Fatalf("agents = %d, want 5", len(agents))
 	}
 	for _, agent := range agents {
 		if agent.Installed != (agent.ID == "codex") {
@@ -48,10 +47,6 @@ func TestNativeSessionReaders(t *testing.T) {
 		`{"type":"response_item","timestamp":"2026-09-01T11:01:00Z","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"fix codex"}]}}`,
 		`{"type":"response_item","payload":{"type":"message","role":"user","content":"latest codex"}}`,
 	}, "\n"))
-
-	projectHash := fmt.Sprintf("%x", sha256.Sum256([]byte(workspace)))
-	writeFixture(t, filepath.Join(home, ".gemini", "tmp", projectHash, "chats", "session-gemini-id.json"),
-		`{"sessionId":"gemini-id","startTime":"2026-09-01T12:00:00Z","lastUpdated":"2026-09-01T12:01:00Z","messages":[{"type":"user","content":"fix gemini","timestamp":"2026-09-01T12:00:00Z"},{"type":"user","content":"latest gemini","timestamp":"2026-09-01T12:00:30Z"},{"type":"gemini","content":"done","timestamp":"2026-09-01T12:01:00Z"}]}`)
 
 	openCodeRoot := filepath.Join(home, ".local", "share", "opencode", "project", "project", "storage", "session")
 	writeFixture(t, filepath.Join(openCodeRoot, "info", "opencode-id.json"),
@@ -80,7 +75,6 @@ func TestNativeSessionReaders(t *testing.T) {
 	}{
 		{agent: "claude", id: "claude-id", content: "fix claude"},
 		{agent: "codex", id: "codex-id", content: "fix codex"},
-		{agent: "gemini", id: "gemini-id", content: "fix gemini"},
 		{agent: "opencode", id: "opencode-id", content: "fix opencode"},
 		{agent: "pi", id: "pi-id", content: "fix pi"},
 	} {
@@ -99,8 +93,8 @@ func TestNativeSessionReaders(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(items) != 5 {
-		t.Fatalf("workspace sessions = %d, want 5: %#v", len(items), items)
+	if len(items) != 4 {
+		t.Fatalf("workspace sessions = %d, want 4: %#v", len(items), items)
 	}
 	for _, item := range items {
 		if item.FirstUserMessage != "fix "+item.Agent || item.LatestUserMessage != "latest "+item.Agent {
@@ -108,7 +102,7 @@ func TestNativeSessionReaders(t *testing.T) {
 		}
 	}
 	groups, err := service.RecentGroups(workspace, 10, false)
-	if err != nil || len(groups.Current) != 5 {
+	if err != nil || len(groups.Current) != 4 {
 		t.Fatalf("groups = %#v, err = %v", groups, err)
 	}
 	for _, item := range groups.Current {
@@ -199,10 +193,6 @@ func TestSubagentSessionsAreFilteredByDefault(t *testing.T) {
 	}, "\n"))
 	writeFixture(t, filepath.Join(home, ".claude", "projects", "project", "parent", "subagents", "agent-claude-child.jsonl"),
 		fmt.Sprintf(`{"type":"user","sessionId":"claude-root","agentId":"claude-child","isSidechain":true,"cwd":%q,"timestamp":"2026-09-10T22:00:00Z","message":{"content":"claude child"}}`, workspace))
-	geminiDir := filepath.Join(home, ".gemini", "tmp", "project")
-	writeFixture(t, filepath.Join(geminiDir, ".project_root"), workspace)
-	writeFixture(t, filepath.Join(geminiDir, "chats", "session-gemini-child.json"),
-		`{"sessionId":"gemini-child","kind":"subagent","startTime":"2026-09-10T23:00:00Z","lastUpdated":"2026-09-10T23:01:00Z","messages":[{"type":"user","content":"gemini child","timestamp":"2026-09-10T23:00:00Z"}]}`)
 	openCodeRoot := filepath.Join(home, ".local", "share", "opencode", "project", "project", "storage", "session")
 	writeFixture(t, filepath.Join(openCodeRoot, "info", "opencode-child.json"),
 		`{"id":"opencode-child","parentID":"opencode-root","title":"opencode child","time":{"created":1789081200000,"updated":1789081260000}}`)
@@ -226,7 +216,7 @@ func TestSubagentSessionsAreFilteredByDefault(t *testing.T) {
 	}
 	want := map[string]bool{
 		"codex-root": false, "codex-child": true, "claude-child": true,
-		"gemini-child": true, "opencode-child": true,
+		"opencode-child": true,
 	}
 	if len(items) != len(want) {
 		t.Fatalf("included sessions = %#v", items)
@@ -453,5 +443,21 @@ func TestRecentJSONLSummariesIncludeLatestUserMessage(t *testing.T) {
 				t.Fatalf("summary = %#v, ok = %v, err = %v", item, ok, err)
 			}
 		})
+	}
+}
+
+func TestRemovedGeminiCLINativeSessionsAreUnsupported(t *testing.T) {
+	home := t.TempDir()
+	record := map[string]any{"sessionId": "legacy", "messages": []any{map[string]any{"type": "user", "content": "legacy"}}}
+	if _, ok := ParseRecords("gemini", []map[string]any{record}); ok {
+		t.Fatal("accepted removed native source")
+	}
+	writeFixture(t, filepath.Join(home, ".gemini", "tmp", "project", "chats", "session-legacy.json"), `{"sessionId":"legacy","messages":[{"type":"user","content":"legacy"}]}`)
+	items, err := (Service{HomeDir: home}).List(ListOptions{All: true, IncludeSubagents: true})
+	if err != nil || len(items) != 0 {
+		t.Fatalf("legacy sessions = %#v, err=%v", items, err)
+	}
+	if _, err := WriteSessionFile(Session{ID: "legacy"}, "gemini", t.TempDir(), home); err == nil || !strings.Contains(err.Error(), "unsupported resume target") {
+		t.Fatalf("legacy resume = %v", err)
 	}
 }

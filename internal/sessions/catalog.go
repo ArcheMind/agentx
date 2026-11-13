@@ -1,7 +1,6 @@
 package sessions
 
 import (
-	"crypto/sha256"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -163,15 +162,5 @@ func (entry sessionEntry) summary() (Summary, error) {
 }
 
 func matchesWorkspaceSummary(item Summary, workspace string) bool {
-	if workspace == "" {
-		return true
-	}
-	if cleanPath(item.Workspace) == workspace {
-		return true
-	}
-	if item.Agent != "gemini" || item.Workspace != "" {
-		return false
-	}
-	hash := fmt.Sprintf("%x", sha256.Sum256([]byte(workspace)))
-	return filepath.Base(filepath.Dir(filepath.Dir(item.Source))) == hash
+	return workspace == "" || cleanPath(item.Workspace) == workspace
 }

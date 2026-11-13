@@ -25,12 +25,6 @@ func TestUnifiedTranscriptToNativeFormats(t *testing.T) {
 				native = marshalJSONL(t, SerializeClaude(test.unified))
 			case "codex":
 				native = marshalJSONL(t, SerializeCodex(test.unified))
-			case "gemini":
-				data, err := json.Marshal(SerializeGemini(test.unified))
-				if err != nil {
-					t.Fatal(err)
-				}
-				native = string(data)
 			case "pi":
 				native = marshalJSONL(t, SerializePi(test.unified))
 			}
@@ -93,22 +87,6 @@ func conversionContractCases() []conversionContractCase {
 			},
 		},
 		{
-			agent:  "gemini",
-			native: `{"sessionId":"gemini-contract","kind":"subagent","summary":"Inspect file","startTime":"2026-09-01T12:00:00Z","lastUpdated":"2026-09-01T12:02:00Z","messages":[{"type":"user","content":"run ls","timestamp":"2026-09-01T12:00:00Z"},{"type":"gemini","content":"checking","toolCalls":[{"id":"gt1","name":"read_file","args":{"path":"file.txt"},"status":"success","result":[{"functionResponse":{"id":"gt1","name":"read_file","response":{"output":"contents"}}}]}],"timestamp":"2026-09-01T12:01:00Z"}]}`,
-			unified: Session{
-				ID: "gemini-contract", Provider: "gemini", IsSubagent: true, Title: "Inspect file",
-				StartedAt: "2026-09-01T12:00:00Z", UpdatedAt: "2026-09-01T12:02:00Z", MessageCount: 3,
-				Messages: []Message{
-					{ID: "gemini-0", Role: "user", Content: []ContentBlock{{Type: "text", Text: "run ls"}}, Timestamp: "2026-09-01T12:00:00Z"},
-					{ID: "gemini-1", ParentID: "gemini-0", Role: "assistant", Content: []ContentBlock{
-						{Type: "text", Text: "checking"},
-						{Type: "tool_use", ID: "gt1", Name: "read_file", Input: map[string]any{"path": "file.txt"}},
-					}, Timestamp: "2026-09-01T12:01:00Z"},
-					{ID: "gemini-2", ParentID: "gemini-1", Role: "tool", Result: "contents", Timestamp: "2026-09-01T12:01:00Z", ToolUseID: "gt1", ToolName: "read_file"},
-				},
-			},
-		},
-		{
 			agent: "pi",
 			native: strings.Join([]string{
 				`{"type":"session","id":"pi-contract","cwd":"/work","timestamp":"2026-09-01T13:00:00Z"}`,
@@ -136,20 +114,12 @@ func conversionContractCases() []conversionContractCase {
 func parseNativeContract(t *testing.T, agent, native string) Session {
 	t.Helper()
 	var records []map[string]any
-	if agent == "gemini" {
+	for _, line := range strings.Split(native, "\n") {
 		var record map[string]any
-		if err := json.Unmarshal([]byte(native), &record); err != nil {
+		if err := json.Unmarshal([]byte(line), &record); err != nil {
 			t.Fatal(err)
 		}
-		records = []map[string]any{record}
-	} else {
-		for _, line := range strings.Split(native, "\n") {
-			var record map[string]any
-			if err := json.Unmarshal([]byte(line), &record); err != nil {
-				t.Fatal(err)
-			}
-			records = append(records, record)
-		}
+		records = append(records, record)
 	}
 	detail, ok := ParseRecords(agent, records)
 	if !ok {

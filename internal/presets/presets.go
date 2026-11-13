@@ -96,12 +96,11 @@ var Agents = map[string]AgentRule{
 	"agy":      {Name: "Antigravity CLI", Efforts: []string{"low", "medium", "high", "xhigh", "max"}, EffortNote: "Antigravity CLI --effort levels; per-model support is not verified by agy models", Bypassable: true},
 	"claude":   {Name: "Claude", Efforts: []string{"low", "medium", "high", "xhigh", "max"}, EffortNote: "Claude Code --effort levels; per-model support is not verified locally", Bypassable: true},
 	"codex":    {Name: "Codex", Efforts: []string{"none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"}, EffortNote: "Codex reports supported levels per model", Bypassable: true},
-	"gemini":   {Name: "Gemini", EffortNote: "Gemini CLI exposes no verified effort control"},
 	"opencode": {Name: "OpenCode", EffortNote: "OpenCode exposes no verified effort control"},
 	"pi":       {Name: "Pi", Efforts: []string{"low", "medium", "high", "xhigh", "max"}, EffortNote: "Pi --thinking levels; ExternalSubagent reports a warning when Pi's provider request carries a different effort, without blocking execution (Pi can clamp or remap unsupported levels). off and minimal are not offered: for Codex-backed models Pi sends no effort for off (the server default applies) and sends low for minimal", Bypassable: true},
 }
 
-var AgentOrder = []string{"claude", "codex", "gemini", "opencode", "pi", "agy"}
+var AgentOrder = []string{"claude", "codex", "opencode", "pi", "agy"}
 
 var piModel = regexp.MustCompile(`^[A-Za-z0-9_-]+/[^*?:[:space:]]+$`)
 

@@ -142,7 +142,7 @@ func TestContinuePiRejectsMCP(t *testing.T) {
 }
 
 func TestContinueRejectsAgentsWithoutAdapter(t *testing.T) {
-	for _, agent := range []string{"gemini", "opencode", "dsh"} {
+	for _, agent := range []string{"opencode", "dsh"} {
 		if _, err := ContinueExecPlan(agent, "/ws", "", "", "", "", false, MCPConfig{}); err == nil {
 			t.Fatalf("%s: expected error", agent)
 		}

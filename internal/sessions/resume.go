@@ -50,9 +50,6 @@ func WriteSessionFile(detail Session, agentID, dir, homeDir string) (string, err
 		detail.ID = newID
 		detail.Workspace = workspace
 		return path, writeJSONLFile(path, SerializePi(detail))
-	case "gemini":
-		path := filepath.Join(dir, newUUID()+".json")
-		return path, writeJSONFile(path, SerializeGemini(detail))
 	case "opencode":
 		base := filepath.Join(dir, newUUID())
 		info, entries := SerializeOpenCode(detail, base)
@@ -113,8 +110,6 @@ func ResumeArgs(agentID, token string) []string {
 		return []string{"--resume", token}
 	case "pi":
 		return []string{"--session", token}
-	case "gemini":
-		return []string{"--resume", token}
 	case "opencode":
 		return []string{"--prompt", ""}
 	default:

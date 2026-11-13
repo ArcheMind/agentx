@@ -312,7 +312,7 @@ func TestAgentContractRejectsUnsupportedAndUnknownInputs(t *testing.T) {
 	if _, err := s.call("ExternalSubagent", []byte(`{"description":"x","prompt":"x","model":"review","effort":"high"}`)); err == nil {
 		t.Fatal("per-call effort override accepted")
 	}
-	savePreset(t, s.Home, presets.Preset{Name: "noagent", Agent: "gemini", Model: "test", Description: "No binary"})
+	savePreset(t, s.Home, presets.Preset{Name: "noagent", Agent: "claude", Model: "test", Description: "No binary"})
 	origPath := os.Getenv("PATH")
 	t.Setenv("PATH", filepath.Dir(filepath.Join(s.Cwd, "dummy")))
 	if _, err := s.call("ExternalSubagent", []byte(`{"description":"x","prompt":"x","model":"noagent"}`)); err == nil || !strings.Contains(err.Error(), "executable unavailable") {

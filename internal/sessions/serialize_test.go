@@ -1,7 +1,6 @@
 package sessions
 
 import (
-	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -14,7 +13,6 @@ import (
 func TestSerializeRoundTrip(t *testing.T) {
 	t.Run("claude", testSerializeClaudeRoundTrip)
 	t.Run("codex", testSerializeCodexRoundTrip)
-	t.Run("gemini", testSerializeGeminiRoundTrip)
 	t.Run("pi", testSerializePiRoundTrip)
 	t.Run("opencode", testSerializeOpenCodeRoundTrip)
 }
@@ -94,66 +92,6 @@ func testSerializeCodexRoundTrip(t *testing.T) {
 	}
 	if resultText(detail.Messages[2].Result) != "file1.txt" {
 		t.Fatalf("tool output = %q", resultText(detail.Messages[2].Result))
-	}
-}
-
-func testSerializeGeminiRoundTrip(t *testing.T) {
-	home := t.TempDir()
-	workspace := filepath.Join(home, "project")
-	os.MkdirAll(workspace, 0o755)
-
-	projectHash := fmt.Sprintf("%x", sha256.Sum256([]byte(workspace)))
-	geminiDir := filepath.Join(home, ".gemini", "tmp", projectHash)
-	writeFixture(t, filepath.Join(geminiDir, ".project_root"), workspace)
-	writeFixture(t, filepath.Join(geminiDir, "chats", "session-g1.json"),
-		`{"sessionId":"g1","startTime":"2026-09-01T12:00:00Z","lastUpdated":"2026-09-01T12:03:00Z","messages":[{"type":"user","content":"run ls","timestamp":"2026-09-01T12:00:00Z"},{"type":"gemini","content":"checking","toolCalls":[{"id":"tc-1","name":"read_file","args":{"path":"a.txt"},"status":"success","result":[{"functionResponse":{"id":"tc-1","name":"read_file","response":{"output":"hello world"}}}]}],"timestamp":"2026-09-01T12:01:00Z"},{"type":"user","content":"thanks","timestamp":"2026-09-01T12:02:00Z"},{"type":"gemini","content":"done","timestamp":"2026-09-01T12:03:00Z"}]}`)
-
-	service := Service{HomeDir: home}
-	original, err := service.Info("g1", "gemini")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	native := SerializeGemini(original)
-	data, err := json.Marshal(native)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	home2 := t.TempDir()
-	geminiDir2 := filepath.Join(home2, ".gemini", "tmp", projectHash)
-	writeFixture(t, filepath.Join(geminiDir2, ".project_root"), workspace)
-	writeFixture(t, filepath.Join(geminiDir2, "chats", "session-g1.json"), string(data))
-
-	service2 := Service{HomeDir: home2}
-	roundTripped, err := service2.Info("g1", "gemini")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	assertMessagesEquivalent(t, original.Messages, roundTripped.Messages)
-
-	// Verify tool call structure survived
-	foundToolUse := false
-	foundToolResult := false
-	for _, m := range roundTripped.Messages {
-		for _, b := range m.Content {
-			if b.Type == "tool_use" && b.ID == "tc-1" && b.Name == "read_file" {
-				foundToolUse = true
-			}
-		}
-		if m.Role == "tool" && m.ToolUseID == "tc-1" {
-			foundToolResult = true
-			if resultText(m.Result) != "hello world" {
-				t.Fatalf("tool result text = %q", resultText(m.Result))
-			}
-		}
-	}
-	if !foundToolUse {
-		t.Fatal("missing tool_use block after gemini round-trip")
-	}
-	if !foundToolResult {
-		t.Fatal("missing tool result after gemini round-trip")
 	}
 }
 

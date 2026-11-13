@@ -68,7 +68,7 @@ func TestValidationRejectsKnownUnsupportedCombinations(t *testing.T) {
 		{Name: "pi-minimal", Description: "x", Agent: "pi", Model: "p/m", Effort: "minimal"},
 		{Name: "pi-ultra", Description: "x", Agent: "pi", Model: "p/m", Effort: "ultra"},
 		{Name: "pi-fuzzy", Description: "x", Agent: "pi", Model: "model"},
-		{Name: "gemini-effort", Description: "x", Agent: "gemini", Model: "m", Effort: "high"},
+		{Name: "gemini", Description: "x", Agent: "gemini", Model: "m"},
 		{Name: "claude-ultra", Description: "x", Agent: "claude", Model: "m", Effort: "ultra"},
 		{Name: "no-model", Description: "x", Agent: "codex"},
 	} {
@@ -251,5 +251,24 @@ func TestAGYPresetKeepsNativeDefaultsAndExactSelection(t *testing.T) {
 	}
 	if err := (Preset{Name: "unknown", Description: "x", Agent: "unknown", Model: "exact"}).Validate(); err == nil {
 		t.Fatal("unknown agent accepted")
+	}
+}
+
+func TestRemovedGeminiPresetUsesInvalidEntryFlow(t *testing.T) {
+	home := t.TempDir()
+	path := Path(home, "legacy")
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		t.Fatal(err)
+	}
+	content := "---\nagent: gemini\nmodel: gemini-model\n---\nLegacy preset\n"
+	if err := os.WriteFile(path, []byte(content), 0600); err != nil {
+		t.Fatal(err)
+	}
+	valid, problems, err := Load(home)
+	if err != nil || len(valid) != 0 || len(problems) != 1 || !strings.Contains(problems[0].Err, `unsupported agent "gemini"`) {
+		t.Fatalf("valid=%#v problems=%#v err=%v", valid, problems, err)
+	}
+	if err := Delete(home, "legacy"); err != nil {
+		t.Fatal(err)
 	}
 }
