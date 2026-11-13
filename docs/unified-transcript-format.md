@@ -24,7 +24,10 @@ Export uses the same unified transcript schema as every other agent. Images
 are embedded as base64; local image and complete tool-result resource files
 are resolved during reading, so the exported transcript does not depend on
 the original resource paths. Missing resources and unsupported native payloads
-produce explicit errors.
+produce explicit errors. If native readable thinking field 3 and raw thinking
+field 16 both contain different nonempty values, parsing reports unsupported
+data rather than discarding one: their semantic mapping and signature binding
+have not been established.
 
 Import creates a new conversation UUID, a new native SQLite database and an
 entry in `conversation_summaries.db`. It does not clone a source database or

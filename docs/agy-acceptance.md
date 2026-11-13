@@ -69,8 +69,45 @@ sessions fired `SessionStart` and `Stop` once. Unsupported events warned and
 did not run. Native project portable hooks were not executed twice. The test
 restored its owned global plugin afterward.
 
-This owner report does not establish final independent full-suite acceptance.
-Global owned-plugin and temporary ACP MCP coexistence/deduplication remains
-unverified. Windows quoting and installer selection have platform unit
+The integration owner recorded the following additional passes against core
+binary `39104bc` on 2026-11-13. Evidence directories share the prefix
+`/private/var/folders/34/yf5zv4k133l7nrksmz2flmw00000gn/T/`:
+
+| Check | Result | Evidence directory |
+| --- | --- | --- |
+| `make smoke-transcript-cross-live` | All 12 directions passed, including all six new agy directions; none skipped | `sm-transcript-cross-live-rkh5Dz` |
+| `make smoke-agy-native-live` | Four strict positives passed; the unsigned native thinking observation did not retrieve its token | `sm-agy-native-live-01JV0b` |
+| Strict transcript fidelity | Four providers' then-current message fixtures passed and the actual shared protocol schema validated | `agentx-transcript-fidelity-mqoUmD` |
+| Nonlive cross-format conversion | All 12 directions passed | `agentx-transcript-cross-7bf9iU` |
+| `make -o build smoke-agy-duplex-live` | Complete default native run passed | `sessionman-duplex-live-agy-hUjLse` |
+
+The complete duplex run verified steer, per-RPC raw usage, MessageHost while
+running, second-round reports, queued delivery, nested working directory,
+depth and identity, real 60-second idle daemon exit and cold reload of the same
+native ID with token recall, and termination of native descendants after Stop.
+In `normal`, the native permission request was denied and no output file was
+created. Native `end_turn` with no report correctly produced a failed task;
+this was accepted as evidence of blocking, not a successful task result.
+
+Earlier duplex attempts failed on native async task prompting and a macOS
+symlink path assertion. Those failure records were retained. The final pass
+followed harness corrections; the adapter did not gain an orchestration
+fallback and the substantive assertions were not relaxed.
+
+These observations do not establish acceptance of later source changes.
+Reading a native `raw_thinking` field 16 without readable field 3 was fixed
+after binary `39104bc`; the strict fixture now includes a fifth message and
+requires a new integrated fidelity/schema run. When both readable thinking
+field 3 and raw thinking field 16 are nonempty and different, parsing fails
+explicitly with a catalog warning: their mapping and signature binding are
+not established, so neither value is silently discarded.
+
+The `[sm:subagent]` first-line marker preservation fix and a short live probe
+of the owned global plugin coexisting with temporary ACP MCP remain pending.
+That probe must also establish MessageHost identity, actual workspace, depth
+and default catalog hiding after MCP disconnect without a sidecar.
+Independent final Make gates remain pending.
+
+ Windows quoting and installer selection have platform unit
 coverage; no real Windows execution is claimed. Native provider request effort
 was not captured, so it remains unverified regardless of task success.
