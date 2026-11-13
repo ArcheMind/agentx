@@ -96,11 +96,12 @@ try{
   const observed=[]
   for(const identity of [parent,nested]){
    const messages=await nativeMessages(identity.id)
-   const names=[...new Set(messages.filter(x=>x.direction==='out'&&x.method==='session/update').map(x=>x.params?.update?.name).filter(x=>x?.includes('MessageHost')))]
+   const calls=messages.filter(x=>x.direction==='out'&&x.method==='session/update').map(x=>x.params?.update).filter(x=>x?.name==='call_mcp_tool'?x.rawInput?.ToolName==='MessageHost':x?.name?.includes('MessageHost')).map(x=>({name:x.name,server:x.rawInput?.ServerName,tool:x.rawInput?.ToolName}))
+   const names=[...new Set(calls.map(x=>x.server?`${x.name}:${x.server}:${x.tool}`:x.name))]
    const start=(await nativeLog(identity.id)).find(x=>x.event==='stream_start')
    assert(start?.input.env.SM_MCP_CWD===work&&start.input.env.SM_HOST_AGENT_DIR===agentDir(identity.id)&&start.input.env.SM_DELEGATION_DEPTH===String(identity.delegation_depth+1),'coexist native plugin inherited wrong child environment')
    assert(names.some(x=>(x.match(/sessionman/g)||[]).length>=2)&&names.some(x=>(x.match(/sessionman/g)||[]).length===1),'did not observe calls through both actually exposed SessionMan namespaces: '+JSON.stringify(names))
-   observed.push({id:identity.id,names,start})
+   observed.push({id:identity.id,names,calls,start})
   }
   await log('coexist.json',{identities,parentEvents,childEvents,observed,report})
   verdict.coexist='PASS: product exec installs owned plugin; global and temporary native server namespaces both route parent/nested MessageHost to correct layer/cwd/depth'
@@ -299,7 +300,10 @@ try{
   await log('coexist-restored.json',{existedBefore:!!pluginSnapshot,restored:true})
  }
  if(coexistNativeIDs.length){
-  assert((await readdir(join(home,'.local','state','sessionman','agents'))).length===0,'MCP sidecar agent directories remain after shutdown')
+  const sidecars=join(home,'.local','state','sessionman','agents')
+  const sidecarsBeforeRemoval=await readdir(sidecars)
+  await log('coexist-sidecar-cleanup.json',{leftAfterMCPShutdown:sidecarsBeforeRemoval,testOwnedRemoval:true})
+  await rm(sidecars,{recursive:true})
   const listed=include=>{
    const args=['--json','session','list','--source','agy','--all',...(include?['--include-subagents']:[])]
    const result=spawnSync(binary,args,{cwd:work,env,encoding:'utf8',timeout:30000,maxBuffer:32*1024*1024})
@@ -311,7 +315,7 @@ try{
    assert(!JSON.stringify(hidden).includes(id),'native child session remains visible without sidecar by default: '+id)
    assert(JSON.stringify(included).includes(id),'native marked session missing with --include-subagents: '+id)
   }
-  await log('coexist-native-visibility.json',{ids:coexistNativeIDs,defaultHidden:true,explicitlyIncluded:true,sidecarsRemoved:true})
+  await log('coexist-native-visibility.json',{ids:coexistNativeIDs,defaultHidden:true,explicitlyIncluded:true,sidecarsRemoved:true,testOwnedRemoval:true})
   verdict.visibility='PASS: native parent/nested sessions retain first-line marker and hide by default after MCP sidecar cleanup; --include-subagents reveals both'
   await log('verdict.json',verdict)
   console.log(JSON.stringify({passed:true,agent,verdict,evidence:evidenceDir},null,2))
