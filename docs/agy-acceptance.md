@@ -57,7 +57,7 @@ hook bridge must document the narrower behavior it actually supports.
 
 ## Evidence
 
-Final integrated acceptance is pending. The app/extensions owner reported
+Final integrated checks passed as recorded below. The app/extensions owner reported
 `make smoke-agy-extensions-live` passing on 2026-11-13. Evidence:
 `/private/var/folders/34/yf5zv4k133l7nrksmz2flmw00000gn/T/sm-agy-extensions-live-z5issB`.
 
@@ -96,18 +96,46 @@ fallback and the substantive assertions were not relaxed.
 
 These observations do not establish acceptance of later source changes.
 Reading a native `raw_thinking` field 16 without readable field 3 was fixed
-after binary `39104bc`; the strict fixture now includes a fifth message and
-requires a new integrated fidelity/schema run. When both readable thinking
+after binary `39104bc`. The updated five-message fixture passed on frozen
+source `56337f9`, with schema validation (`agentx-transcript-fidelity-JrYPiU`)
+and all 12 nonlive cross directions (`agentx-transcript-cross-FfpLTr`). When both readable thinking
 field 3 and raw thinking field 16 are nonempty and different, parsing fails
 explicitly with a catalog warning: their mapping and signature binding are
 not established, so neither value is silently discarded.
 
-The `[sm:subagent]` first-line marker preservation fix and a short live probe
-of the owned global plugin coexisting with temporary ACP MCP remain pending.
-That probe must also establish MessageHost identity, actual workspace, depth
-and default catalog hiding after MCP disconnect without a sidecar.
-Independent final Make gates remain pending.
+The marker fix and short coexistence probe passed against the final source:
+`SM_AGY_COEXIST=1 make -o build smoke-agy-duplex-live` (exit 0), evidence
+`sessionman-duplex-live-agy-wEwXwl`. The owned global generic bridge
+(`sessionman_sessionman`) and temporary direct ACP namespaces returned the
+correct parent/child MessageHost identities. Global-bridge child creation,
+actual workspace, depth and environment binding passed. After manually
+removing this test's nested sidecar state, native catalog default hiding and
+`--include-subagents` visibility both passed. This proves the native
+`[sm:subagent]` marker independently of sidecars; it does not establish
+automatic nested-sidecar cleanup. One leftover test-owned directory was
+observed. Global plugin state was restored, and the task-owned bridge pointing
+to the temporary integration executable was removed before worktree cleanup.
 
- Windows quoting and installer selection have platform unit
+Independent checks against frozen integration source `56337f9` passed:
+`make check-update-platforms test-mcp-race test-mcp-syntax` (exit 0).
+The platform target compiled Darwin, Linux and Windows for amd64 and arm64;
+this is build coverage, not native Windows execution. Both the subagents and
+app race suites passed, and JavaScript syntax checks included all agy smoke
+scripts.
+
+The independent acceptance owner then ran the exact default entry point on
+source `1dade94`:
+`make AGENTX_PROTOCOL_DIR=/Users/agent/work/agentx-protocol verify test-mcp-syntax`
+(exit 0). Formatting left the tracked working tree clean. To expose the schema
+result hidden by the default smoke output redirection, the owner also ran
+`make -o build AGENTX_PROTOCOL_DIR=/Users/agent/work/agentx-protocol smoke-transcript-fidelity`
+(exit 0), evidence `agentx-transcript-fidelity-BFD9gz`. It explicitly reported
+`validated against /Users/agent/work/agentx-protocol/spec/schema/unified-transcript.schema.json`,
+not skipped. The agy native output had five records, and source independence,
+raw signatures, inline image and complete tool result checks were all true.
+Go code and fixtures were unchanged between `56337f9` and `1dade94`; the later
+change affected only the live harness.
+
+Windows quoting and installer selection have platform unit
 coverage; no real Windows execution is claimed. Native provider request effort
 was not captured, so it remains unverified regardless of task success.
