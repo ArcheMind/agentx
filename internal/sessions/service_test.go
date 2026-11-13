@@ -427,7 +427,7 @@ func TestRecentJSONLSummariesIncludeLatestUserMessage(t *testing.T) {
 	for _, agent := range []string{"claude", "codex", "pi"} {
 		t.Run(agent, func(t *testing.T) {
 			var records []string
-			parse := recentSummaryParser(agent, false)
+			parse := sessionSummaryParser(agent, false)
 			switch agent {
 			case "claude":
 				records = append(records, `{"type":"user","sessionId":"s1","cwd":"/work","message":{"content":"First request"}}`)

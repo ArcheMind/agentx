@@ -4,7 +4,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -21,6 +20,7 @@ func ParseNativeSessionFile(agentID, path string) (Session, error) {
 	if !ok {
 		return Session{}, fmt.Errorf("parse %s session %s: not a recognizable session", agentID, path)
 	}
+	detail.Source = path
 	return detail, nil
 }
 
@@ -31,31 +31,18 @@ func ClaudeProjectFile(homeDir, workspace, sessionID string) string {
 	return filepath.Join(homeDir, ".claude", "projects", encoded, sessionID+".jsonl")
 }
 
-// FindCodexRollout locates the rollout file for a Codex thread id, newest
-// first: Codex names rollout files rollout-<timestamp>-<uuid>.jsonl.
+// FindCodexRollout uses the same session identity and latest-record selection as listing.
 func FindCodexRollout(codexHome, threadID string) (string, error) {
-	pattern := filepath.Join(codexHome, "sessions", "*", "*", "*", "*-"+threadID+".jsonl")
-	matches, err := filepath.Glob(pattern)
+	entries, err := discoverJSONLSessions("codex", filepath.Join(codexHome, "sessions", "*", "*", "*", "*.jsonl"))
 	if err != nil {
 		return "", err
 	}
-	if len(matches) == 0 {
-		return "", fmt.Errorf("no Codex rollout found for thread %s", threadID)
-	}
-	newest, newestTime := "", int64(0)
-	for _, match := range matches {
-		info, err := os.Stat(match)
-		if err != nil {
-			continue
-		}
-		if modified := info.ModTime().UnixNano(); newest == "" || modified > newestTime {
-			newest, newestTime = match, modified
+	for _, entry := range normalizeSessions(entries) {
+		if entry.ID == threadID {
+			return entry.Source, nil
 		}
 	}
-	if newest == "" {
-		return "", fmt.Errorf("no readable Codex rollout for thread %s", threadID)
-	}
-	return newest, nil
+	return "", fmt.Errorf("no Codex rollout found for thread %s", threadID)
 }
 
 // RechainMessages rewrites the parent chain positionally for a continue

@@ -1,7 +1,6 @@
 package sessions
 
 import (
-	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -137,24 +136,20 @@ func (s Service) List(options ListOptions) ([]Summary, error) {
 		workspace = cleanPath(workspace)
 	}
 
+	entries, err := s.catalog(options.Agent)
+	if err != nil {
+		return nil, err
+	}
 	var all []Summary
-	for _, spec := range agentSpecs {
-		if options.Agent != "" && spec.id != options.Agent {
+	for _, entry := range entries {
+		if !entry.visible(workspace, options.IncludeSubagents) {
 			continue
 		}
-		details, err := spec.load(s.HomeDir)
+		detail, err := entry.read()
 		if err != nil {
-			return nil, fmt.Errorf("load %s sessions: %w", spec.id, err)
+			return nil, err
 		}
-		for _, detail := range details {
-			if detail.IsSubagent && !options.IncludeSubagents {
-				continue
-			}
-			if workspace != "" && !matchesWorkspace(detail, workspace) {
-				continue
-			}
-			all = append(all, SummaryOf(detail))
-		}
+		all = append(all, SummaryOf(detail))
 	}
 
 	sort.SliceStable(all, func(i, j int) bool {
@@ -206,19 +201,18 @@ func (s Service) Matches(id, source string) ([]Session, error) {
 	if source != "" && agentSpecByID(source) == nil {
 		return nil, fmt.Errorf("unknown session agent %q", source)
 	}
+	entries, err := s.catalog(source)
+	if err != nil {
+		return nil, err
+	}
 	var matches []Session
-	for _, spec := range agentSpecs {
-		if source != "" && spec.id != source {
-			continue
-		}
-		details, err := spec.load(s.HomeDir)
-		if err != nil {
-			return nil, fmt.Errorf("load %s sessions: %w", spec.id, err)
-		}
-		for _, detail := range details {
-			if detail.ID == id || strings.HasPrefix(detail.ID, id) {
-				matches = append(matches, detail)
+	for _, entry := range entries {
+		if entry.ID == id || strings.HasPrefix(entry.ID, id) {
+			detail, err := entry.read()
+			if err != nil {
+				return nil, err
 			}
+			matches = append(matches, detail)
 		}
 	}
 	return matches, nil
@@ -240,11 +234,11 @@ type agentSpec struct {
 }
 
 var agentSpecs = []agentSpec{
-	{id: "claude", name: "Claude Code", binary: "claude", root: func(home string) string { return filepath.Join(home, ".claude", "projects") }, load: loadClaude},
-	{id: "codex", name: "Codex CLI", binary: "codex", root: func(home string) string { return filepath.Join(home, ".codex", "sessions") }, load: loadCodex},
+	{id: "claude", name: "Claude Code", binary: "claude", root: func(home string) string { return filepath.Join(home, ".claude", "projects") }},
+	{id: "codex", name: "Codex CLI", binary: "codex", root: func(home string) string { return filepath.Join(home, ".codex", "sessions") }},
 	{id: "gemini", name: "Gemini CLI", binary: "gemini", root: func(home string) string { return filepath.Join(home, ".gemini", "tmp") }, load: loadGemini},
 	{id: "opencode", name: "OpenCode", binary: "opencode", root: func(home string) string { return filepath.Join(home, ".local", "share", "opencode", "project") }, load: loadOpenCode},
-	{id: "pi", name: "Pi Coding Agent", binary: "pi", root: func(home string) string { return filepath.Join(home, ".pi", "agent", "sessions") }, load: loadPi},
+	{id: "pi", name: "Pi Coding Agent", binary: "pi", root: func(home string) string { return filepath.Join(home, ".pi", "agent", "sessions") }},
 }
 
 func agentSpecByID(id string) *agentSpec {
@@ -254,20 +248,6 @@ func agentSpecByID(id string) *agentSpec {
 		}
 	}
 	return nil
-}
-
-func loadClaude(home string) ([]Session, error) {
-	root, err := loadJSONLGlob(filepath.Join(home, ".claude", "projects", "*", "*.jsonl"), parseClaude)
-	if err != nil {
-		return nil, err
-	}
-	children, err := loadJSONLGlob(filepath.Join(home, ".claude", "projects", "*", "*", "subagents", "*.jsonl"), parseClaude)
-	if err != nil {
-		return nil, err
-	}
-	details := append(root, children...)
-	sortDetails(details)
-	return details, nil
 }
 
 func parseClaude(path string, records []map[string]any) (Session, bool) {
@@ -391,15 +371,6 @@ func parseClaude(path string, records []map[string]any) (Session, bool) {
 		lastID = msgID
 	}
 	return finishDetail(detail)
-}
-
-func loadCodex(home string) ([]Session, error) {
-	pattern := filepath.Join(home, ".codex", "sessions", "*", "*", "*", "*.jsonl")
-	details, err := loadJSONLGlob(pattern, parseCodex)
-	if err != nil {
-		return nil, err
-	}
-	return dedup(details), nil
 }
 
 func parseCodex(path string, records []map[string]any) (Session, bool) {
@@ -553,11 +524,6 @@ func loadGemini(home string) ([]Session, error) {
 	}
 	sortDetails(details)
 	return details, nil
-}
-
-func loadPi(home string) ([]Session, error) {
-	pattern := filepath.Join(home, ".pi", "agent", "sessions", "*", "*.jsonl")
-	return loadJSONLGlob(pattern, parsePi)
 }
 
 func parsePi(path string, records []map[string]any) (Session, bool) {
@@ -784,25 +750,6 @@ func loadOpenCode(home string) ([]Session, error) {
 		}
 		if finished, ok := finishDetail(detail); ok {
 			details = append(details, finished)
-		}
-	}
-	sortDetails(details)
-	return details, nil
-}
-
-func loadJSONLGlob(pattern string, parse func(string, []map[string]any) (Session, bool)) ([]Session, error) {
-	paths, err := filepath.Glob(pattern)
-	if err != nil {
-		return nil, err
-	}
-	var details []Session
-	for _, path := range paths {
-		records, err := readJSONL(path)
-		if err != nil {
-			return nil, err
-		}
-		if detail, ok := parse(path, records); ok {
-			details = append(details, detail)
 		}
 	}
 	sortDetails(details)
@@ -1119,24 +1066,6 @@ func timeValue(value any) string {
 	}
 }
 
-// dedup keeps only the newest Session per ID. Codex multi-agent v2 writes
-// multiple rollout files for the same session_meta.id; only the chain tail
-// (newest UpdatedAt) matters for listing and info.
-func dedup(details []Session) []Session {
-	best := map[string]int{}
-	for i, d := range details {
-		if prev, ok := best[d.ID]; !ok || d.UpdatedAt > details[prev].UpdatedAt {
-			best[d.ID] = i
-		}
-	}
-	out := make([]Session, 0, len(best))
-	for _, i := range best {
-		out = append(out, details[i])
-	}
-	sortDetails(out)
-	return out
-}
-
 func sortDetails(details []Session) {
 	sort.SliceStable(details, func(i, j int) bool { return details[i].UpdatedAt > details[j].UpdatedAt })
 }
@@ -1150,17 +1079,6 @@ func cleanPath(path string) string {
 		return filepath.Clean(path)
 	}
 	return filepath.Clean(absolute)
-}
-
-func matchesWorkspace(detail Session, workspace string) bool {
-	if cleanPath(detail.Workspace) == workspace {
-		return true
-	}
-	if detail.Provider != "gemini" || detail.Workspace != "" {
-		return false
-	}
-	hash := fmt.Sprintf("%x", sha256.Sum256([]byte(workspace)))
-	return filepath.Base(filepath.Dir(filepath.Dir(detail.Source))) == hash
 }
 
 func oneLine(value string, max int) string {
