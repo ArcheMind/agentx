@@ -439,7 +439,7 @@ func parseCodex(path string, records []map[string]any) (Session, bool) {
 					}
 				}
 			}
-			block := ContentBlock{Type: "thinking", Text: strings.Join(summary, "\n"), Signature: stringValue(payload["encrypted_content"])}
+			block := ContentBlock{Type: "thinking", Text: strings.Join(summary, "\n"), Signature: stringValue(payload["encrypted_content"]), ID: stringValue(payload["id"])}
 			if n := len(detail.Messages); n > 0 && detail.Messages[n-1].Role == "assistant" {
 				detail.Messages[n-1].Content = append(detail.Messages[n-1].Content, block)
 			} else {

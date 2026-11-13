@@ -126,6 +126,7 @@ func replayMessages(detail Session, target string) []Message {
 					continue
 				}
 				block.Signature = ""
+				block.ID = ""
 			}
 			content = append(content, block)
 		}
@@ -381,6 +382,9 @@ func SerializeCodex(detail Session) []map[string]any {
 						summary = append(summary, map[string]any{"type": "summary_text", "text": b.Text})
 					}
 					payload := map[string]any{"type": "reasoning", "summary": summary, "encrypted_content": b.Signature}
+					if b.ID != "" {
+						payload["id"] = b.ID
+					}
 					records = append(records, map[string]any{"type": "response_item", "timestamp": m.Timestamp, "payload": payload})
 				case "tool_use":
 					flushText()

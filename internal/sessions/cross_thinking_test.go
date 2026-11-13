@@ -16,10 +16,10 @@ func TestThinkingReplayRespectsSourceAgent(t *testing.T) {
 				detail := Session{ID: "3f9a1c2e-aaaa-4bbb-8ccc-123456789abc", Provider: source, Workspace: "/w", StartedAt: "2026-11-12T12:00:00Z", Messages: []Message{
 					{ID: "u1", Role: "user", Timestamp: "2026-11-12T12:00:00Z", Content: []ContentBlock{{Type: "text", Text: "remember"}}},
 					{ID: "a1", ParentID: "u1", Role: "assistant", Timestamp: "2026-11-12T12:00:01Z", Content: []ContentBlock{
-						{Type: "thinking", Text: "unique readable marker", Signature: "source-secret-signature"},
+						{Type: "thinking", Text: "unique readable marker", Signature: "source-secret-signature", ID: "rs_thinking1"},
 						{Type: "text", Text: "answer"},
 					}},
-					{ID: "a2", ParentID: "a1", Role: "assistant", Timestamp: "2026-11-12T12:00:02Z", Content: []ContentBlock{{Type: "thinking", Signature: "opaque-only-signature"}}},
+					{ID: "a2", ParentID: "a1", Role: "assistant", Timestamp: "2026-11-12T12:00:02Z", Content: []ContentBlock{{Type: "thinking", Signature: "opaque-only-signature", ID: "rs_opaque1"}}},
 					{ID: "u2", ParentID: "a2", Role: "user", Timestamp: "2026-11-12T12:00:03Z", Content: []ContentBlock{{Type: "text", Text: "recall"}}},
 				}}
 				encoded := marshalJSONL(t, serialize(detail))
@@ -44,7 +44,14 @@ func TestThinkingReplayRespectsSourceAgent(t *testing.T) {
 				want := []ContentBlock{{Type: "thinking", Text: "unique readable marker"}, {Type: "text", Text: "answer"}}
 				if source == target {
 					want[0].Signature = "source-secret-signature"
-					want = append(want, ContentBlock{Type: "thinking", Signature: "opaque-only-signature"})
+					if target == "codex" {
+						want[0].ID = "rs_thinking1"
+					}
+					opaque := ContentBlock{Type: "thinking", Signature: "opaque-only-signature"}
+					if target == "codex" {
+						opaque.ID = "rs_opaque1"
+					}
+					want = append(want, opaque)
 				} else if strings.Contains(encoded, "source-secret-signature") || strings.Contains(encoded, "opaque-only-signature") {
 					t.Fatal("foreign signature reached the target native store")
 				}
