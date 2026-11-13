@@ -20,6 +20,14 @@ type agyReply struct {
 	result json.RawMessage
 	err    *agyError
 }
+
+// A single prompt retains native usage; merged turns preserve each RPC's raw usage.
+type agyPromptResult struct {
+	ID         int             `json:"id"`
+	StopReason string          `json:"stopReason"`
+	Usage      json.RawMessage `json:"usage"`
+}
+
 type agyState struct {
 	rpcMu     sync.Mutex
 	nextID    int
@@ -28,7 +36,8 @@ type agyState struct {
 	live      bool
 	prompts   map[int]bool
 	text      string
-	usage     json.RawMessage
+	results   []agyPromptResult
+	terminal  string
 	failure   string
 	cancelled bool
 	role      string
@@ -91,7 +100,7 @@ func (d *Daemon) sendAgyLocked(message, delivery string) controlResponse {
 		}
 		disposition, message = "steered", steerPrefix+message
 	} else {
-		state.text, state.usage, state.failure, state.cancelled = "", nil, "", false
+		state.text, state.results, state.terminal, state.failure, state.cancelled = "", nil, "", "", false
 		if state.role != "" {
 			message = state.role + "\n\n" + message
 		}
@@ -138,7 +147,7 @@ func (d *Daemon) startAgyLocked() error {
 		d.procExit(proc, "agy ACP execution")
 	}()
 	fail := func(err error) error { stream.Kill(); return err }
-	if _, err := state.call(stream, "initialize", map[string]any{"protocolVersion": 1, "clientCapabilities": map[string]any{}, "clientInfo": map[string]any{"name": "sessionman", "version": "1.0"}}); err != nil {
+	if _, err := state.call(stream, "initialize", map[string]any{"protocolVersion": 1, "clientCapabilities": map[string]any{}, "clientInfo": map[string]any{"name": "sessionman"}}); err != nil {
 		return fail(err)
 	}
 	params := map[string]any{"cwd": a.Cwd, "mcpServers": d.agyMCPServers()}
@@ -289,17 +298,31 @@ func (d *Daemon) handleAgyLine(state *agyState, line string) {
 	if event.Error != nil {
 		state.failure = fmt.Sprintf("agy session/prompt failed (%d): %s", event.Error.Code, runtime.RedactSecrets(event.Error.Message))
 	}
-	if len(event.Result.Usage) > 0 {
-		state.usage = event.Result.Usage
-	}
-	if event.Result.StopReason == "cancelled" {
-		state.cancelled = true
+	state.results = append(state.results, agyPromptResult{ID: event.ID, StopReason: event.Result.StopReason, Usage: event.Result.Usage})
+	if event.Error == nil {
+		switch event.Result.StopReason {
+		case "end_turn":
+		case "cancelled":
+			state.cancelled = true
+		case "max_tokens", "max_turn_requests", "refusal":
+			state.terminal = fmt.Sprintf("agy prompt RPC %d stopped with native stopReason=%s; no implicit retry", event.ID, event.Result.StopReason)
+		default:
+			state.failure = fmt.Sprintf("agy prompt RPC %d returned invalid native stopReason %q; no implicit retry", event.ID, event.Result.StopReason)
+		}
 	}
 	if len(state.prompts) > 0 {
 		d.mu.Unlock()
 		return
 	}
-	report := Event{Status: "completed", Report: state.text, Usage: state.usage, Auth: "agy native credential resolution (no identity override)"}
+	var usage json.RawMessage
+	if len(state.results) == 1 {
+		usage = state.results[0].Usage
+	} else {
+		usage, _ = json.Marshal(struct {
+			Prompts []agyPromptResult `json:"prompts"`
+		}{state.results})
+	}
+	report := Event{Status: "completed", Report: state.text, Usage: usage, Auth: "agy native credential resolution (no identity override)"}
 	if d.agent.Option.Effort != "" {
 		report.Evidence = "WARNING: agy accepted the thought_level request=" + d.agent.Option.Effort + "; native provider request effort was not recorded and is unverified"
 	}
@@ -308,6 +331,8 @@ func (d *Daemon) handleAgyLine(state *agyState, line string) {
 		report.Status, report.Report, report.Failure = "failed", "", state.failure
 	case state.cancelled:
 		report.Status, report.Report, report.Failure = "cancelled", "", "Native turn cancelled"
+	case state.terminal != "":
+		report.Status, report.Failure = "failed", state.terminal
 	case state.text == "":
 		report.Status, report.Failure = "failed", "ExternalSubagent exited without a complete report; no implicit retry"
 	}

@@ -73,11 +73,19 @@ func fakeAgyMain() {
 				}
 			case strings.Contains(text, "STEER"):
 				if len(active) > 0 {
-					emitJSON(map[string]any{"jsonrpc": "2.0", "id": active[0], "result": map[string]any{"stopReason": "end_turn"}})
+					emitJSON(map[string]any{"jsonrpc": "2.0", "id": active[0], "result": map[string]any{"stopReason": "end_turn", "usage": map[string]any{"inputTokens": 17, "nativeFirst": "kept"}}})
 					active = nil
 					time.Sleep(120 * time.Millisecond)
 				}
 				complete(id, "STEER_SEEN")
+			case strings.Contains(text, "STOP_REASON="):
+				reason := promptDirective(text, "STOP_REASON=")
+				emitJSON(map[string]any{"jsonrpc": "2.0", "method": "session/update", "params": map[string]any{"sessionId": fakeAgySession, "update": map[string]any{"sessionUpdate": "agent_message_chunk", "content": map[string]any{"type": "text", "text": "PARTIAL"}}}})
+				result := map[string]any{}
+				if reason != "missing" {
+					result["stopReason"] = reason
+				}
+				emitJSON(map[string]any{"jsonrpc": "2.0", "id": id, "result": result})
 			case strings.Contains(text, "FAIL"):
 				emitJSON(map[string]any{"jsonrpc": "2.0", "id": id, "error": map[string]any{"code": -32602, "message": "native failure"}})
 			default:
@@ -132,6 +140,15 @@ func TestAgySteerWaitsForAllInflightAndThenDeliversQueue(t *testing.T) {
 	if first.Status != "completed" || first.Report != "STEER_SEEN" {
 		t.Fatalf("%#v", first)
 	}
+	var merged struct {
+		Prompts []agyPromptResult `json:"prompts"`
+	}
+	if err := json.Unmarshal(first.Usage, &merged); err != nil || len(merged.Prompts) != 2 {
+		t.Fatal(string(first.Usage), err)
+	}
+	if merged.Prompts[0].ID == merged.Prompts[1].ID || !strings.Contains(string(merged.Prompts[0].Usage), `"inputTokens":17`) || !strings.Contains(string(merged.Prompts[1].Usage), `"inputTokens":3`) {
+		t.Fatal(string(first.Usage))
+	}
 	second := waitReports(t, s, "agy", 2)
 	if second.Status != "completed" || !strings.Contains(second.Report, "queued-next") {
 		t.Fatalf("%#v", second)
@@ -145,6 +162,9 @@ func TestAgySteerWaitsForAllInflightAndThenDeliversQueue(t *testing.T) {
 	records := readFakeRecords(t, record)
 	if countFakeRequests(t, records, "session/new") != 1 || countFakeRequests(t, records, "session/prompt") != 3 {
 		t.Fatal(records)
+	}
+	if _, ok := fakeRequest(t, records, "initialize")["clientInfo"].(map[string]any)["version"]; ok {
+		t.Fatal("fabricated client version")
 	}
 	if fakeRequest(t, records, "session/set_config_option")["value"] != "low" {
 		t.Fatal(records)
@@ -282,5 +302,30 @@ func TestAgyNormalLeavesNativePermissionConfiguration(t *testing.T) {
 	}
 	if fakeRequest(t, records, "session/set_model")["modelId"] != "gemini-3.8-flash-low" {
 		t.Fatal(records)
+	}
+}
+
+func TestAgyRequiresNativeTerminalReason(t *testing.T) {
+	for _, reason := range []string{"missing", "unknown", "max_tokens", "max_turn_requests", "refusal"} {
+		t.Run(reason, func(t *testing.T) {
+			s, record := agyServer(t, nil)
+			startAgyTest(t, s, "STOP_REASON="+reason, true)
+			report := waitReports(t, s, "agy", 1)
+			if report.Status != "failed" {
+				t.Fatalf("%#v", report)
+			}
+			if !strings.Contains(report.Failure, "stopReason") {
+				t.Fatal(report.Failure)
+			}
+			if reason != "missing" && !strings.Contains(report.Failure, reason) {
+				t.Fatal(report.Failure)
+			}
+			if reason != "missing" && reason != "unknown" && report.Report != "PARTIAL" {
+				t.Fatal(report)
+			}
+			if countFakeRequests(t, readFakeRecords(t, record), "session/prompt") != 1 {
+				t.Fatal("implicit retry")
+			}
+		})
 	}
 }
