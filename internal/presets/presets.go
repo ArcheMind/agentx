@@ -98,7 +98,7 @@ var Agents = map[string]AgentRule{
 	"codex":    {Name: "Codex", Efforts: []string{"none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"}, EffortNote: "Codex reports supported levels per model", Bypassable: true},
 	"gemini":   {Name: "Gemini", EffortNote: "Gemini CLI exposes no verified effort control"},
 	"opencode": {Name: "OpenCode", EffortNote: "OpenCode exposes no verified effort control"},
-	"pi":       {Name: "Pi", Efforts: []string{"low", "medium", "high", "xhigh", "max"}, EffortNote: "Pi --thinking levels; ExternalSubagent execution fails unless Pi's provider request carries exactly this level (Pi silently clamps or remaps unsupported levels). off and minimal are not offered: for Codex-backed models Pi sends no effort for off (the server default applies) and sends low for minimal", Bypassable: true},
+	"pi":       {Name: "Pi", Efforts: []string{"low", "medium", "high", "xhigh", "max"}, EffortNote: "Pi --thinking levels; ExternalSubagent reports a warning when Pi's provider request carries a different effort, without blocking execution (Pi can clamp or remap unsupported levels). off and minimal are not offered: for Codex-backed models Pi sends no effort for off (the server default applies) and sends low for minimal", Bypassable: true},
 }
 
 var AgentOrder = []string{"claude", "codex", "gemini", "opencode", "pi", "agy"}
