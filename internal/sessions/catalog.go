@@ -2,10 +2,39 @@ package sessions
 
 import (
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"sort"
 )
+
+// CatalogError reports unreadable native entries alongside the usable catalog.
+type CatalogError struct{ Causes []error }
+
+func (e *CatalogError) Error() string {
+	if err := errors.Join(e.Causes...); err != nil {
+		return err.Error()
+	}
+	return ""
+}
+func (e *CatalogError) Unwrap() []error { return e.Causes }
+func IsCatalogError(err error) bool     { var partial *CatalogError; return errors.As(err, &partial) }
+func catalogFailure(err error) *CatalogError {
+	var partial *CatalogError
+	if errors.As(err, &partial) {
+		return partial
+	}
+	if err != nil {
+		return &CatalogError{Causes: []error{err}}
+	}
+	return &CatalogError{}
+}
+func (e *CatalogError) err() error {
+	if len(e.Causes) == 0 {
+		return nil
+	}
+	return e
+}
 
 type sessionEntry struct {
 	Summary
@@ -14,17 +43,18 @@ type sessionEntry struct {
 
 func (s Service) catalog(agent string) ([]sessionEntry, error) {
 	var entries []sessionEntry
+	failures := &CatalogError{}
 	for _, spec := range agentSpecs {
 		if agent != "" && spec.id != agent {
 			continue
 		}
 		items, err := discoverSessions(spec, s.HomeDir)
 		if err != nil {
-			return nil, fmt.Errorf("load %s sessions: %w", spec.id, err)
+			failures.Causes = append(failures.Causes, fmt.Errorf("load %s sessions: %w", spec.id, err))
 		}
 		entries = append(entries, items...)
 	}
-	return normalizeSessions(entries), nil
+	return normalizeSessions(entries), failures.err()
 }
 
 func discoverSessions(spec agentSpec, home string) ([]sessionEntry, error) {
@@ -41,14 +71,11 @@ func discoverSessions(spec agentSpec, home string) ([]sessionEntry, error) {
 		patterns = []string{filepath.Join(spec.root(home), "*", "*.jsonl")}
 	default:
 		details, err := spec.load(home)
-		if err != nil {
-			return nil, err
-		}
 		entries := make([]sessionEntry, len(details))
 		for i := range details {
 			entries[i] = sessionEntry{Summary: SummaryOf(details[i]), detail: &details[i]}
 		}
-		return entries, nil
+		return entries, err
 	}
 	return discoverJSONLSessions(spec.id, patterns...)
 }

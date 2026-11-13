@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -134,13 +135,21 @@ func agyTime(data []byte) (string, error) {
 	return time.Unix(int64(p.integer(1)), int64(p.integer(2))).UTC().Format(time.RFC3339Nano), nil
 }
 func agyRoot(home string) string { return filepath.Join(home, ".gemini", "antigravity-cli") }
+func agyFileURL(path string) url.URL {
+	path = filepath.ToSlash(path)
+	if len(path) > 2 && path[1] == ':' && (path[2] == '/' || path[2] == '\\') {
+		path = "/" + strings.ReplaceAll(path, "\\", "/")
+	}
+	return url.URL{Scheme: "file", Path: path}
+}
+
 func agyOpen(path string, readonly bool) (*sql.DB, error) {
 	absolute, err := filepath.Abs(path)
 	if err != nil {
 		return nil, err
 	}
 	path = absolute
-	u := url.URL{Scheme: "file", Path: filepath.ToSlash(path)}
+	u := agyFileURL(path)
 	q := u.Query()
 	if readonly {
 		q.Set("mode", "ro")
@@ -186,44 +195,46 @@ func loadAgy(home string) ([]Session, error) {
 		return nil, err
 	}
 	var details []Session
+	var failures []error
 	for _, path := range files {
 		d, err := ParseAgySessionFile(path)
 		if err != nil {
-			return nil, err
+			failures = append(failures, fmt.Errorf("read agy session %s: %w", path, err))
+			continue
 		}
 		details = append(details, d)
 	}
 	summaryPath := filepath.Join(agyRoot(home), "conversation_summaries.db")
 	if _, err := os.Stat(summaryPath); os.IsNotExist(err) {
-		return details, nil
+		return details, errors.Join(failures...)
 	}
 	db, err := agyOpen(summaryPath, true)
 	if err != nil {
-		return nil, err
+		return details, errors.Join(append(failures, err)...)
 	}
 	defer db.Close()
 	rows, err := db.Query(`SELECT conversation_id,title FROM conversation_summaries`)
 	if err != nil {
-		return nil, fmt.Errorf("read agy summaries: %w", err)
+		return details, errors.Join(append(failures, fmt.Errorf("read agy summaries %s: %w", summaryPath, err))...)
 	}
 	defer rows.Close()
 	titles := map[string]string{}
 	for rows.Next() {
 		var id, title string
 		if err := rows.Scan(&id, &title); err != nil {
-			return nil, err
+			return details, errors.Join(append(failures, err)...)
 		}
 		titles[id] = title
 	}
 	if err := rows.Err(); err != nil {
-		return nil, err
+		return details, errors.Join(append(failures, err)...)
 	}
 	for i := range details {
 		if t := titles[details[i].ID]; t != "" {
 			details[i].Title = t
 		}
 	}
-	return details, nil
+	return details, errors.Join(failures...)
 }
 
 // ParseAgySessionFile reads SQLite directly, including committed WAL records.
@@ -631,7 +642,8 @@ func WriteAgyDatabaseFile(detail Session, path string) error {
 	if err != nil {
 		return err
 	}
-	uri := (&url.URL{Scheme: "file", Path: filepath.ToSlash(workspace)}).String()
+	workspaceURL := agyFileURL(workspace)
+	uri := workspaceURL.String()
 	metadata := agyJoin(agyBytes(1, agyText(1, uri)), agyBytes(2, agyTimestamp(detail.StartedAt)), agyText(3, newUUID()), agyText(6, detail.ID), agyText(7, uri), agyText(18, "default-cli-project"))
 	if _, err = tx.Exec(`INSERT INTO trajectory_meta VALUES (?,?,4,17)`, newUUID(), detail.ID); err != nil {
 		return err
@@ -696,7 +708,8 @@ func WriteAgySessionFile(detail Session, home string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	uris, _ := json.Marshal([]string{(&url.URL{Scheme: "file", Path: filepath.ToSlash(workspace)}).String()})
+	workspaceURL := agyFileURL(workspace)
+	uris, _ := json.Marshal([]string{workspaceURL.String()})
 	steps, err := SerializeAgy(detail)
 	if err != nil {
 		return "", err

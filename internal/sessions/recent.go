@@ -24,9 +24,7 @@ func (s Service) RecentGroups(workspace string, limit int, includeSubagents bool
 	workspace = cleanPath(workspace)
 
 	entries, err := s.catalog("")
-	if err != nil {
-		return RecentGroups{}, err
-	}
+	failures := catalogFailure(err)
 
 	result := RecentGroups{Current: []Summary{}, Global: []Summary{}}
 	currentCounts := make(map[string]int)
@@ -52,10 +50,11 @@ func (s Service) RecentGroups(workspace string, limit int, includeSubagents bool
 		for i := range items {
 			item, err := sessionEntry{Summary: items[i]}.summary()
 			if err != nil {
-				return RecentGroups{}, err
+				failures.Causes = append(failures.Causes, err)
+				continue
 			}
 			items[i] = item
 		}
 	}
-	return result, nil
+	return result, failures.err()
 }

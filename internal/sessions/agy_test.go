@@ -293,3 +293,83 @@ func TestAgySubagentVisibilityAndFreshImport(t *testing.T) {
 		t.Fatal(got)
 	}
 }
+
+func TestAgyCatalogKeepsValidSessionsAndReportsBrokenEntries(t *testing.T) {
+	home := t.TempDir()
+	source := agyTestSession()
+	id, err := WriteAgySessionFile(source, home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	claude := source
+	claude.ID = "healthy-claude"
+	path := filepath.Join(home, ".claude", "projects", "project", "healthy-claude.jsonl")
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeJSONLFile(path, SerializeClaude(claude)); err != nil {
+		t.Fatal(err)
+	}
+	bad := filepath.Join(agyRoot(home), "conversations", "broken.db")
+	if err := os.WriteFile(bad, []byte("corrupt sqlite"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	s := Service{HomeDir: home}
+	items, err := s.List(ListOptions{All: true})
+	if !IsCatalogError(err) || !strings.Contains(err.Error(), "broken.db") {
+		t.Fatalf("missing visible diagnostic: %v", err)
+	}
+	if len(items) != 2 {
+		t.Fatalf("valid sources lost: %+v", items)
+	}
+	seen := map[string]bool{}
+	for _, item := range items {
+		seen[item.ID] = true
+	}
+	if !seen[id] || !seen[claude.ID] {
+		t.Fatal(seen)
+	}
+	groups, err := s.RecentGroups(source.Workspace, 10, true)
+	if !IsCatalogError(err) || len(groups.Current) != 2 {
+		t.Fatalf("recent groups: %+v %v", groups, err)
+	}
+	if _, err := s.Info("broken", "agy"); err == nil {
+		t.Fatal("specified corrupt ID must fail")
+	}
+	if _, err := s.List(ListOptions{Agent: "missing", All: true}); err == nil || IsCatalogError(err) {
+		t.Fatalf("invalid agent is not a partial failure: %v", err)
+	}
+	if err := os.Remove(bad); err != nil {
+		t.Fatal(err)
+	}
+	summary := filepath.Join(agyRoot(home), "conversation_summaries.db")
+	if err := os.WriteFile(summary, []byte("corrupt summaries"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	items, err = s.List(ListOptions{All: true})
+	if !IsCatalogError(err) || !strings.Contains(err.Error(), "conversation_summaries.db") || len(items) != 2 {
+		t.Fatalf("summary corruption hid valid sources: %+v %v", items, err)
+	}
+}
+
+func TestAgyWindowsFileURIs(t *testing.T) {
+	for _, input := range []string{`C:\Users\Agent\project space\session.db`, `C:/Users/Agent/project space/session.db`} {
+		u := agyFileURL(input)
+		if got := u.String(); got != "file:///C:/Users/Agent/project%20space/session.db" {
+			t.Fatalf("noncanonical URI: %s", got)
+		}
+		if got := agyWorkspace(u.String()); got != filepath.FromSlash("C:/Users/Agent/project space/session.db") {
+			t.Fatalf("workspace roundtrip: %s", got)
+		}
+		query := u.Query()
+		query.Set("mode", "ro")
+		u.RawQuery = query.Encode()
+		if got := u.String(); got != "file:///C:/Users/Agent/project%20space/session.db?mode=ro" {
+			t.Fatalf("SQLite URI: %s", got)
+		}
+	}
+	u := agyFileURL("/tmp/project space/session.db")
+	if u.String() != "file:///tmp/project%20space/session.db" || agyWorkspace(u.String()) != filepath.FromSlash("/tmp/project space/session.db") {
+		t.Fatal(u.String())
+	}
+}

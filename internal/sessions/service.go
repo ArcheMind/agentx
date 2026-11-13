@@ -137,9 +137,7 @@ func (s Service) List(options ListOptions) ([]Summary, error) {
 	}
 
 	entries, err := s.catalog(options.Agent)
-	if err != nil {
-		return nil, err
-	}
+	failures := catalogFailure(err)
 	var all []Summary
 	for _, entry := range entries {
 		if !entry.visible(workspace, options.IncludeSubagents) {
@@ -147,7 +145,8 @@ func (s Service) List(options ListOptions) ([]Summary, error) {
 		}
 		detail, err := entry.read()
 		if err != nil {
-			return nil, err
+			failures.Causes = append(failures.Causes, err)
+			continue
 		}
 		all = append(all, SummaryOf(detail))
 	}
@@ -166,7 +165,7 @@ func (s Service) List(options ListOptions) ([]Summary, error) {
 		}
 	})
 	if options.Limit == 0 {
-		return all, nil
+		return all, failures.err()
 	}
 	counts := make(map[string]int)
 	limited := make([]Summary, 0, len(all))
@@ -177,7 +176,7 @@ func (s Service) List(options ListOptions) ([]Summary, error) {
 		counts[item.Agent]++
 		limited = append(limited, item)
 	}
-	return limited, nil
+	return limited, failures.err()
 }
 
 func (s Service) Info(id, source string) (Session, error) {
