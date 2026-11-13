@@ -5,7 +5,7 @@ SessionMan is a single `sm` executable. It does not install a daemon, create a c
 ## Installer for macOS and Linux
 
 ```bash
-curl -LsSf https://raw.githubusercontent.com/ArcheMind/agentx/main/install.sh | sh
+curl -LsSf https://raw.githubusercontent.com/ArcheMind/sessionMan/main/install.sh | sh
 ```
 
 The installer selects the current operating system and architecture, downloads the matching GitHub Release archive, verifies it against the published SHA-256 checksum, and installs `sm` to `$HOME/.local/bin`.
@@ -14,14 +14,14 @@ Choose another destination:
 
 ```bash
 SM_INSTALL_DIR=/usr/local/bin \
-  sh -c "$(curl -LsSf https://raw.githubusercontent.com/ArcheMind/agentx/main/install.sh)"
+  sh -c "$(curl -LsSf https://raw.githubusercontent.com/ArcheMind/sessionMan/main/install.sh)"
 ```
 
 Install a specific version:
 
 ```bash
 SM_VERSION=0.1.0 \
-  sh -c "$(curl -LsSf https://raw.githubusercontent.com/ArcheMind/agentx/main/install.sh)"
+  sh -c "$(curl -LsSf https://raw.githubusercontent.com/ArcheMind/sessionMan/main/install.sh)"
 ```
 
 The installer accepts a version with or without the `v` prefix.
@@ -44,7 +44,7 @@ Every release publishes archives for:
 - Linux on x86-64 and ARM64;
 - Windows on x86-64 and ARM64.
 
-Download the archive and `checksums.txt` from [GitHub Releases](https://github.com/ArcheMind/agentx/releases). Verify the artifact before extracting it:
+Download the archive and `checksums.txt` from [GitHub Releases](https://github.com/ArcheMind/sessionMan/releases). Verify the artifact before extracting it:
 
 ```bash
 sha256sum --check checksums.txt --ignore-missing
@@ -55,8 +55,8 @@ On macOS, use `shasum -a 256 <archive>` and compare the result with `checksums.t
 ## Build from source
 
 ```bash
-git clone https://github.com/ArcheMind/agentx.git
-cd agentx
+git clone https://github.com/ArcheMind/sessionMan.git
+cd sessionMan
 make build
 ./bin/sm version
 ```

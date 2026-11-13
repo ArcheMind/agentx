@@ -12,7 +12,7 @@ migrate_path "$HOME/.agentx" "$HOME/.sessionman"
 migrate_path "$HOME/.local/state/agentx" "$HOME/.local/state/sessionman"
 migrate_path "$HOME/.agents/.agentx" "$HOME/.agents/.sessionman"
 
-repository="ArcheMind/sessionman"
+repository="ArcheMind/sessionMan"
 install_dir="${SM_INSTALL_DIR:-${HOME}/.local/bin}"
 requested_version="${SM_VERSION:-latest}"
 

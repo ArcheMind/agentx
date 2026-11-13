@@ -1,9 +1,9 @@
 # sessionman
 
-[![CI](https://github.com/ArcheMind/agentx/actions/workflows/ci.yml/badge.svg)](https://github.com/ArcheMind/agentx/actions/workflows/ci.yml)
-[![CI platforms](https://img.shields.io/badge/CI%20platforms-Linux%20%7C%20macOS%20%7C%20Windows-2ea44f)](https://github.com/ArcheMind/agentx/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/ArcheMind/agentx?display_name=tag)](https://github.com/ArcheMind/agentx/releases)
-[![License](https://img.shields.io/github/license/ArcheMind/agentx)](LICENSE)
+[![CI](https://github.com/ArcheMind/sessionMan/actions/workflows/ci.yml/badge.svg)](https://github.com/ArcheMind/sessionMan/actions/workflows/ci.yml)
+[![CI platforms](https://img.shields.io/badge/CI%20platforms-Linux%20%7C%20macOS%20%7C%20Windows-2ea44f)](https://github.com/ArcheMind/sessionMan/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/ArcheMind/sessionMan?display_name=tag)](https://github.com/ArcheMind/sessionMan/releases)
+[![License](https://img.shields.io/github/license/ArcheMind/sessionMan)](LICENSE)
 
 **SessionMan maintains reverse-engineered session formats and invocation interfaces of different coding agents. This makes the previously impossible possible.**
 
@@ -149,7 +149,7 @@ Read-only research and code review. Not for large refactors.
 ### macOS and Linux
 
 ```bash
-curl -LsSf https://raw.githubusercontent.com/ArcheMind/agentx/main/install.sh | sh
+curl -LsSf https://raw.githubusercontent.com/ArcheMind/sessionMan/main/install.sh | sh
 ```
 
 Downloads the release artifact for the current platform, verifies its SHA-256 checksum, and installs `sm` to `$HOME/.local/bin`. Set `SM_INSTALL_DIR` for another directory.
@@ -160,7 +160,7 @@ Downloads the release artifact for the current platform, verifies its SHA-256 ch
 go install github.com/ArcheMind/agentx/cmd/sm@latest
 ```
 
-Prebuilt archives for macOS, Linux, and Windows are on the [releases page](https://github.com/ArcheMind/agentx/releases). See [installation](docs/installation.md) for version pinning, verification, Windows setup, and source builds.
+Prebuilt archives for macOS, Linux, and Windows are on the [releases page](https://github.com/ArcheMind/sessionMan/releases). See [installation](docs/installation.md) for version pinning, verification, Windows setup, and source builds.
 
 ## Supported agents
 
