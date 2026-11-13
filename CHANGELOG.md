@@ -4,6 +4,17 @@ All notable changes to SessionMan are documented here. The format follows [Keep 
 
 ## [Unreleased]
 
+## [0.13.2] - 2026-11-13
+
+### Fixed
+
+- Interactive session selection and large-context prompts consistently expose
+  `t` as the shortcut for trimming context and resuming a session.
+
+### Changed
+
+- README naming and the interactive demo consistently use SessionMan and `sm`.
+
 ## [0.13.1] - 2026-11-13
 
 ### Fixed
