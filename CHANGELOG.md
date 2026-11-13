@@ -4,6 +4,16 @@ All notable changes to SessionMan are documented here. The format follows [Keep 
 
 ## [Unreleased]
 
+## [0.13.1] - 2026-11-13
+
+### Fixed
+
+- Recent sessions collapse Codex incremental rollouts into one session before
+  applying display limits, matching session list and detail lookup.
+- Session discovery and rollout selection are shared across listing, recent
+  sessions, detail lookup, and continuation. Codex continuation selects the
+  latest record by session metadata instead of file names or modification times.
+
 ## [0.13.0] - 2026-11-13
 
 ### Added
