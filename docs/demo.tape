@@ -14,11 +14,13 @@ Set BorderRadius 10
 Set CursorBlink false
 
 Hide
-Type "go build -o /tmp/agentx-vhs-demo ./docs/demo"
+Type "go build -o /tmp/sm-vhs-demo ./docs/demo"
 Enter
 Type `export PATH="$PWD/docs/demo/bin:/usr/bin:/bin"`
 Enter
-Type `alias ax="/tmp/agentx-vhs-demo"`
+Type `export SM_SUBAGENT_HOME="$PWD/docs/demo/home"`
+Enter
+Type `alias sm="/tmp/sm-vhs-demo"`
 Enter
 Type `export PS1="$ "`
 Enter
@@ -28,16 +30,16 @@ Type "clear"
 Enter
 Show
 
-Type "ax"
+Type "sm"
 Sleep 400ms
 Enter
-Wait+Screen /Choose a recent session/
-Wait+Screen /Choose an agent:/
+Wait+Screen /Recent sessions/
+Wait+Screen /Resume session as:/
 Wait+Screen /Choose a model:/
 Sleep 1.5s
 
 Hide
 Ctrl+C
 Sleep 200ms
-Type "/bin/rm -f /tmp/agentx-vhs-demo"
+Type "/bin/rm -f /tmp/sm-vhs-demo"
 Enter
