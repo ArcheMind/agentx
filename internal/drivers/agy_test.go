@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"reflect"
+	goruntime "runtime"
 	"strings"
 	"testing"
 
@@ -82,15 +83,31 @@ func TestAGYLaunchPreservesExactModelAndNativeArguments(t *testing.T) {
 	}
 }
 
-func TestAGYInstallUsesOfficialInstallerAndRejectsVersionPins(t *testing.T) {
-	plan, err := (AGYInstaller{}).PlanInstall("")
+func TestAGYInstallUsesPlatformOfficialInstaller(t *testing.T) {
+	for _, platform := range []string{"darwin", "linux", "windows"} {
+		t.Run(platform, func(t *testing.T) {
+			plan, err := agyInstallPlan("", platform)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if platform == "windows" {
+				if plan.Executable != "powershell" || len(plan.Args) != 5 || !reflect.DeepEqual(plan.Args[:4], []string{"-NoProfile", "-ExecutionPolicy", "Bypass", "-Command"}) || !strings.Contains(plan.Args[4], "https://antigravity.google/cli/install.ps1") || !strings.Contains(plan.Args[4], "$ErrorActionPreference = 'Stop'") {
+					t.Fatalf("Windows plan = %#v", plan)
+				}
+			} else if plan.Executable != "bash" || len(plan.Args) != 2 || plan.Args[0] != "-c" || !strings.Contains(plan.Args[1], "https://antigravity.google/cli/install.sh") || !strings.Contains(plan.Args[1], `bash "$installer"`) || !strings.Contains(plan.Args[1], "set -euo pipefail") {
+				t.Fatalf("Unix plan = %#v", plan)
+			}
+			if _, err := agyInstallPlan("1.5.8", platform); err == nil {
+				t.Fatal("unsupported version pin accepted")
+			}
+		})
+	}
+	got, err := (AGYInstaller{}).PlanInstall("")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if plan.Executable != "sh" || len(plan.Args) != 2 || plan.Args[0] != "-c" || !strings.Contains(plan.Args[1], "https://antigravity.google/cli/install.sh") || !strings.Contains(plan.Args[1], `sh "$installer"`) {
-		t.Fatalf("plan = %#v", plan)
-	}
-	if _, err := (AGYInstaller{}).PlanInstall("1.5.8"); err == nil {
-		t.Fatal("unsupported version pin accepted")
+	want, err := agyInstallPlan("", goruntime.GOOS)
+	if err != nil || !reflect.DeepEqual(got, want) {
+		t.Fatalf("host plan = %#v, want %#v, error = %v", got, want, err)
 	}
 }

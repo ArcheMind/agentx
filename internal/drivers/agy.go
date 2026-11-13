@@ -3,6 +3,7 @@ package drivers
 import (
 	"context"
 	"fmt"
+	goruntime "runtime"
 	"strings"
 
 	"github.com/ArcheMind/agentx/internal/runtime"
@@ -54,13 +55,21 @@ func (AGYModels) ListModels(ctx context.Context, runner runtime.Runner) ([]runti
 type AGYInstaller struct{}
 
 func (AGYInstaller) PlanInstall(version string) (runtime.CommandPlan, error) {
+	return agyInstallPlan(version, goruntime.GOOS)
+}
+
+func agyInstallPlan(version, platform string) (runtime.CommandPlan, error) {
 	if version != "" {
 		return runtime.CommandPlan{}, fmt.Errorf("Antigravity's official installer does not support selecting a version")
 	}
-	script := `set -eu
+	if platform == "windows" {
+		script := `$ErrorActionPreference = 'Stop'; Invoke-RestMethod -Uri 'https://antigravity.google/cli/install.ps1' | Invoke-Expression`
+		return runtime.CommandPlan{Executable: "powershell", Args: []string{"-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script}}, nil
+	}
+	script := `set -euo pipefail
 installer=$(mktemp)
 trap 'rm -f "$installer"' EXIT
 curl --fail --silent --show-error --location https://antigravity.google/cli/install.sh --output "$installer"
-sh "$installer"`
-	return runtime.CommandPlan{Executable: "sh", Args: []string{"-c", script}}, nil
+bash "$installer"`
+	return runtime.CommandPlan{Executable: "bash", Args: []string{"-c", script}}, nil
 }
