@@ -179,7 +179,7 @@ function lintCodex(records,file,warnings){
     if(i===0&&r.type!=='session_meta')errors.push(`${where}: session_meta must be the first line`)
     if(r.type==='session_meta'){
       if(i!==0)errors.push(`${where}: session_meta only allowed first`)
-      shape(p,{required:{id:isStr,session_id:isStr,cwd:isStr,timestamp:isIsoTime,originator:isStr,cli_version:isStr,source:oneOf(isStr,isObj)}},where,errors)
+      shape(p,{required:{id:isStr,session_id:isStr,cwd:isStr,timestamp:isIsoTime,originator:isStr,cli_version:isStr,source:oneOf(isStr,isObj),model_provider:v=>isStr(v)&&v.trim().length>0}},where,errors)
       if(uuidInName&&p.id!==uuidInName[1])errors.push(`${where}: payload.id ${p.id} differs from file name uuid`)
       if(p.id!==p.session_id)errors.push(`${where}: session_id differs from id`)
     }else if(r.type==='event_msg'){

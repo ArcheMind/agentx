@@ -27,6 +27,10 @@ type continueRunner struct {
 	fresh   string
 }
 
+func (r *continueRunner) ExecuteJSONRPC(_ context.Context, _ runtime.CommandPlan, _ []json.RawMessage, _ json.RawMessage) (json.RawMessage, error) {
+	return json.RawMessage(`{"id":2,"result":{"config":{"model_provider":"company"}}}`), nil
+}
+
 func (r *continueRunner) Execute(_ context.Context, plan runtime.CommandPlan, options runtime.ExecuteOptions) (runtime.CommandResult, error) {
 	r.plans = append(r.plans, plan)
 	prompt := ""

@@ -84,7 +84,10 @@ func piSessionDirName(workspace string) string {
 	return "--" + strings.NewReplacer("/", "-", "\\", "-", ":", "-").Replace(workspace) + "--"
 }
 
-func WriteCodexSessionFile(detail Session, codexHome string) (string, error) {
+func WriteCodexSessionFile(detail Session, codexHome, provider string) (string, error) {
+	if strings.TrimSpace(provider) == "" {
+		return "", fmt.Errorf("Codex model provider is required")
+	}
 	id := newUUID()
 	now := time.Now()
 	dir := filepath.Join(codexHome, "sessions", now.Format("2006"), now.Format("01"), now.Format("02"))
@@ -93,7 +96,9 @@ func WriteCodexSessionFile(detail Session, codexHome string) (string, error) {
 	}
 	name := fmt.Sprintf("rollout-%s-%s.jsonl", now.Format("2006-01-02T15-04-05"), id)
 	detail.ID = id
-	return id, writeJSONLFile(filepath.Join(dir, name), SerializeCodex(detail))
+	records := SerializeCodex(detail)
+	records[0]["payload"].(map[string]any)["model_provider"] = provider
+	return id, writeJSONLFile(filepath.Join(dir, name), records)
 }
 
 func ResumeArgs(agentID, token string) []string {

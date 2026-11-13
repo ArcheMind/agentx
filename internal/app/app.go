@@ -614,7 +614,7 @@ func (a App) sessions(ctx context.Context, args []string) error {
 	case "export":
 		return a.sessionExport(args[1:])
 	case "import":
-		return a.sessionImport(args[1:])
+		return a.sessionImport(ctx, args[1:])
 	case "continue":
 		return a.sessionContinue(ctx, args[1:])
 	default:
@@ -799,7 +799,7 @@ func (a App) sessionExport(args []string) error {
 	return writeStructured(a.Stdout, detail, a.structuredDefault())
 }
 
-func (a App) sessionImport(args []string) error {
+func (a App) sessionImport(ctx context.Context, args []string) error {
 	if len(args) == 0 || len(args) > 2 {
 		return fmt.Errorf("usage: ax [--json|--yaml] session import <target-agent> [file]")
 	}
@@ -815,7 +815,7 @@ func (a App) sessionImport(args []string) error {
 	if err != nil {
 		return err
 	}
-	token, err := a.writeResumeSession(detail, agent.ID)
+	token, err := a.writeResumeSession(ctx, detail, agent.ID, nil)
 	if err != nil {
 		return err
 	}
@@ -921,7 +921,8 @@ func (a App) resumeSession(ctx context.Context, agent runtime.Agent, detail sess
 	if detail.Provider == agent.ID && !fresh {
 		resumeToken = detail.ID
 	} else {
-		resumeToken, err = a.writeResumeSession(detail, agent.ID)
+		detail.Workspace = workspace
+		resumeToken, err = a.writeResumeSession(ctx, detail, agent.ID, extraArgs)
 		if err != nil {
 			return fmt.Errorf("prepare resume session: %w", err)
 		}

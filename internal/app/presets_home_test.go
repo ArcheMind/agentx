@@ -28,7 +28,10 @@ func (r *presetRunner) Execute(_ context.Context, plan runtime.CommandPlan, _ ru
 	return runtime.CommandResult{}, nil
 }
 
-func (r *presetRunner) ExecuteJSONRPC(context.Context, runtime.CommandPlan, []json.RawMessage, json.RawMessage) (json.RawMessage, error) {
+func (r *presetRunner) ExecuteJSONRPC(_ context.Context, _ runtime.CommandPlan, requests []json.RawMessage, _ json.RawMessage) (json.RawMessage, error) {
+	if strings.Contains(string(requests[len(requests)-1]), `"config/read"`) {
+		return json.RawMessage(`{"id":2,"result":{"config":{"model_provider":"company"}}}`), nil
+	}
 	r.rpc++
 	return json.RawMessage(r.response), nil
 }

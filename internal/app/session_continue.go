@@ -133,7 +133,7 @@ func (a App) sessionContinue(ctx context.Context, args []string) error {
 		// the Codex item id cap are shortened.
 		imported.Messages = sessions.SanitizeMessageIDs(sessions.SanitizeToolIDs(sessions.RechainMessages(fillTimestamps(history))))
 		imported.MessageCount = len(history)
-		token, err = a.writeResumeSession(imported, agent.ID)
+		token, err = a.writeResumeSession(ctx, imported, agent.ID, nil)
 		if err != nil {
 			return err
 		}
@@ -221,13 +221,18 @@ func (a App) sessionContinue(ctx context.Context, args []string) error {
 // writeResumeSession materializes a transcript as a native session file.
 // Codex sessions go to the auth-discovered home (CODEX_HOME when set),
 // because that is the store the codex CLI reads.
-func (a App) writeResumeSession(detail sessions.Session, agentID string) (string, error) {
+func (a App) writeResumeSession(ctx context.Context, detail sessions.Session, agentID string, flags []string) (string, error) {
 	if agentID == "codex" {
 		auth, err := subagents.DiscoverAuth(agentID)
 		if err != nil {
 			return "", err
 		}
-		return sessions.WriteCodexSessionFile(detail, auth.Dir)
+		env, unset := subagents.AuthEnvironment(auth)
+		provider, err := drivers.CodexProvider(ctx, a.Runner, runtime.CommandPlan{Cwd: detail.Workspace, Env: env, UnsetEnv: unset}, flags)
+		if err != nil {
+			return "", err
+		}
+		return sessions.WriteCodexSessionFile(detail, auth.Dir, provider)
 	}
 	stateDir := filepath.Join(a.Sessions.HomeDir, ".local", "state", "sessionman", "resume")
 	return sessions.WriteSessionFile(detail, agentID, stateDir, a.Sessions.HomeDir)

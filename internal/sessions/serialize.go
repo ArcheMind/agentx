@@ -235,13 +235,14 @@ func claudeSerializeUserContent(blocks []ContentBlock) any {
 // per docs/native-rollout-protocols/codex-0.163.0/PROTOCOL.md.
 func SerializeCodex(detail Session) []map[string]any {
 	meta := map[string]any{
-		"id":          detail.ID,
-		"session_id":  detail.ID,
-		"cwd":         detail.Workspace,
-		"timestamp":   detail.StartedAt,
-		"originator":  "sessionman",
-		"cli_version": "sessionman",
-		"source":      "cli",
+		"id":             detail.ID,
+		"session_id":     detail.ID,
+		"cwd":            detail.Workspace,
+		"timestamp":      detail.StartedAt,
+		"originator":     "sessionman",
+		"cli_version":    "sessionman",
+		"source":         "cli",
+		"model_provider": "openai",
 	}
 	if detail.IsSubagent {
 		meta["source"] = map[string]any{"subagent": map[string]any{}}

@@ -848,6 +848,7 @@ func TestSessionImportCodexWritesToConfiguredHome(t *testing.T) {
 	var stdout bytes.Buffer
 	application := New(false, strings.NewReader(input), &stdout, &bytes.Buffer{})
 	application.Sessions = sessions.Service{HomeDir: home}
+	application.Runner = &presetRunner{}
 	if err := application.Run(context.Background(), []string{"session", "import", "codex"}); err != nil {
 		t.Fatal(err)
 	}
@@ -861,6 +862,9 @@ func TestSessionImportCodexWritesToConfiguredHome(t *testing.T) {
 	}
 	if !strings.Contains(string(data), "hello") {
 		t.Fatalf("imported session %q lacks the message", string(data))
+	}
+	if !strings.Contains(string(data), `"model_provider":"company"`) {
+		t.Fatalf("imported session lacks the target provider: %s", data)
 	}
 	if _, err := os.Stat(filepath.Join(home, ".codex")); !os.IsNotExist(err) {
 		t.Fatalf("expected no writes under the service home, stat error = %v", err)
