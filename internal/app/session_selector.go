@@ -466,7 +466,7 @@ func readSelectionKey(reader *bufio.Reader) (selectionKey, error) {
 		return selectionManage, nil
 	case 'e', 'E':
 		return selectionExport, nil
-	case 'f', 'F':
+	case 't', 'T':
 		return selectionFresh, nil
 	case 27:
 		if reader.Buffered() < 2 {

@@ -246,8 +246,8 @@ func TestFreshSessionDetailKeepsShortTranscriptsWhole(t *testing.T) {
 	}
 }
 
-func TestFreshKeyReadsAsSelectionFresh(t *testing.T) {
-	for _, input := range []string{"f", "F"} {
+func TestTrimKeyReadsAsSelectionFresh(t *testing.T) {
+	for _, input := range []string{"t", "T"} {
 		key, err := readSelectionKey(bufio.NewReader(strings.NewReader(input)))
 		if err != nil || key != selectionFresh {
 			t.Fatalf("input %q: key = %v err = %v", input, key, err)
@@ -256,14 +256,14 @@ func TestFreshKeyReadsAsSelectionFresh(t *testing.T) {
 }
 
 func TestConfirmLargeContextKeys(t *testing.T) {
-	for input, want := range map[string]selectionKey{"xf": selectionFresh, "\r": selectionConfirm, "q": selectionCancel} {
+	for input, want := range map[string]selectionKey{"xt": selectionFresh, "\r": selectionConfirm, "q": selectionCancel} {
 		var stdout bytes.Buffer
 		application := New(false, strings.NewReader(input), &stdout, &bytes.Buffer{})
 		key, err := application.confirmLargeContext(bufio.NewReader(application.Stdin), 312_000)
 		if err != nil || key != want {
 			t.Fatalf("input %q: key = %v err = %v", input, key, err)
 		}
-		if !strings.Contains(stdout.String(), "Context ~312K tokens — [f] fresh  [Enter] full  [q] cancel") {
+		if !strings.Contains(stdout.String(), "Context ~312K tokens — [t] trim & resume  [Enter] full  [q] cancel") {
 			t.Fatalf("prompt = %q", stdout.String())
 		}
 	}
@@ -287,7 +287,7 @@ func TestResumeInteractiveLargeContextCancel(t *testing.T) {
 }
 
 func TestFreshKeyResumesAsNewNativeSessionSameAgent(t *testing.T) {
-	application, _, runner := presetApp(t, "jjf\r", "codex")
+	application, _, runner := presetApp(t, "jjt\r", "codex")
 	mustCreate(t, application.Hooks.Home, deepReview)
 	home := t.TempDir()
 	codexHome := t.TempDir()

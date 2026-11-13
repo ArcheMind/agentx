@@ -150,7 +150,7 @@ func (a App) freshSessionDetail(detail sessions.Session) (sessions.Session, erro
 // confirmLargeContext returns selectionFresh, selectionConfirm (full load) or
 // selectionCancel.
 func (a App) confirmLargeContext(reader *bufio.Reader, tokens int) (selectionKey, error) {
-	fmt.Fprintf(a.Stdout, "Context ~%dK tokens — [f] fresh  [Enter] full  [q] cancel", tokens/1000)
+	fmt.Fprintf(a.Stdout, "Context ~%dK tokens — [t] trim & resume  [Enter] full  [q] cancel", tokens/1000)
 	restore, err := makeRaw(a.Stdin)
 	if err != nil {
 		return selectionCancel, err

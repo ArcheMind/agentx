@@ -28,7 +28,7 @@ const (
 	presetLineWidth  = 96
 	presetMinDesc    = 20
 	presetModelWidth = 24
-	homeHelp         = "↑/↓ or j/k select · Enter open · e export session · m manage presets · q/Esc cancel"
+	homeHelp         = "↑/↓ or j/k select · Enter open · t trim & resume · e export session · m manage presets · q/Esc cancel"
 	emptyPresetsHint = "Save an agent, model and effort for reuse."
 )
 
