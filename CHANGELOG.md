@@ -4,6 +4,29 @@ All notable changes to SessionMan are documented here. The format follows [Keep 
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-11-13
+
+### Added
+
+- Interactive bare `sm` checks `https://sessionman.dev/releases/latest` for a
+  newer stable release and asks before installing it. Checks have a two-second
+  deadline and are cached for 24 hours. Set `SM_NO_UPDATE_CHECK=1` to disable
+  both checks and prompts; commands and non-interactive invocations skip them.
+- Self-updates verify the platform archive's SHA-256 checksum and replace the
+  resolved executable in place on macOS, Linux, and Windows. Windows uses a
+  temporary helper after the original process exits. Successful updates exit
+  without opening the home screen or starting an agent.
+
+### Changed
+
+- Recent session rows show both the first and latest user messages.
+- Installation instructions use `https://sessionman.dev/install`.
+
+### Fixed
+
+- Dispatched subagent sessions carry a marker in their first task message so
+  session listings can distinguish them from ordinary user sessions.
+
 ## [0.12.2] - 2026-11-12
 
 ### Fixed
