@@ -3,9 +3,9 @@ import {mkdtemp} from 'node:fs/promises'
 import {tmpdir} from 'node:os'
 import {join,resolve} from 'node:path'
 
-const home=await mkdtemp(join(tmpdir(),'agentx-mcp-contract-'))
-const binary=resolve(process.env.AX_MCP_BINARY??process.argv[2]??'bin/ax')
-const child=spawn(binary,['mcp','serve'],{env:{...process.env,AX_SUBAGENT_HOME:home},stdio:['pipe','pipe','pipe']})
+const home=await mkdtemp(join(tmpdir(),'sessionman-mcp-contract-'))
+const binary=resolve(process.env.SM_MCP_BINARY??process.argv[2]??'bin/sm')
+const child=spawn(binary,['mcp','serve'],{env:{...process.env,SM_SUBAGENT_HOME:home,SM_HOST_AGENT_DIR:'',SM_DELEGATION_DEPTH:'0'},stdio:['pipe','pipe','pipe']})
 let next=0,pending='',stderr=''
 const requests=new Map()
 child.stderr.on('data',chunk=>stderr+=chunk)
@@ -16,19 +16,19 @@ function assert(value,message){if(!value)throw Error(message)}
 const timer=setTimeout(()=>child.kill('SIGTERM'),10000)
 try{
  const init=await rpc('initialize',{protocolVersion:'2024-11-05',capabilities:{},clientInfo:{name:'deterministic-contract-check',version:'1'}})
- assert(init.serverInfo.name==='AgentX'&&init.protocolVersion==='2024-11-05','server/protocol identity changed')
+ assert(init.serverInfo.name==='SessionMan'&&init.protocolVersion==='2024-11-05','server/protocol identity changed')
  child.stdin.write(JSON.stringify({jsonrpc:'2.0',method:'notifications/initialized'})+'\n')
  const {tools}=await rpc('tools/list')
  const expected=['StartExternalSubagent','SendExternalSubagentMessage','StopExternalSubagent','ListExternalSubagentSessions']
  assert(JSON.stringify(tools.map(tool=>tool.name))===JSON.stringify(expected),'tools/list did not expose exactly four renamed tools')
  assert(JSON.stringify(Object.keys(tools[0].inputSchema.properties).sort())===JSON.stringify(['description','prompt','model','run_in_background','name','isolation','team_name','mode'].sort()),'ExternalSubagent input keys changed')
  const props=tools[0].inputSchema.properties
- assert(props.mode.type==='string'&&props.mode.default==='normal'&&JSON.stringify(props.mode.enum)===JSON.stringify(['normal','yolo'])&&!tools[0].inputSchema.required.includes('mode'),'mode parameter changed')
+ assert(props.mode.type==='string'&&!Object.hasOwn(props.mode,'default')&&props.mode.description.includes("preset's mode")&&JSON.stringify(props.mode.enum)===JSON.stringify(['normal','yolo'])&&!tools[0].inputSchema.required.includes('mode'),'mode parameter changed')
  for(const old of ['Agent','SendMessage','TaskStop','ListAgents']){
   const result=await rpc('tools/call',{name:old,arguments:{}})
   assert(result.isError===true&&result.content.some(part=>part.text?.includes('unknown tool')),`${old} remained accepted`)
  }
- const listed=await rpc('tools/call',{name:'listExternalSubagentSessions',arguments:{}})
- assert(!listed.isError&&listed.content.some(part=>part.text?.includes('No AgentX ExternalSubagents in MCP connection connection-')),'new session listing did not return current empty connection')
- console.log(JSON.stringify({passed:true,binary,tools:expected,oldNamesRejected:true,noWorkCreated:true,server:'AgentX',protocol:init.protocolVersion,evidence:home}))
+ const listed=await rpc('tools/call',{name:'ListExternalSubagentSessions',arguments:{}})
+ assert(!listed.isError&&listed.content.some(part=>part.text?.includes('No SessionMan ExternalSubagents in MCP connection connection-')),'new session listing did not return current empty connection')
+ console.log(JSON.stringify({passed:true,binary,tools:expected,oldNamesRejected:true,noWorkCreated:true,server:'SessionMan',protocol:init.protocolVersion,evidence:home}))
 }finally{clearTimeout(timer);child.stdin.end();await new Promise(resolve=>child.once('close',resolve))}
