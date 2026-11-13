@@ -1,39 +1,34 @@
 package subagents
 
 import (
-	"context"
-	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/ArcheMind/agentx/internal/presets"
 	"github.com/ArcheMind/agentx/internal/runtime"
 )
 
-// gitRunner runs git for real and hands every native agent plan to the fake, optionally writing a
-// file into the agent working directory as the native agent would.
 type gitRunner struct {
-	*testRunner
+	runtime.ExecRunner
+	mu    sync.Mutex
+	plans []runtime.CommandPlan
 	write string
-	fail  bool
 }
 
-func (r *gitRunner) Execute(ctx context.Context, p runtime.CommandPlan, o runtime.ExecuteOptions) (runtime.CommandResult, error) {
-	if p.Executable == "git" {
-		return runtime.ExecRunner{}.Execute(ctx, p, o)
-	}
+func (r *gitRunner) StartStream(p runtime.CommandPlan) (*runtime.Stream, error) {
+	r.mu.Lock()
+	r.plans = append(r.plans, p)
+	r.mu.Unlock()
 	if r.write != "" {
 		if err := os.WriteFile(filepath.Join(p.Cwd, r.write), []byte("agent output\n"), 0600); err != nil {
-			return runtime.CommandResult{}, err
+			return nil, err
 		}
 	}
-	if r.fail {
-		return runtime.CommandResult{Stderr: "native failure"}, errors.New("exit status 1")
-	}
-	return r.testRunner.Execute(ctx, p, o)
+	return r.ExecRunner.StartStream(p)
 }
 
 func gitCmd(t *testing.T, dir string, args ...string) string {
@@ -71,8 +66,9 @@ func dirtyRepoNamed(t *testing.T, s *Server, name string) string {
 }
 
 func TestWorktreeIsolationIsIndependentOfMode(t *testing.T) {
-	r := &gitRunner{testRunner: &testRunner{}}
+	r := &gitRunner{}
 	s := testServer(t, r)
+	installFakeNative(t, "codex", nil)
 	dirtyRepo(t, s)
 	text := callTest(t, s, "ExternalSubagent", map[string]any{"description": "x", "prompt": "x", "name": "n", "model": "review", "isolation": "worktree", "mode": "normal", "run_in_background": false})
 	callTest(t, s, "ExternalSubagent", map[string]any{"description": "x", "prompt": "x", "name": "y", "model": "review", "isolation": "worktree", "mode": "yolo", "run_in_background": false})
@@ -86,14 +82,15 @@ func TestWorktreeIsolationIsIndependentOfMode(t *testing.T) {
 	if r.plans[0].Cwd != filepath.Join(n.Worktree.Path, "sub") || strings.Contains(normalArgs, "sandbox") || !strings.Contains(text, "Mode: normal\n") {
 		t.Fatal("normal isolated run injected permission flags or ran outside the worktree:", r.plans[0].Cwd, normalArgs, text)
 	}
-	if r.plans[1].Cwd != filepath.Join(y.Worktree.Path, "sub") || !strings.Contains(yoloArgs, `sandbox_mode="danger-full-access"`) {
+	if r.plans[1].Cwd != filepath.Join(y.Worktree.Path, "sub") {
 		t.Fatal("yolo isolated run wrong:", r.plans[1].Cwd, yoloArgs)
 	}
 }
 
 func TestWorktreeIsolationRunsInWorktreeAndKeepsOriginalChanges(t *testing.T) {
-	r := &gitRunner{testRunner: &testRunner{}, write: "agent.txt"}
+	r := &gitRunner{write: "agent.txt"}
 	s := testServer(t, r)
+	installFakeNative(t, "codex", nil)
 	repo := dirtyRepo(t, s)
 	before := gitCmd(t, repo, "status", "--porcelain")
 	text := callTest(t, s, "ExternalSubagent", map[string]any{"description": "write", "prompt": "edit", "name": "iso", "model": "review", "isolation": "worktree", "mode": "normal", "run_in_background": false})
@@ -134,33 +131,31 @@ func TestWorktreeIsolationRunsInWorktreeAndKeepsOriginalChanges(t *testing.T) {
 	callTest(t, s, "SendExternalSubagentMessage", map[string]any{"to": "iso", "message": "again"})
 	waitReports(t, s, "iso", 2)
 	r.mu.Lock()
-	if r.plans[1].Cwd != plan.Cwd {
-		t.Fatal("continuation rebound workspace", r.plans[1])
+	if len(r.plans) != 1 || r.plans[0].Cwd != plan.Cwd {
+		t.Fatal("continuation rebound workspace", r.plans)
 	}
 	r.mu.Unlock()
 	gitCmd(t, repo, "worktree", "remove", "--force", w.Path)
-	callTest(t, s, "SendExternalSubagentMessage", map[string]any{"to": "iso", "message": "gone"})
-	report := waitReports(t, s, "iso", 3)
-	r.mu.Lock()
-	plans := len(r.plans)
-	r.mu.Unlock()
-	if !strings.Contains(report.Failure, "unavailable; no replacement created") || plans != 2 {
-		t.Fatal("missing worktree did not fail explicitly:", report.Failure)
+	_, err := s.call("SendExternalSubagentMessage", []byte(`{"to":"iso","message":"gone"}`))
+	if err == nil || !strings.Contains(err.Error(), "unavailable; no replacement created") {
+		t.Fatal(err)
 	}
+
 }
 
 func TestWorktreeKeptOnFailureAndCancellation(t *testing.T) {
-	r := &gitRunner{testRunner: &testRunner{}, write: "partial.txt", fail: true}
+	r := &gitRunner{write: "partial.txt"}
 	s := testServer(t, r)
+	installFakeNative(t, "codex", nil)
 	repo := dirtyRepo(t, s)
-	_, err := s.call("ExternalSubagent", []byte(`{"description":"x","prompt":"x","model":"review","isolation":"worktree","run_in_background":false}`))
+	_, err := s.call("ExternalSubagent", []byte(`{"description":"x","prompt":"FAIL","model":"review","isolation":"worktree","run_in_background":false}`))
 	if err == nil || !strings.Contains(err.Error(), "kept after completion, failure and cancellation") || !strings.Contains(err.Error(), "?? sub/partial.txt") {
 		t.Fatal(err)
 	}
-	r2 := &gitRunner{testRunner: &testRunner{started: make(chan int, 1), release: make(chan struct{})}}
+	r2 := &gitRunner{}
 	s.Runner = r2
-	callTest(t, s, "ExternalSubagent", map[string]any{"description": "wait", "prompt": "wait", "name": "c", "model": "review", "isolation": "worktree"})
-	<-r2.started
+	callTest(t, s, "ExternalSubagent", map[string]any{"description": "wait", "prompt": "HOLD", "name": "c", "model": "review", "isolation": "worktree"})
+	waitRunning(t, s, "c")
 	text := callTest(t, s, "StopExternalSubagent", map[string]any{"task_id": "c"})
 	s.mu.Lock()
 	c, _ := s.target("c")
@@ -176,8 +171,9 @@ func TestWorktreeKeptOnFailureAndCancellation(t *testing.T) {
 }
 
 func TestWorktreeIsolationRejectsWithoutGitAndUnknownValues(t *testing.T) {
-	r := &gitRunner{testRunner: &testRunner{}}
+	r := &gitRunner{}
 	s := testServer(t, r)
+	installFakeNative(t, "codex", nil)
 	if _, err := s.call("ExternalSubagent", []byte(`{"description":"x","prompt":"x","model":"review","isolation":"worktree"}`)); err == nil || !strings.Contains(err.Error(), "inside a git work tree") {
 		t.Fatal(err)
 	}
@@ -202,12 +198,11 @@ func TestWorktreeIsolationRejectsWithoutGitAndUnknownValues(t *testing.T) {
 }
 
 func TestPiWorktreeIsolationChangesOnlyWorkingDirectory(t *testing.T) {
-	r := &gitRunner{testRunner: &testRunner{}}
+	r := &gitRunner{}
 	s := testServer(t, r)
+	installFakeNative(t, "codex", nil)
 	dirtyRepo(t, s)
-	bin := t.TempDir()
-	os.WriteFile(filepath.Join(bin, "pi"), []byte("#!/bin/sh\nexit 0\n"), 0700)
-	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	installFakeNative(t, "pi", nil)
 	savePreset(t, s.Home, presets.Preset{Name: "pi-iso", Agent: "pi", Model: "provider/model", Description: "pi"})
 	s.call("ExternalSubagent", []byte(`{"description":"x","prompt":"x","model":"pi-iso","isolation":"worktree","name":"p","run_in_background":false}`))
 	s.mu.Lock()
@@ -221,8 +216,9 @@ func TestPiWorktreeIsolationChangesOnlyWorkingDirectory(t *testing.T) {
 }
 
 func TestConcurrentWorktreeCreationInOneRepository(t *testing.T) {
-	r := &gitRunner{testRunner: &testRunner{}}
+	r := &gitRunner{}
 	s := testServer(t, r)
+	installFakeNative(t, "codex", nil)
 	repo := dirtyRepo(t, s)
 	errs := make(chan error, 16)
 	for i := 0; i < 16; i++ {
@@ -242,8 +238,9 @@ func TestConcurrentWorktreeCreationInOneRepository(t *testing.T) {
 }
 
 func TestWorktreeIsKeptAndNamedWhenAuthSourceIsInvalid(t *testing.T) {
-	inner := &gitRunner{testRunner: &testRunner{}}
+	inner := &gitRunner{}
 	s := testServer(t, inner)
+	installFakeNative(t, "codex", nil)
 	dirtyRepo(t, s)
 	t.Setenv("CODEX_HOME", "relative")
 	_, err := s.call("ExternalSubagent", []byte(`{"description":"x","prompt":"x","model":"review","isolation":"worktree","name":"noauth","run_in_background":false}`))

@@ -3,27 +3,54 @@ import {mkdtemp, mkdir, writeFile, readFile, stat} from 'node:fs/promises'
 import {tmpdir} from 'node:os'
 import {join, resolve} from 'node:path'
 
+for (const agent of ['claude','codex','pi']) {
 const home=await mkdtemp(join(tmpdir(),'sessionman-duplex-'))
 const binary=resolve(process.env.SM_MCP_BINARY??process.argv[2]??'bin/sm')
 const fakeLog=join(home,'fake-claude.jsonl')
 await mkdir(join(home,'bin'))
 // Fake streaming claude: stream-json on stdin/stdout, scripted by prompt keywords.
-await writeFile(join(home,'bin','claude'),`#!/usr/bin/env node
+await writeFile(join(home,'bin',agent),`#!/usr/bin/env node
 import {createInterface} from 'node:readline'
 import {appendFileSync} from 'node:fs'
 import {spawn} from 'node:child_process'
 const args=process.argv.slice(2)
+const agent=${JSON.stringify(agent)}
+let codexConfig=null, turn=0
 appendFileSync(${JSON.stringify(fakeLog)},JSON.stringify({pid:process.pid,argv:args})+'\\n')
 const session='dddddddd-dddd-dddd-dddd-dddddddddddd'
 const emit=o=>console.log(JSON.stringify(o))
 const lines=[]
 let wake=null
-createInterface({input:process.stdin}).on('line',l=>{lines.push(JSON.parse(l).message.content[0].text);wake?.()})
+createInterface({input:process.stdin}).on('line',l=>{
+ const m=JSON.parse(l)
+ let text
+ if(agent==='codex'){
+  if(m.method==='initialize'){emit({id:m.id,result:{}});return}
+  if(m.method==='thread/start'||m.method==='thread/resume'){codexConfig=m.params.config;emit({id:m.id,result:{thread:{id:session}}});return}
+  if(m.method==='turn/start'){turn++;emit({id:m.id,result:{turn:{id:'turn-'+turn}}});emit({method:'turn/started',params:{turn:{id:'turn-'+turn}}})}
+  else if(m.method==='turn/steer')emit({id:m.id,result:{turnId:'turn-'+turn}})
+  else return
+  text=m.params.input[0].text
+ }else if(agent==='pi'){
+  if(m.type!=='prompt'&&m.type!=='steer')return
+  emit({type:'response',command:m.type,success:true,data:{disposition:m.type==='prompt'?'started':'queued'}})
+  text=m.message
+ }else text=m.message.content[0].text
+ lines.push(text);wake?.()
+})
 const next=async(ms)=>{if(lines.length)return lines.shift();if(ms===0)return null;await Promise.race([new Promise(r=>{wake=r}),new Promise(r=>setTimeout(r,ms))]);wake=null;return lines.shift()??null}
-const result=(text)=>emit({type:'result',subtype:'success',session_id:session,is_error:false,result:text,usage:{input_tokens:3}})
+const result=(text)=>{
+ if(agent==='codex'){
+  emit({method:'item/completed',params:{item:{type:'agentMessage',text}}})
+  emit({method:'turn/completed',params:{turn:{id:'turn-'+turn,status:'completed'}}})
+ }else if(agent==='pi'){
+  emit({type:'message_end',message:{role:'assistant',provider:'fixture',model:'model',content:[{type:'text',text}],stopReason:'stop'}})
+  emit({type:'agent_settled',aborted:false})
+ }else emit({type:'result',subtype:'success',session_id:session,is_error:false,result:text,usage:{input_tokens:3}})
+}
 async function callHost(){
  const i=args.indexOf('--mcp-config')
- const cfg=JSON.parse(args[i+1]).mcpServers.sessionman
+ const cfg=agent==='claude'?JSON.parse(args[i+1]).mcpServers.sessionman:agent==='codex'?codexConfig.mcp_servers.sessionman:{command:process.env.SM_BINARY,args:['mcp','serve'],env:{SM_DELEGATION_DEPTH:process.env.SM_DELEGATION_DEPTH,SM_HOST_AGENT_DIR:process.env.SM_HOST_AGENT_DIR}}
  const child=spawn(cfg.command,cfg.args,{env:{...process.env,...cfg.env},stdio:['pipe','pipe','inherit']})
  let id=0,buf=''
  const pend=new Map()
@@ -38,8 +65,7 @@ async function callHost(){
 for(;;){
  const prompt=await next(3600000)
  if(prompt===null)process.exit(0)
- emit({type:'system',subtype:'init',session_id:session})
- emit({type:'assistant'})
+ if(agent==='claude'){emit({type:'system',subtype:'init',session_id:session});emit({type:'assistant'})}
  if(prompt.includes('LONGTASK')){
   const steer=await next(8000)
   result(steer===null?'TIMEOUT-NO-STEER':'STEERED:'+steer)
@@ -48,6 +74,8 @@ for(;;){
   await new Promise(r=>setTimeout(r,2000))
   result('MESSAGED:'+ack)
  }else if(prompt.includes('SLEEPFOREVER')){
+  const detached=spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{detached:true,stdio:'ignore'})
+  appendFileSync(${JSON.stringify(fakeLog)},JSON.stringify({pid:detached.pid,detached:true})+'\\n')
   await new Promise(()=>{})
  }else{
   result('ECHO:'+prompt)
@@ -55,7 +83,7 @@ for(;;){
 }
 `,{mode:0o700})
 const dir=join(home,'.sessionman','presets','duplex-test');await mkdir(dir,{recursive:true})
-await writeFile(join(dir,'PRESET.md'),'---\nagent: claude\nmodel: opus\n---\n\nDuplex daemon integration fixture.\n')
+await writeFile(join(dir,'PRESET.md'),`---\nagent: ${agent}\nmodel: ${agent==='pi'?'fixture/model':agent==='codex'?'fixture':'opus'}\n---\n\nDuplex daemon integration fixture.\n`)
 const env={...process.env,SM_SUBAGENT_HOME:home,SM_LOG:'debug',PATH:join(home,'bin')+':'+process.env.PATH}
 const child=spawn(binary,['mcp','serve'],{env,stdio:['pipe','pipe','pipe']})
 let next=0,pending='',stderr=''
@@ -119,7 +147,7 @@ try{
  await new Promise(resolve=>child.once('close',resolve))
  const disposed=await stat(join(home,'.local','state','sessionman','agents',arm1.id)).then(()=>false,()=>true)
  assert(disposed,'agent dir not disposed on connection EOF')
- console.log(JSON.stringify({passed:true,binary,agent:arm1.id,evidence:home}))
+ console.log(JSON.stringify({passed:true,binary,native:agent,agent:arm1.id,evidence:home}))
 }catch(error){
  console.error(error)
  console.error('stderr tail:',stderr.slice(-4000))
@@ -127,4 +155,5 @@ try{
 }finally{
  clearTimeout(timer)
  if(child.exitCode===null){child.stdin.end();await new Promise(resolve=>child.once('close',resolve))}
+}
 }

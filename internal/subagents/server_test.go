@@ -7,10 +7,10 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -31,43 +31,20 @@ func savePreset(t *testing.T, home string, p presets.Preset) {
 	}
 }
 
-type testRunner struct {
-	mu      sync.Mutex
-	plans   []runtime.CommandPlan
-	prompts []string
-	started chan int
-	release chan struct{}
-}
-
-func (r *testRunner) Execute(ctx context.Context, p runtime.CommandPlan, o runtime.ExecuteOptions) (runtime.CommandResult, error) {
-	var data []byte
-	if o.Stdin != nil {
-		data, _ = io.ReadAll(o.Stdin)
-	}
-	r.mu.Lock()
-	n := len(r.plans)
-	r.plans = append(r.plans, p)
-	r.prompts = append(r.prompts, string(data))
-	r.mu.Unlock()
-	if r.started != nil {
-		r.started <- n
-	}
-	if r.release != nil {
-		select {
-		case <-r.release:
-		case <-ctx.Done():
-			return runtime.CommandResult{}, ctx.Err()
-		}
-	}
-	id := "12345678-1234-1234-1234-123456789abc"
-	return runtime.CommandResult{Stderr: codexTelemetry(p, ""), Stdout: fmt.Sprintf("{\"type\":\"thread.started\",\"thread_id\":%q}\n{\"type\":\"item.completed\",\"item\":{\"type\":\"agent_message\",\"text\":%q}}\n{\"type\":\"turn.completed\",\"usage\":{\"input_tokens\":12}}\n", id, string(data))}, nil
-}
-
 func testServer(t *testing.T, r runtime.Runner) *Server {
 	t.Helper()
+	if r == nil {
+		r = runtime.ExecRunner{}
+	}
 	bin := t.TempDir()
 	for _, agent := range []string{"claude", "codex", "pi"} {
-		if err := os.WriteFile(filepath.Join(bin, agent), []byte("#!/bin/sh\nexit 0\n"), 0700); err != nil {
+		script := []byte("#!/bin/sh\nexit 0\n")
+		if existing, err := exec.LookPath(agent); err == nil {
+			if data, err := os.ReadFile(existing); err == nil && len(data) < 4096 && strings.Contains(string(data), "SM_FAKE_NATIVE=") {
+				script = data
+			}
+		}
+		if err := os.WriteFile(filepath.Join(bin, agent), script, 0700); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -83,7 +60,7 @@ func testServer(t *testing.T, r runtime.Runner) *Server {
 }
 
 // inProcessDaemon runs the per-agent daemon inside the test process over the real socket and
-// event files, so unit tests exercise the full duplex path without the ax binary.
+// event files, so unit tests exercise the full duplex path without the sm binary.
 func inProcessDaemon(s *Server) func(dir string) error {
 	return func(dir string) error {
 		d := &Daemon{Home: s.Home, Dir: dir, Runner: s.Runner, Linger: 60 * time.Second}
@@ -119,15 +96,21 @@ func allReports(dir string) []*Event {
 
 func countReports(dir string) int { return len(allReports(dir)) }
 
-// waitReports blocks until the agent has settled n times and returns the nth report event.
-func waitReports(t *testing.T, s *Server, id string, n int) *Event {
+func agentState(t *testing.T, s *Server, id string) *ExternalSubagentState {
 	t.Helper()
 	s.mu.Lock()
+	defer s.mu.Unlock()
 	a, err := s.target(id)
-	s.mu.Unlock()
 	if err != nil {
 		t.Fatal(err)
 	}
+	return a
+}
+
+// waitReports blocks until the agent has settled n times and returns the nth report event.
+func waitReports(t *testing.T, s *Server, id string, n int) *Event {
+	t.Helper()
+	a := agentState(t, s, id)
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
 		if reports := allReports(a.Dir); len(reports) >= n {
@@ -139,25 +122,46 @@ func waitReports(t *testing.T, s *Server, id string, n int) *Event {
 	return nil
 }
 
+// waitRunning blocks until the daemon reports a running turn.
+func waitRunning(t *testing.T, s *Server, id string) {
+	t.Helper()
+	a := agentState(t, s, id)
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if s.runState(a) == "running" {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("agent %s never reached running", id)
+}
+
 func TestLifecycleQueueNamesResumeAndDisable(t *testing.T) {
-	r := &testRunner{started: make(chan int, 8), release: make(chan struct{})}
-	s := testServer(t, r)
-	text := callTest(t, s, "ExternalSubagent", map[string]any{"description": "remember", "prompt": "secret-token", "name": "reviewer", "model": "review"})
+	record := installFakeNative(t, "codex", nil)
+	s := testServer(t, nil)
+	text := callTest(t, s, "ExternalSubagent", map[string]any{"description": "remember", "prompt": "WAIT remember secret-token", "name": "reviewer", "model": "review"})
 	if !strings.Contains(text, "running") || !strings.Contains(text, "sm wait") {
 		t.Fatal(text)
 	}
-	<-r.started
-	accepted := callTest(t, s, "SendExternalSubagentMessage", map[string]any{"to": "reviewer", "message": "recall"})
+	accepted := callTest(t, s, "SendExternalSubagentMessage", map[string]any{"to": "reviewer", "message": "recall", "delivery": "queued"})
 	if !strings.Contains(accepted, "disposition: queued") {
 		t.Fatal(accepted)
 	}
-	close(r.release)
-	waitReports(t, s, "reviewer", 2)
-	r.mu.Lock()
-	if len(r.plans) != 2 || !strings.Contains(strings.Join(r.plans[1].Args, " "), "resume") || r.prompts[1] != "recall" {
-		t.Fatalf("no native continuation: %#v", r.plans)
+	first := waitReports(t, s, "reviewer", 1)
+	if !strings.HasSuffix(first.Report, "+none") {
+		t.Fatal("queued message leaked into the running turn", first.Report)
 	}
-	r.mu.Unlock()
+	second := waitReports(t, s, "reviewer", 2)
+	if second.Report != "ECHO:recall" {
+		t.Fatal("queued message not delivered as a new round", second.Report)
+	}
+	records := readFakeRecords(t, record)
+	if countFakeRequests(t, records, "thread/start") != 1 || countFakeRequests(t, records, "thread/resume") != 0 {
+		t.Fatal("warm continuation respawned the native session")
+	}
+	if countFakeRequests(t, records, "turn/start") != 2 {
+		t.Fatal("queued delivery did not open a second round")
+	}
 	s.mu.Lock()
 	old := s.names["reviewer"]
 	s.mu.Unlock()
@@ -169,11 +173,9 @@ func TestLifecycleQueueNamesResumeAndDisable(t *testing.T) {
 	if current == old || err != nil {
 		t.Fatal("name alias lost old ID")
 	}
-	r.mu.Lock()
-	if strings.Contains(strings.Join(r.plans[2].Args, " "), "resume") {
-		t.Fatal("new task reused context")
+	if countFakeRequests(t, readFakeRecords(t, record), "thread/start") != 2 {
+		t.Fatal("new agent reused the previous native session")
 	}
-	r.mu.Unlock()
 	changed := reviewPreset
 	changed.Model = "changed"
 	savePreset(t, s.Home, changed)
@@ -182,67 +184,122 @@ func TestLifecycleQueueNamesResumeAndDisable(t *testing.T) {
 	}
 }
 
-func TestCancelTargetsOnlyOneNativeExecution(t *testing.T) {
-	r := &testRunner{started: make(chan int, 8), release: make(chan struct{})}
-	s := testServer(t, r)
-	for _, name := range []string{"one", "two"} {
-		callTest(t, s, "ExternalSubagent", map[string]any{"description": "wait", "prompt": "wait", "name": name, "model": "review"})
-		<-r.started
+func TestCodexSteerDeliveredInsideTheSameTurn(t *testing.T) {
+	record := installFakeNative(t, "codex", nil)
+	s := testServer(t, nil)
+	callTest(t, s, "ExternalSubagent", map[string]any{"description": "long", "prompt": "WAIT task-A", "name": "c", "model": "review"})
+	accepted := callTest(t, s, "SendExternalSubagentMessage", map[string]any{"to": "c", "message": "fix-B"})
+	if !strings.Contains(accepted, "disposition: steered") {
+		t.Fatal(accepted)
 	}
-	callTest(t, s, "SendExternalSubagentMessage", map[string]any{"to": "one", "message": "queued"})
+	report := waitReports(t, s, "c", 1)
+	want := "ECHO:WAIT task-A+STEER:" + steerPrefix + "fix-B"
+	if report.Status != "completed" || report.Report != want {
+		t.Fatalf("steer not delivered in the same turn: %#v", report)
+	}
+	a := agentState(t, s, "c")
+	if countReports(a.Dir) != 1 {
+		t.Fatal("steer produced a second turn")
+	}
+	records := readFakeRecords(t, record)
+	steer := fakeRequest(t, records, "turn/steer")
+	if steer["expectedTurnId"] != "turn-1" {
+		t.Fatal("steer did not carry the active turn id", steer)
+	}
+	if string(report.Usage) == "" || !strings.Contains(string(report.Usage), "totalTokens") {
+		t.Fatal("report lost native usage", string(report.Usage))
+	}
+}
+
+func TestCodexColdResumeUsesThreadResume(t *testing.T) {
+	record := installFakeNative(t, "codex", nil)
+	s := testServer(t, nil)
+	s.SpawnDaemon = func(dir string) error {
+		d := &Daemon{Home: s.Home, Dir: dir, Runner: s.Runner, Linger: 150 * time.Millisecond}
+		go RunDaemon(d)
+		return nil
+	}
+	callTest(t, s, "ExternalSubagent", map[string]any{"description": "x", "prompt": "round-one", "name": "c", "model": "review", "run_in_background": false})
+	a := agentState(t, s, "c")
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if _, err := controlCall(a.Socket, controlRequest{Op: "status"}); err != nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("daemon did not linger out")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	accepted := callTest(t, s, "SendExternalSubagentMessage", map[string]any{"to": "c", "message": "round-two"})
+	if !strings.Contains(accepted, "disposition: started") {
+		t.Fatal(accepted)
+	}
+	if report := waitReports(t, s, "c", 2); report.Report != "ECHO:round-two" {
+		t.Fatal(report)
+	}
+	records := readFakeRecords(t, record)
+	resume := fakeRequest(t, records, "thread/resume")
+	if resume["threadId"] != "01a15000-1111-7222-8333-944455556666" || resume["excludeTurns"] != true {
+		t.Fatal("cold resume did not resume the native thread", resume)
+	}
+}
+
+func TestCancelTargetsOnlyOneNativeExecution(t *testing.T) {
+	record := installFakeNative(t, "codex", nil)
+	s := testServer(t, nil)
+	for _, name := range []string{"one", "two"} {
+		callTest(t, s, "ExternalSubagent", map[string]any{"description": "wait", "prompt": "HOLD " + name, "name": name, "model": "review"})
+		waitRunning(t, s, name)
+	}
+	callTest(t, s, "SendExternalSubagentMessage", map[string]any{"to": "one", "message": "queued", "delivery": "queued"})
 	text := callTest(t, s, "StopExternalSubagent", map[string]any{"task_id": "one"})
 	if !strings.Contains(text, "cancelled") {
 		t.Fatal(text)
 	}
-	s.mu.Lock()
-	two, _ := s.target("two")
-	s.mu.Unlock()
+	two := agentState(t, s, "two")
 	if state := s.runState(two); state != "running" {
 		t.Fatal(state)
 	}
-	close(r.release)
-	waitReports(t, s, "two", 1)
 	if _, err := s.call("StopExternalSubagent", []byte(`{"task_id":"missing"}`)); err == nil {
 		t.Fatal("unknown target accepted")
+	}
+	if text := callTest(t, s, "StopExternalSubagent", map[string]any{"task_id": "two"}); !strings.Contains(text, "cancelled") {
+		t.Fatal(text)
 	}
 	if text := callTest(t, s, "StopExternalSubagent", map[string]any{"task_id": "two"}); !strings.Contains(text, "already ended") {
 		t.Fatal(text)
 	}
-	r.mu.Lock()
-	if len(r.plans) != 2 {
-		t.Fatalf("cancelled queue reached the backend: %d plans", len(r.plans))
+	if countFakeRequests(t, readFakeRecords(t, record), "turn/start") != 2 {
+		t.Fatal("cancelled queue reached the backend")
 	}
-	r.mu.Unlock()
 }
 
 func TestStopCancelsQueuedWorkWithOneCancelledReport(t *testing.T) {
-	r := &testRunner{started: make(chan int, 4), release: make(chan struct{})}
-	s := testServer(t, r)
-	callTest(t, s, "ExternalSubagent", map[string]any{"description": "first", "prompt": "first", "name": "worker", "model": "review"})
-	<-r.started
-	callTest(t, s, "SendExternalSubagentMessage", map[string]any{"to": "worker", "message": "second"})
+	record := installFakeNative(t, "codex", nil)
+	s := testServer(t, nil)
+	callTest(t, s, "ExternalSubagent", map[string]any{"description": "first", "prompt": "HOLD first", "name": "worker", "model": "review"})
+	waitRunning(t, s, "worker")
+	callTest(t, s, "SendExternalSubagentMessage", map[string]any{"to": "worker", "message": "second", "delivery": "queued"})
 	text := callTest(t, s, "StopExternalSubagent", map[string]any{"task_id": "worker"})
 	if !strings.Contains(text, "Report status: cancelled.") {
 		t.Fatal(text)
 	}
-	s.mu.Lock()
-	a, _ := s.target("worker")
-	s.mu.Unlock()
+	a := agentState(t, s, "worker")
 	if countReports(a.Dir) != 1 {
 		t.Fatal("expected exactly one cancelled report")
 	}
-	r.mu.Lock()
-	if len(r.plans) != 1 {
+	if countFakeRequests(t, readFakeRecords(t, record), "turn/start") != 1 {
 		t.Fatal("queued message reached the backend after stop")
 	}
-	r.mu.Unlock()
 	if state := s.runState(a); state != "cancelled" {
 		t.Fatal(state)
 	}
 }
 
 func TestAgentContractRejectsUnsupportedAndUnknownInputs(t *testing.T) {
-	s := testServer(t, &testRunner{})
+	installFakeNative(t, "codex", nil)
+	s := testServer(t, nil)
 	for _, raw := range []string{`{}`, `{"prompt":"x"}`, `{"description":"x","prompt":"x","agent":"pi"}`, `{"description":"x","prompt":"x","name":"_bad"}`, `{"description":"x","prompt":"x","effort":"max"}`, `{"description":"x","prompt":"x","isolation":"remote"}`, `{"description":"x","prompt":"x","model":"unknown"}`, `{"description":"x","prompt":"x","mode":"root"}`, `{"description":"x","prompt":"x","run_in_background":null}`, `{"description":"x","prompt":"x","run_in_background":"false"}`} {
 		if _, err := s.call("ExternalSubagent", []byte(raw)); err == nil {
 			t.Fatalf("accepted %s", raw)
@@ -271,18 +328,16 @@ func TestAgentContractRejectsUnsupportedAndUnknownInputs(t *testing.T) {
 }
 
 func TestSendDeliveryValuesAreValidated(t *testing.T) {
-	r := &testRunner{started: make(chan int, 4), release: make(chan struct{})}
-	s := testServer(t, r)
-	callTest(t, s, "ExternalSubagent", map[string]any{"description": "x", "prompt": "x", "name": "d", "model": "review"})
-	<-r.started
+	installFakeNative(t, "codex", nil)
+	s := testServer(t, nil)
+	callTest(t, s, "ExternalSubagent", map[string]any{"description": "x", "prompt": "WAIT d", "name": "d", "model": "review"})
 	if _, err := s.call("SendExternalSubagentMessage", []byte(`{"to":"d","message":"x","delivery":"later"}`)); err == nil || !strings.Contains(err.Error(), "delivery") {
 		t.Fatal(err)
 	}
-	queued := callTest(t, s, "SendExternalSubagentMessage", map[string]any{"to": "d", "message": "x", "delivery": "queued"})
+	queued := callTest(t, s, "SendExternalSubagentMessage", map[string]any{"to": "d", "message": "held", "delivery": "queued"})
 	if !strings.Contains(queued, "disposition: queued") {
 		t.Fatal(queued)
 	}
-	close(r.release)
 	waitReports(t, s, "d", 2)
 	started := callTest(t, s, "SendExternalSubagentMessage", map[string]any{"to": "d", "message": "warm", "delivery": "steer"})
 	if !strings.Contains(started, "disposition: started") {
@@ -292,8 +347,8 @@ func TestSendDeliveryValuesAreValidated(t *testing.T) {
 }
 
 func TestPresetFixesEffortAndStaleSnapshotIsReported(t *testing.T) {
-	r := &testRunner{}
-	s := testServer(t, r)
+	record := installFakeNative(t, "codex", nil)
+	s := testServer(t, nil)
 	if _, err := s.handle("initialize", []byte(`{}`)); err != nil {
 		t.Fatal(err)
 	}
@@ -301,8 +356,12 @@ func TestPresetFixesEffortAndStaleSnapshotIsReported(t *testing.T) {
 	if !strings.Contains(text, "preset=review; agent=codex; actual model=test-model; effort=low") || strings.Contains(text, "changed after this MCP connection") {
 		t.Fatal(text)
 	}
-	if args := strings.Join(r.plans[0].Args, " "); !strings.Contains(args, `model_reasoning_effort="low"`) || !strings.Contains(args, "--model test-model") {
-		t.Fatal(args)
+	start := fakeRequest(t, readFakeRecords(t, record), "thread/start")
+	if start["model"] != "test-model" {
+		t.Fatal(start)
+	}
+	if config, _ := start["config"].(map[string]any); config["model_reasoning_effort"] != "low" {
+		t.Fatal("preset effort not configured on the thread", start)
 	}
 	native := reviewPreset
 	native.Name, native.Effort = "native", ""
@@ -311,37 +370,34 @@ func TestPresetFixesEffortAndStaleSnapshotIsReported(t *testing.T) {
 	if !strings.Contains(text, "effort=native default") || !strings.Contains(text, "reconnect SessionMan MCP to refresh") {
 		t.Fatal(text)
 	}
-	if args := strings.Join(r.plans[1].Args, " "); strings.Contains(args, "model_reasoning_effort") {
-		t.Fatal("native default effort became explicit", args)
-	}
-}
-
-func TestParseFailuresAndUnknownUsage(t *testing.T) {
-	a := &ExternalSubagentState{Option: presets.Preset{Agent: "codex"}}
-	for _, output := range []string{`not json`, "{\"type\":\"turn.failed\",\"error\":{\"message\":\"authentication failed\"}}", `{"type":"turn.completed"}`} {
-		if _, _, err := parseOutput(a, output); err == nil {
-			t.Fatal("failure became success")
+	records := readFakeRecords(t, record)
+	starts := 0
+	for _, record := range records {
+		var request struct {
+			Method string         `json:"method"`
+			Params map[string]any `json:"params"`
+		}
+		if json.Unmarshal(record.Line, &request) != nil || request.Method != "thread/start" {
+			continue
+		}
+		starts++
+		if starts == 2 {
+			if config, ok := request.Params["config"].(map[string]any); ok {
+				if _, explicit := config["model_reasoning_effort"]; explicit {
+					t.Fatal("native default effort became explicit", request.Params)
+				}
+			}
 		}
 	}
-	output := "{\"type\":\"thread.started\",\"thread_id\":\"session\"}\n{\"type\":\"item.completed\",\"item\":{\"type\":\"agent_message\",\"text\":\"report\"}}\n{\"type\":\"turn.completed\"}"
-	text, usage, err := parseOutput(a, output)
-	if err != nil || text != "report" || usage != nil {
-		t.Fatalf("%s %v %v", text, usage, err)
+	if starts != 2 {
+		t.Fatal("expected two thread starts", starts)
 	}
-	if _, _, err := parseOutput(a, strings.ReplaceAll(output, "session", "different")); err == nil {
-		t.Fatal("replaced native session")
-	}
-}
-
-type failureRunner struct{}
-
-func (failureRunner) Execute(_ context.Context, p runtime.CommandPlan, _ runtime.ExecuteOptions) (runtime.CommandResult, error) {
-	return runtime.CommandResult{Stderr: "model unavailable", ExitCode: 1}, fmt.Errorf("native request rejected")
 }
 
 func TestExternalFailureIsToolErrorAndCannotResume(t *testing.T) {
-	s := testServer(t, failureRunner{})
-	result, err := s.handle("tools/call", []byte(`{"name":"ExternalSubagent","arguments":{"description":"failure","prompt":"x","name":"broken","model":"review","run_in_background":false}}`))
+	installFakeNative(t, "codex", map[string]string{"SM_FAKE_FAILMSG": "model unavailable"})
+	s := testServer(t, nil)
+	result, err := s.handle("tools/call", []byte(`{"name":"ExternalSubagent","arguments":{"description":"failure","prompt":"FAIL x","name":"broken","model":"review","run_in_background":false}}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -354,22 +410,98 @@ func TestExternalFailureIsToolErrorAndCannotResume(t *testing.T) {
 	}
 }
 
-func TestMissingPiSessionAndNativeIdentityChangeFail(t *testing.T) {
-	s := testServer(t, &testRunner{})
-	a := &ExternalSubagentState{ID: "pi", Session: filepath.Join(t.TempDir(), "missing.jsonl"), Option: presets.Preset{Name: "review", Agent: "pi", Model: "provider/model", Description: "test"}}
-	savePreset(t, s.Home, a.Option)
-	d := &Daemon{Home: s.Home, Dir: t.TempDir(), Runner: s.Runner}
-	if _, _, err := d.executeRound(context.Background(), a, "continue"); err == nil || !strings.Contains(err.Error(), "original Pi session unavailable") {
+func TestMissingPiSessionFailsColdResume(t *testing.T) {
+	installFakeNative(t, "pi", nil)
+	s := testServer(t, nil)
+	s.SpawnDaemon = func(dir string) error {
+		d := &Daemon{Home: s.Home, Dir: dir, Runner: s.Runner, Linger: 150 * time.Millisecond}
+		go RunDaemon(d)
+		return nil
+	}
+	savePreset(t, s.Home, presets.Preset{Name: "pi-review", Agent: "pi", Model: "provider/model", Description: "Pi"})
+	callTest(t, s, "ExternalSubagent", map[string]any{"description": "x", "prompt": "x", "name": "p", "model": "pi-review", "run_in_background": false})
+	a := agentState(t, s, "p")
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if _, err := controlCall(a.Socket, controlRequest{Op: "status"}); err != nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("daemon did not linger out")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	meta, err := ReadMeta(a.Dir)
+	if err != nil {
 		t.Fatal(err)
 	}
-	a.NativeID = "original"
-	if _, _, err := parseOutput(a, "{\"type\":\"session\",\"id\":\"different\"}"); err == nil {
-		t.Fatal("Pi native session changed")
+	if err := os.Remove(meta.Session); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.call("SendExternalSubagentMessage", []byte(`{"to":"p","message":"continue"}`)); err == nil || !strings.Contains(err.Error(), "original Pi session unavailable") {
+		t.Fatal(err)
+	}
+}
+
+func TestPiSteerQueueStopAndReportFields(t *testing.T) {
+	record := installFakeNative(t, "pi", nil)
+	s := testServer(t, nil)
+	savePreset(t, s.Home, presets.Preset{Name: "pi-review", Agent: "pi", Model: "provider/model", Description: "Pi"})
+	callTest(t, s, "ExternalSubagent", map[string]any{"description": "x", "prompt": "WAIT task-A", "name": "p", "model": "pi-review"})
+	accepted := callTest(t, s, "SendExternalSubagentMessage", map[string]any{"to": "p", "message": "fix-B"})
+	if !strings.Contains(accepted, "disposition: steered") {
+		t.Fatal(accepted)
+	}
+	report := waitReports(t, s, "p", 1)
+	want := "ECHO:WAIT task-A+STEER:" + steerPrefix + "fix-B"
+	if report.Status != "completed" || report.Report != want || !strings.Contains(report.Auth, "PI_CODING_AGENT_DIR") {
+		t.Fatalf("pi steer report wrong: %#v", report)
+	}
+	a := agentState(t, s, "p")
+	if countReports(a.Dir) != 1 {
+		t.Fatal("steer produced a second turn")
+	}
+	if meta, err := ReadMeta(a.Dir); err != nil || meta.NativeID != "pi-native" {
+		t.Fatal("pi native session not persisted", err)
+	}
+	queued := callTest(t, s, "SendExternalSubagentMessage", map[string]any{"to": "p", "message": "HOLD next", "delivery": "queued"})
+	if !strings.Contains(queued, "disposition: started") {
+		// Idle agent: queued delivery still starts a round immediately.
+		t.Fatal(queued)
+	}
+	waitRunning(t, s, "p")
+	text := callTest(t, s, "StopExternalSubagent", map[string]any{"task_id": "p"})
+	if !strings.Contains(text, "Report status: cancelled.") {
+		t.Fatal(text)
+	}
+	records := readFakeRecords(t, record)
+	if countFakeRequests(t, records, "prompt") != 2 || countFakeRequests(t, records, "steer") != 1 {
+		t.Fatal("unexpected pi command sequence")
+	}
+}
+
+func TestPiModelMismatchAndRedactionFail(t *testing.T) {
+	if _, _, failure, err := parsePiAssistant(json.RawMessage(`{"role":"assistant","provider":"other","model":"model","content":[{"type":"text","text":"x"}]}`), "provider/model"); err != nil || !strings.Contains(failure, "Pi returned model other/model instead of provider/model") {
+		t.Fatal(failure, err)
+	}
+	text, usage, failure, err := parsePiAssistant(json.RawMessage(`{"role":"assistant","provider":"provider","model":"model","stopReason":"stop","content":[{"type":"text","text":"a"},{"type":"text","text":"b"}],"usage":{"input":1}}`), "provider/model")
+	if err != nil || text != "a\nb" || failure != "" || !strings.Contains(string(usage), "input") {
+		t.Fatal(text, failure, err)
+	}
+	if _, _, failure, err := parsePiAssistant(json.RawMessage(`{"role":"assistant","provider":"provider","model":"model","stopReason":"error","errorMessage":"bad key sk-proj-abcdefghijklmnopqrstuvwxyz"}`), "provider/model"); err != nil || failure == "" {
+		t.Fatal(failure, err)
+	}
+	installFakeNative(t, "pi", map[string]string{"SM_FAKE_FAILMSG": "bad key sk-proj-abcdefghijklmnopqrstuvwxyz"})
+	s := testServer(t, nil)
+	savePreset(t, s.Home, presets.Preset{Name: "pi-review", Agent: "pi", Model: "provider/model", Description: "Pi"})
+	_, err = s.call("ExternalSubagent", []byte(`{"description":"x","prompt":"FAIL x","model":"pi-review","run_in_background":false}`))
+	if err == nil || strings.Contains(err.Error(), "abcdefghijklmnop") || !strings.Contains(err.Error(), "<redacted>") {
+		t.Fatal(err)
 	}
 }
 
 func TestConnectionStatusMatchesCurrentClientAndCleansUp(t *testing.T) {
-	s := &Server{Home: t.TempDir(), Cwd: t.TempDir(), Runner: &testRunner{}}
+	s := &Server{Home: t.TempDir(), Cwd: t.TempDir(), Runner: runtime.ExecRunner{}}
 	input, writer := io.Pipe()
 	var out bytes.Buffer
 	done := make(chan error, 1)
@@ -411,13 +543,11 @@ func TestConnectionStatusMatchesCurrentClientAndCleansUp(t *testing.T) {
 }
 
 func TestConnectionEOFStopsDaemonsAndDisposesAgentDirs(t *testing.T) {
-	r := &testRunner{started: make(chan int, 4), release: make(chan struct{})}
-	s := testServer(t, r)
-	callTest(t, s, "ExternalSubagent", map[string]any{"description": "x", "prompt": "x", "name": "doomed", "model": "review"})
-	<-r.started
-	s.mu.Lock()
-	a, _ := s.target("doomed")
-	s.mu.Unlock()
+	installFakeNative(t, "codex", nil)
+	s := testServer(t, nil)
+	callTest(t, s, "ExternalSubagent", map[string]any{"description": "x", "prompt": "HOLD x", "name": "doomed", "model": "review"})
+	waitRunning(t, s, "doomed")
+	a := agentState(t, s, "doomed")
 	s.disposeAgents()
 	if _, err := os.Stat(a.Dir); !os.IsNotExist(err) {
 		t.Fatal("agent dir not disposed")
@@ -428,7 +558,7 @@ func TestConnectionEOFStopsDaemonsAndDisposesAgentDirs(t *testing.T) {
 }
 
 func TestStrictConfigRejectsSilentDowngradesAndWrongFieldCase(t *testing.T) {
-	s := testServer(t, &testRunner{})
+	s := testServer(t, nil)
 	for _, raw := range []string{`{"Description":"x","prompt":"x","model":"review"}`, `{"description":"x","prompt":"x","name":"","model":"review"}`, `{"description":"x","prompt":"x","effort":"","model":"review"}`, `{"description":"x","prompt":"x","isolation":"worktree","model":"review"}`} {
 		if _, err := s.call("ExternalSubagent", []byte(raw)); err == nil {
 			t.Fatal(raw)
@@ -441,33 +571,8 @@ func TestStrictConfigRejectsSilentDowngradesAndWrongFieldCase(t *testing.T) {
 	}
 }
 
-type ignoringCancelRunner struct{ started chan struct{} }
-
-func (r ignoringCancelRunner) Execute(ctx context.Context, p runtime.CommandPlan, o runtime.ExecuteOptions) (runtime.CommandResult, error) {
-	close(r.started)
-	<-ctx.Done()
-	return runtime.CommandResult{Stderr: codexTelemetry(p, ""), Stdout: "{\"type\":\"thread.started\",\"thread_id\":\"12345678-1234-1234-1234-123456789abc\"}\n{\"type\":\"item.completed\",\"item\":{\"type\":\"agent_message\",\"text\":\"Finished naturally; cancel was ignored\"}}\n{\"type\":\"turn.completed\"}"}, nil
-}
-
-func TestUnconfirmedCancellationDoesNotBecomeCancelled(t *testing.T) {
-	r := ignoringCancelRunner{started: make(chan struct{})}
-	s := testServer(t, r)
-	callTest(t, s, "ExternalSubagent", map[string]any{"description": "test", "prompt": "test", "name": "ignores-cancel", "model": "review"})
-	<-r.started
-	_, err := s.call("StopExternalSubagent", []byte(`{"task_id":"ignores-cancel"}`))
-	if err == nil || !strings.Contains(err.Error(), "cancellation was not confirmed") {
-		t.Fatal(err)
-	}
-	s.mu.Lock()
-	a, _ := s.target("ignores-cancel")
-	s.mu.Unlock()
-	if report := LastReport(a.Dir); report == nil || report.Status != "completed" {
-		t.Fatal(report)
-	}
-}
-
 func TestExternalSubagentToolNamesAndUnchangedContract(t *testing.T) {
-	s := testServer(t, &testRunner{})
+	s := testServer(t, nil)
 	tools := s.tools().(map[string]any)["tools"].([]any)
 	want := []string{"StartExternalSubagent", "SendExternalSubagentMessage", "StopExternalSubagent", "ListExternalSubagentSessions"}
 	if len(tools) != len(want) {
@@ -530,14 +635,12 @@ func TestExternalSubagentToolNamesAndUnchangedContract(t *testing.T) {
 }
 
 func TestMessageHostToolOnlyWithHostContext(t *testing.T) {
-	r := &testRunner{started: make(chan int, 4), release: make(chan struct{})}
-	s := testServer(t, r)
-	callTest(t, s, "ExternalSubagent", map[string]any{"description": "x", "prompt": "x", "name": "host", "model": "review"})
-	<-r.started
-	s.mu.Lock()
-	a, _ := s.target("host")
-	s.mu.Unlock()
-	child := testServer(t, &testRunner{})
+	installFakeNative(t, "codex", nil)
+	s := testServer(t, nil)
+	callTest(t, s, "ExternalSubagent", map[string]any{"description": "x", "prompt": "HOLD x", "name": "host", "model": "review"})
+	waitRunning(t, s, "host")
+	a := agentState(t, s, "host")
+	child := testServer(t, nil)
 	child.hostAgentDir = a.Dir
 	tools := child.tools().(map[string]any)["tools"].([]any)
 	if len(tools) != 5 || tools[4].(map[string]any)["name"] != "MessageHost" {
@@ -554,15 +657,13 @@ func TestMessageHostToolOnlyWithHostContext(t *testing.T) {
 	if state := s.runState(a); state != "running" {
 		t.Fatal("message event interrupted the run", state)
 	}
-	close(r.release)
-	waitReports(t, s, "host", 1)
 	if _, err := child.call("MessageHost", []byte(`{"message":""}`)); err == nil {
 		t.Fatal("empty message accepted")
 	}
 }
 
 func TestPresetCatalogSharedDataAndRefresh(t *testing.T) {
-	s := testServer(t, &testRunner{})
+	s := testServer(t, nil)
 	savePreset(t, s.Home, presets.Preset{Name: "interactive-only", Agent: "claude", Model: "opus", Description: "Interactive pairing"})
 	savePreset(t, s.Home, presets.Preset{Name: "pi-choice", Agent: "pi", Model: "provider/model", Description: "Independent analysis"})
 	catalog, models := PresetCatalog(s.Home)
@@ -614,7 +715,7 @@ func TestPresetCatalogSharedDataAndRefresh(t *testing.T) {
 }
 
 func TestPresetCatalogIgnoresLegacyConfigAndReportsInvalidAndEmpty(t *testing.T) {
-	s := testServer(t, &testRunner{})
+	s := testServer(t, nil)
 	legacy := filepath.Join(s.Home, ".config", "sessionman", "subagents.json")
 	os.MkdirAll(filepath.Dir(legacy), 0700)
 	os.WriteFile(legacy, []byte(`{"enabled":false,"options":[]}`), 0600)
@@ -637,7 +738,7 @@ func TestPresetCatalogIgnoresLegacyConfigAndReportsInvalidAndEmpty(t *testing.T)
 }
 
 func TestToolMetadataFitsHostLimitInTheWorstCase(t *testing.T) {
-	s := testServer(t, &testRunner{})
+	s := testServer(t, nil)
 	installPi(t)
 	long := strings.Repeat("Read-only research and code review across the repository; good for tracing call paths. ", 2)
 	for i := 0; i < 60; i++ {
@@ -669,74 +770,64 @@ func TestToolMetadataFitsHostLimitInTheWorstCase(t *testing.T) {
 	}
 }
 
-func TestDelegationInjectedIntoCodexPlan(t *testing.T) {
-	r := &testRunner{}
-	s := testServer(t, r)
+func TestDelegationInjectedIntoCodexThreadConfig(t *testing.T) {
+	record := installFakeNative(t, "codex", nil)
+	s := testServer(t, nil)
 	s.axBinary = "/usr/local/bin/ax"
+	t.Setenv("SM_SUBAGENT_HOME", "/custom/home")
 	callTest(t, s, "ExternalSubagent", map[string]any{"description": "x", "prompt": "x", "model": "review", "run_in_background": false})
-	r.mu.Lock()
-	args := strings.Join(r.plans[0].Args, " ")
-	r.mu.Unlock()
-	if !strings.Contains(args, `mcp_servers.sessionman.command="/usr/local/bin/ax"`) {
-		t.Fatal("delegation not injected", args)
+	start := fakeRequest(t, readFakeRecords(t, record), "thread/start")
+	config, _ := start["config"].(map[string]any)
+	servers, _ := config["mcp_servers"].(map[string]any)
+	entry, _ := servers["sessionman"].(map[string]any)
+	if entry == nil || entry["command"] != "/usr/local/bin/ax" || fmt.Sprint(entry["args"]) != "[mcp serve]" {
+		t.Fatal("delegation not injected into thread config", config)
 	}
-	if !strings.Contains(args, `mcp_servers.sessionman.args=["mcp","serve"]`) {
-		t.Fatal("delegation args missing", args)
-	}
-	if !strings.Contains(args, `mcp_servers.sessionman.env.SM_DELEGATION_DEPTH="1"`) {
-		t.Fatal("depth not propagated", args)
-	}
-	if !strings.Contains(args, "mcp_servers.sessionman.env.SM_HOST_AGENT_DIR=") {
-		t.Fatal("host agent dir for MessageHost not propagated", args)
+	env, _ := entry["env"].(map[string]any)
+	if env["SM_DELEGATION_DEPTH"] != "1" || env["SM_HOST_AGENT_DIR"] == "" || env["SM_SUBAGENT_HOME"] != "/custom/home" {
+		t.Fatal("delegation env incomplete", env)
 	}
 }
 
 func TestDelegationStopsAtMaxDepth(t *testing.T) {
-	r := &testRunner{}
-	s := testServer(t, r)
+	record := installFakeNative(t, "codex", nil)
+	s := testServer(t, nil)
 	s.axBinary = "/usr/local/bin/ax"
 	s.delegationDepth = MaxDelegationDepth
 	callTest(t, s, "ExternalSubagent", map[string]any{"description": "x", "prompt": "x", "model": "review", "run_in_background": false})
-	r.mu.Lock()
-	args := strings.Join(r.plans[0].Args, " ")
-	r.mu.Unlock()
-	if strings.Contains(args, "mcp_servers.sessionman") {
-		t.Fatal("delegation injected beyond max depth", args)
+	start := fakeRequest(t, readFakeRecords(t, record), "thread/start")
+	if config, ok := start["config"].(map[string]any); ok {
+		if _, injected := config["mcp_servers"]; injected {
+			t.Fatal("delegation injected beyond max depth", config)
+		}
 	}
 }
 
 func TestDelegationNotInjectedWithoutBinary(t *testing.T) {
-	r := &testRunner{}
-	s := testServer(t, r)
+	record := installFakeNative(t, "codex", nil)
+	s := testServer(t, nil)
 	s.axBinary = ""
 	callTest(t, s, "ExternalSubagent", map[string]any{"description": "x", "prompt": "x", "model": "review", "run_in_background": false})
-	r.mu.Lock()
-	args := strings.Join(r.plans[0].Args, " ")
-	r.mu.Unlock()
-	if strings.Contains(args, "mcp_servers.sessionman") {
-		t.Fatal("delegation injected without binary", args)
+	start := fakeRequest(t, readFakeRecords(t, record), "thread/start")
+	if config, ok := start["config"].(map[string]any); ok {
+		if _, injected := config["mcp_servers"]; injected {
+			t.Fatal("delegation injected without binary", config)
+		}
 	}
 }
 
 func TestNestedContextForceForeground(t *testing.T) {
-	r := &testRunner{started: make(chan int, 4), release: make(chan struct{})}
-	s := testServer(t, r)
+	installFakeNative(t, "codex", nil)
+	s := testServer(t, nil)
 	s.delegationDepth = 1
-	done := make(chan string, 1)
-	go func() {
-		text := callTest(t, s, "ExternalSubagent", map[string]any{"description": "test", "prompt": "test", "model": "review", "run_in_background": true})
-		done <- text
-	}()
-	<-r.started
-	close(r.release)
-	text := <-done
+	text := callTest(t, s, "ExternalSubagent", map[string]any{"description": "test", "prompt": "test", "model": "review", "run_in_background": true})
 	if !strings.Contains(text, "completed") {
 		t.Fatal("nested call did not wait for completion despite run_in_background:true", text)
 	}
 }
 
 func TestNestedInitializationIncludesDepthInfo(t *testing.T) {
-	s := testServer(t, &testRunner{})
+	s := testServer(t, nil)
 	s.delegationDepth = 1
 	result, err := s.handle("initialize", []byte(`{}`))
 	if err != nil {
@@ -757,41 +848,28 @@ func TestNestedInitializationIncludesDepthInfo(t *testing.T) {
 	}
 }
 
-func TestDelegationPropagatesSubagentHome(t *testing.T) {
-	r := &testRunner{}
-	s := testServer(t, r)
+func TestDelegationBridgeInjectedForPi(t *testing.T) {
+	record := installFakeNative(t, "pi", nil)
+	s := testServer(t, nil)
 	s.axBinary = "/usr/local/bin/ax"
-	t.Setenv("SM_SUBAGENT_HOME", "/custom/home")
-	callTest(t, s, "ExternalSubagent", map[string]any{"description": "x", "prompt": "x", "model": "review", "run_in_background": false})
-	r.mu.Lock()
-	args := strings.Join(r.plans[0].Args, " ")
-	r.mu.Unlock()
-	if !strings.Contains(args, `mcp_servers.sessionman.env.SM_SUBAGENT_HOME="/custom/home"`) {
-		t.Fatal("SM_SUBAGENT_HOME not propagated", args)
+	savePreset(t, s.Home, presets.Preset{Name: "pi-test", Agent: "pi", Model: "provider/test-model", Description: "pi test"})
+	callTest(t, s, "ExternalSubagent", map[string]any{"description": "x", "prompt": "x", "model": "pi-test", "run_in_background": false})
+	records := readFakeRecords(t, record)
+	spawn := records[0]
+	argv := strings.Join(spawn.Argv, " ")
+	if strings.Contains(argv, "mcp_servers") {
+		t.Fatal("MCP config injected into Pi argv", argv)
 	}
-}
-
-func TestDelegationNotInjectedForPi(t *testing.T) {
-	r := &testRunner{}
-	s := testServer(t, r)
-	s.axBinary = "/usr/local/bin/ax"
-	piPreset := presets.Preset{Name: "pi-test", Agent: "pi", Model: "provider/test-model", Description: "pi test"}
-	savePreset(t, s.Home, piPreset)
-	// Pi execution will fail (mock returns Codex-format output); we only care about the plan args.
-	s.call("ExternalSubagent", []byte(`{"description":"x","prompt":"x","model":"pi-test","run_in_background":false}`))
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if len(r.plans) == 0 {
-		t.Fatal("no execution plan recorded")
+	if !strings.Contains(argv, "sessionman-bridge.ts") {
+		t.Fatal("delegation bridge extension missing", argv)
 	}
-	args := strings.Join(r.plans[0].Args, " ")
-	if strings.Contains(args, "mcp_servers.sessionman") {
-		t.Fatal("delegation injected into Pi", args)
+	if spawn.Env["SM_BINARY"] != "/usr/local/bin/ax" || spawn.Env["SM_DELEGATION_DEPTH"] != "1" || spawn.Env["SM_HOST_AGENT_DIR"] == "" {
+		t.Fatal("bridge env incomplete", spawn.Env)
 	}
 }
 
 func TestToolMetadataFitsHostLimitAtRealisticScale(t *testing.T) {
-	s := testServer(t, &testRunner{})
+	s := testServer(t, nil)
 	installPi(t)
 	description := "Read-only research and code review across the repository; good for tracing call paths and reviewing diffs, not for large refactors or long-running builds."
 	savePreset(t, s.Home, presets.Preset{Name: "review", Agent: "codex", Model: "gpt-5.6-luna", Effort: "high", Description: description})
@@ -810,29 +888,6 @@ func TestToolMetadataFitsHostLimitAtRealisticScale(t *testing.T) {
 	init, _ := s.handle("initialize", []byte(`{}`))
 	if strings.Contains(strings.ToLower(string(schema)), "remote") || strings.Contains(strings.ToLower(init.(map[string]any)["instructions"].(string)), "remote") {
 		t.Fatal("remote still appears in tool schema or initialization data")
-	}
-}
-
-func TestPiStreamSystemMessageAndSettlement(t *testing.T) {
-	a := &ExternalSubagentState{ID: "pi", Option: presets.Preset{Name: "review", Agent: "pi", Model: "provider/model", Description: "test"}}
-	head := `{"type":"session","id":"pi-native"}` + "\n" +
-		`{"type":"message_end","message":{"role":"system","content":"You are pi","sections":{"preamble":"You are pi"},"toolsAdded":[{"name":"read"}]}}` + "\n" +
-		`{"type":"message_end","message":{"role":"user","content":"task"}}` + "\n" +
-		`{"type":"tool_execution_end","toolCallId":"call_1","toolName":"read","result":{"content":[{"type":"text","text":"file body"}],"details":{"truncated":false}},"isError":false}` + "\n" +
-		`{"type":"message_end","message":{"role":"assistant","provider":"provider","model":"model","stopReason":"stop","content":[{"type":"text","text":"report"}]}}` + "\n" +
-		`{"type":"compaction_end","reason":"threshold","result":{"summary":"earlier work","firstKeptEntryId":"e1","tokensBefore":1200,"details":{}},"aborted":false,"willRetry":false}` + "\n" +
-		`{"type":"agent_end"}` + "\n"
-	text, _, err := parseOutput(a, head+`{"type":"agent_settled","aborted":false}`+"\n")
-	if err != nil || text != "report" {
-		t.Fatal(text, err)
-	}
-	a.NativeID = ""
-	if _, _, err := parseOutput(a, head+`{"type":"agent_settled","aborted":true}`+"\n"); err == nil || !strings.Contains(err.Error(), "aborted") {
-		t.Fatal(err)
-	}
-	a.NativeID = ""
-	if _, _, err := parseOutput(a, head); err == nil {
-		t.Fatal("agent_end without agent_settled accepted")
 	}
 }
 
@@ -866,5 +921,47 @@ func TestEventStreamSeqOrderingAndWaitHelpers(t *testing.T) {
 	}
 	if rendered := RenderEvent(second); !strings.Contains(rendered, "Report status: completed.") || !strings.Contains(rendered, "Untrusted ExternalSubagent report") {
 		t.Fatal(rendered)
+	}
+}
+
+func TestNativeSteerRejectionIsReturnedWithoutQueuing(t *testing.T) {
+	for _, native := range []string{"codex", "pi"} {
+		t.Run(native, func(t *testing.T) {
+			record := installFakeNative(t, native, map[string]string{"SM_FAKE_STEER_ERROR": "invalid steer"})
+			s := testServer(t, nil)
+			p := reviewPreset
+			p.Agent = native
+			if native == "pi" {
+				p.Model = "provider/model"
+				p.Effort = ""
+			}
+			savePreset(t, s.Home, p)
+			callTest(t, s, "ExternalSubagent", map[string]any{"description": "hold", "prompt": "HOLD", "model": "review", "name": "worker"})
+			_, err := s.call("SendExternalSubagentMessage", []byte(`{"to":"worker","message":"rejected"}`))
+			if err == nil || !strings.Contains(err.Error(), "invalid steer") {
+				t.Fatal(err)
+			}
+			callTest(t, s, "StopExternalSubagent", map[string]any{"task_id": "worker"})
+			method := "turn/start"
+			if native == "pi" {
+				method = "prompt"
+			}
+			if countFakeRequests(t, readFakeRecords(t, record), method) != 1 {
+				t.Fatal("rejected steer started another turn")
+			}
+		})
+	}
+}
+
+func TestQueuedSteerFailureProducesAnExplicitReport(t *testing.T) {
+	installFakeNative(t, "codex", map[string]string{"SM_FAKE_STEER_ERROR": "invalid queued steer"})
+	s := testServer(t, nil)
+	callTest(t, s, "ExternalSubagent", map[string]any{"description": "wait", "prompt": "WAIT first", "model": "review", "name": "worker"})
+	for _, message := range []string{"WAIT second", "third"} {
+		callTest(t, s, "SendExternalSubagentMessage", map[string]any{"to": "worker", "message": message, "delivery": "queued"})
+	}
+	report := waitReports(t, s, "worker", 2)
+	if report.Status != "failed" || !strings.Contains(report.Failure, "invalid queued steer") {
+		t.Fatal(report)
 	}
 }

@@ -1,6 +1,7 @@
 package runtime
 
 import (
+	"io"
 	"os/exec"
 	"time"
 )
@@ -20,3 +21,5 @@ func killProcessGroup(cmd *exec.Cmd) {
 }
 
 func Detach(cmd *exec.Cmd) {}
+
+func killProcessTree(cmd *exec.Cmd, debug bool, log io.Writer) { killProcessGroup(cmd) }

@@ -43,9 +43,6 @@ type ExternalSubagentState struct {
 	Dir, Socket string
 	// opMu serializes spawn/send/stop sequences per agent on the thin-shell side.
 	opMu sync.Mutex
-	// evidence and auth are daemon-side round scratch for the one-shot adapters.
-	evidence string
-	auth     Auth
 }
 
 type Server struct {
@@ -319,6 +316,9 @@ func (s *Server) callStart(raw json.RawMessage) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	if o.Agent == "codex" && o.UserConfig != nil && !*o.UserConfig {
+		return "", fmt.Errorf("codex app-server cannot honor preset user_config=false; no task started")
+	}
 	in.Mode = effectiveMode(o, in.Mode)
 	if err := checkMode(o, in.Mode); err != nil {
 		return "", err
@@ -352,7 +352,7 @@ func (s *Server) callStart(raw json.RawMessage) (string, error) {
 	}
 	a.opMu.Unlock()
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("%w\n%s%s", err, s.header(a, "failed"), s.trailer(a))
 	}
 	background := in.Background == nil || *in.Background
 	if s.delegationDepth > 0 {
@@ -642,137 +642,4 @@ func (s *Server) trailer(a *ExternalSubagentState) string {
 
 func waitNote(id string, seq int) string {
 	return fmt.Sprintf("\nNext wake: run `sm wait %s --after %d` in the background (for Claude Code, Bash with run_in_background: true). It prints this ExternalSubagent's next event (report or message) and exits; re-arm it after every wake with the seq it printed. One wait per agent.", id, seq)
-}
-
-func parseOutput(a *ExternalSubagentState, output string) (string, any, error) {
-	scan := bufio.NewScanner(strings.NewReader(output))
-	scan.Buffer(make([]byte, 65536), 8*1024*1024)
-	text := ""
-	completed := false
-	var usage any
-	failure := ""
-	sessionSeen := false
-	for scan.Scan() {
-		if strings.TrimSpace(scan.Text()) == "" {
-			continue
-		}
-		var event struct {
-			Type    string `json:"type"`
-			Subtype string `json:"subtype"`
-			Thread  string `json:"thread_id"`
-			ID      string `json:"id"`
-			Session string `json:"session_id"`
-			IsError bool   `json:"is_error"`
-			Item    struct {
-				Type string `json:"type"`
-				Text string `json:"text"`
-			} `json:"item"`
-			Error   json.RawMessage `json:"error"`
-			Message json.RawMessage `json:"message"`
-			Usage   any             `json:"usage"`
-			Aborted bool            `json:"aborted"`
-		}
-		if err := json.Unmarshal(scan.Bytes(), &event); err != nil {
-			if a.Option.Agent == "pi" {
-				return "", nil, piDecodeError(scan.Text(), err)
-			}
-			return "", nil, fmt.Errorf("invalid %s event: %w", a.Option.Agent, err)
-		}
-		switch {
-		case a.Option.Agent == "codex":
-			switch event.Type {
-			case "thread.started":
-				if event.Thread == "" || (a.Session != "" && a.Session != event.Thread) {
-					return "", nil, fmt.Errorf("unexpected native session; no continuation accepted")
-				}
-				a.Session = event.Thread
-				sessionSeen = true
-			case "item.completed":
-				if event.Item.Type == "agent_message" {
-					text = event.Item.Text
-				}
-			case "turn.completed":
-				completed = true
-				usage = event.Usage
-			case "error", "turn.failed":
-				failure = string(event.Error)
-				if failure == "" || failure == "null" {
-					failure = string(event.Message)
-				}
-			}
-		default:
-			switch event.Type {
-			case "session":
-				if event.ID == "" || (a.NativeID != "" && a.NativeID != event.ID) {
-					return "", nil, fmt.Errorf("Pi returned a different native session; no replacement accepted")
-				}
-				a.NativeID = event.ID
-				sessionSeen = true
-			case "message_end":
-				var role struct {
-					Role string `json:"role"`
-				}
-				if err := json.Unmarshal(event.Message, &role); err != nil {
-					return "", nil, piDecodeError(scan.Text(), err)
-				}
-				if role.Role != "assistant" {
-					continue
-				}
-				var message struct {
-					Model        string `json:"model"`
-					Provider     string `json:"provider"`
-					StopReason   string `json:"stopReason"`
-					ErrorMessage string `json:"errorMessage"`
-					Content      []struct {
-						Type string `json:"type"`
-						Text string `json:"text"`
-					} `json:"content"`
-					Usage any `json:"usage"`
-				}
-				if err := json.Unmarshal(event.Message, &message); err != nil {
-					return "", nil, piDecodeError(scan.Text(), err)
-				}
-				if message.Provider+"/"+message.Model != a.Option.Model {
-					return "", nil, fmt.Errorf("Pi returned model %s/%s instead of %s", message.Provider, message.Model, a.Option.Model)
-				}
-				if message.StopReason == "error" || message.StopReason == "aborted" {
-					failure = message.ErrorMessage
-					if failure == "" {
-						failure = message.StopReason
-					}
-				}
-				var parts []string
-				for _, part := range message.Content {
-					if part.Type == "text" {
-						parts = append(parts, part.Text)
-					}
-				}
-				text = strings.Join(parts, "\n")
-				usage = message.Usage
-			case "agent_settled":
-				if event.Aborted {
-					failure = "pi run aborted"
-				} else {
-					completed = true
-				}
-			}
-		}
-	}
-	if err := scan.Err(); err != nil {
-		return "", nil, err
-	}
-	if failure != "" {
-		return "", usage, fmt.Errorf("ExternalSubagent failed: %s", runtime.RedactSecrets(failure))
-	}
-	if !completed || text == "" || !sessionSeen {
-		return "", usage, fmt.Errorf("ExternalSubagent exited without a complete report and native session; no implicit retry")
-	}
-	return text, usage, nil
-}
-
-func piDecodeError(line string, err error) error {
-	if len(line) > 2000 {
-		line = line[:2000] + "...(truncated)"
-	}
-	return fmt.Errorf("invalid pi event: %w; raw: %s", err, line)
 }

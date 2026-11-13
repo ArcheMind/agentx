@@ -163,15 +163,3 @@ func verifyPi(a *ExternalSubagentState, offset int64) (string, error) {
 func verifyCodex(a *ExternalSubagentState, stderr string) (string, error) {
 	return verifyEffort(a.Option.Effort, codexExecutedEfforts(stderr), "Codex response.completed telemetry")
 }
-
-// nativeFailure surfaces a failure the agent reported in its event stream (Codex puts a rejected
-// effort's 400 there, not on stderr) when the process also exits non-zero.
-func nativeFailure(a *ExternalSubagentState, stdout string) string {
-	if strings.TrimSpace(stdout) == "" {
-		return ""
-	}
-	if _, _, err := parseOutput(a, stdout); err != nil && strings.HasPrefix(err.Error(), "ExternalSubagent failed: ") {
-		return "; native error: " + strings.TrimPrefix(err.Error(), "ExternalSubagent failed: ")
-	}
-	return ""
-}

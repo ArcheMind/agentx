@@ -108,7 +108,7 @@ func (s *Stream) WriteLine(line string) error {
 func (s *Stream) CloseStdin() error { return s.stdin.Close() }
 
 // Kill terminates the whole process group.
-func (s *Stream) Kill() { killProcessGroup(s.cmd) }
+func (s *Stream) Kill() { killProcessTree(s.cmd, s.debug, s.log) }
 
 func (s *Stream) Wait() error {
 	s.waitOnce.Do(func() {

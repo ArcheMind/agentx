@@ -17,6 +17,14 @@ import (
 // TestMain doubles as a fake streaming claude: PATH stubs re-exec the test binary with
 // SM_FAKE_CLAUDE set, so the daemon drives a real process over real pipes.
 func TestMain(m *testing.M) {
+	switch os.Getenv("SM_FAKE_NATIVE") {
+	case "codex":
+		fakeCodexMain()
+		return
+	case "pi":
+		fakePiMain()
+		return
+	}
 	if scenario := os.Getenv("SM_FAKE_CLAUDE"); scenario != "" {
 		fakeClaudeMain(scenario)
 		return
@@ -123,7 +131,7 @@ func TestClaudeSteerIsDeliveredInsideTheSameTurn(t *testing.T) {
 		t.Fatal(accepted)
 	}
 	report := waitReports(t, s, "c", 1)
-	want := "turn:task-A+" + claudeSteerPrefix + "fix-B"
+	want := "turn:task-A+" + steerPrefix + "fix-B"
 	if report.Status != "completed" || report.Report != want {
 		t.Fatalf("steer not delivered in the same turn: %#v", report)
 	}
