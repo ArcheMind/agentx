@@ -268,8 +268,12 @@ func (s Service) Inventory() inventory.Result {
 		}
 
 	}
-	for _, agent := range []string{"claude", "codex", "dsh", "gemini", "opencode", "pi"} {
-		sources = append(sources, inventory.Source{Scope: "user", Path: agent + " dynamic/plugin/package/CLI/settings skill sources", Agents: []string{agent}, Status: "unsupported", Error: "Only documented filesystem roots are inventoried; custom settings, runtime and package sources are not inspected"})
+	for _, agent := range []string{"agy", "claude", "codex", "dsh", "gemini", "opencode", "pi"} {
+		path := agent + " dynamic/plugin/package/CLI/settings skill sources"
+		if agent == "agy" {
+			path = "agy dynamic/package/CLI/settings skill sources"
+		}
+		sources = append(sources, inventory.Source{Scope: "user", Path: path, Agents: []string{agent}, Status: "unsupported", Error: "Only documented filesystem roots are inventoried; custom settings, runtime and package sources are not inspected"})
 	}
 	return inventory.Normalize(sources)
 }

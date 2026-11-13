@@ -75,3 +75,17 @@ func TestAgyNativeProfileIsPreserved(t *testing.T) {
 		t.Fatal("native config changed")
 	}
 }
+
+func TestAgyStopPreservesExecutionLoopState(t *testing.T) {
+	for _, test := range []struct{ failure, outcome string }{{"", "running"}, {"native failure", "error"}} {
+		payload, _ := json.Marshal(map[string]any{"conversationId": "native", "fullyIdle": false, "terminationReason": "background_pending", "error": test.failure})
+		event, err := Decode("agy", "Stop", payload)
+		if err != nil || event.Name != TurnAfter || event.Outcome != test.outcome || event.Reason != "background_pending" || event.Error != test.failure {
+			t.Fatalf("%+v %v", event, err)
+		}
+		output, err := encodeOutput("agy", "Stop", "", "", "", "")
+		if err != nil || !strings.Contains(output, `"decision":"stop"`) || strings.Contains(output, "SessionEnd") {
+			t.Fatalf("%s %v", output, err)
+		}
+	}
+}

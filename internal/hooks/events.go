@@ -77,6 +77,7 @@ func Decode(agent, event string, payload []byte) (Event, error) {
 			Model             string   `json:"modelName"`
 			LastUserInput     string   `json:"lastUserInput"`
 			TerminationReason string   `json:"terminationReason"`
+			FullyIdle         *bool    `json:"fullyIdle"`
 		}
 		if err := json.Unmarshal(payload, &agy); err != nil {
 			return Event{}, err
@@ -86,6 +87,9 @@ func Decode(agent, event string, payload []byte) (Event, error) {
 			native.CWD = agy.WorkspacePaths[0]
 		}
 		native.Reason = agy.TerminationReason
+		if agy.FullyIdle != nil && !*agy.FullyIdle && native.Error == "" {
+			native.Outcome = "running"
+		}
 		if strings.HasPrefix(native.CWD, "file://") {
 			if parsed, err := url.Parse(native.CWD); err == nil {
 				native.CWD = parsed.Path
@@ -133,6 +137,9 @@ func Decode(agent, event string, payload []byte) (Event, error) {
 			result.Prompt = native.Text
 		}
 	case TurnAfter:
+		if agent == "agy" {
+			result.Reason = native.Reason
+		}
 		result.Outcome = normalizeOutcome(event, native.Outcome, native.Error)
 		result.LastAssistantMessage = native.LastAssistantMessage
 		if result.LastAssistantMessage == "" && agent == "gemini" {

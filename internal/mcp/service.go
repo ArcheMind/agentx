@@ -148,7 +148,11 @@ func (s Service) List() inventory.Result {
 	}
 	sources = append(sources, inventory.Source{Scope: "user", Path: "AX MCP common configuration (no defined storage contract)", Status: "unsupported"})
 	for _, agent := range []string{"agy", "claude", "codex", "gemini", "opencode"} {
-		sources = append(sources, inventory.Source{Scope: "user", Path: agent + " dynamic/plugin/managed/CLI MCP sources", Agents: []string{agent}, Status: "unsupported", Error: "Runtime and managed sources are not inspected"})
+		path := agent + " dynamic/plugin/managed/CLI MCP sources"
+		if agent == "agy" {
+			path = "agy runtime/managed/CLI MCP sources"
+		}
+		sources = append(sources, inventory.Source{Scope: "user", Path: path, Agents: []string{agent}, Status: "unsupported", Error: "Runtime and managed sources are not inspected"})
 	}
 	return inventory.Normalize(sources)
 }

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/ArcheMind/agentx/internal/presets"
 	"github.com/ArcheMind/agentx/internal/runtime"
 	"io"
 	"os"
@@ -163,5 +164,18 @@ func TestAgyContinueReparsesProjectedHistoryPrefix(t *testing.T) {
 	}
 	if len(delta.Messages) != 1 || sessions.MessageText(delta.Messages[0]) != "new answer" || runner.prompt != "new prompt\nwith special \"quotes\"" || runner.plan.Env["SM_MCP_CWD"] != workspace {
 		t.Fatalf("delta=%+v prompt=%q plan=%+v", delta, runner.prompt, runner.plan)
+	}
+}
+
+func TestAgyWizardEffortIsAlwaysUnverifiedPerModel(t *testing.T) {
+	draft := presetDraft{preset: presets.Preset{Agent: "agy", Model: "native-future-model"}, listed: &runtime.Model{ID: "native-future-model", Source: "agy models"}}
+	note, choices := effortChoices(draft)
+	if !strings.Contains(note, "unverified") || len(choices) != 6 {
+		t.Fatalf("%s %+v", note, choices)
+	}
+	for _, choice := range choices[1:] {
+		if choice.status != "unverified for this model" {
+			t.Fatalf("%+v", choice)
+		}
 	}
 }
