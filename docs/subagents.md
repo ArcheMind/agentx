@@ -1,6 +1,12 @@
 # SessionMan MCP ExternalSubagents
 
 SessionMan exposes `ExternalSubagent`, `SendExternalSubagentMessage`, `StopExternalSubagent`, and `listExternalSubagentSessions` over stdio MCP.
+
+The first task message starts with `[sm:subagent]` on its own line. The marker stays
+in the native transcript so ordinary and recent session lists hide the session by
+default, even after the MCP connection ends. Use `--include-subagents` to include
+discovered child sessions. Unmarked historical sessions retain their native classification.
+
 These are explicitly SessionMan tools, not official Claude subagents. The selected
 native agent executes directly, without a Claude relay inference call. Claude chooses
 the combination and any orchestration; SessionMan imposes no review/voting workflow.

@@ -18,6 +18,7 @@ import (
 
 	"github.com/ArcheMind/agentx/internal/presets"
 	"github.com/ArcheMind/agentx/internal/runtime"
+	"github.com/ArcheMind/agentx/internal/sessions"
 )
 
 const MaxDelegationDepth = 2
@@ -348,7 +349,7 @@ func (s *Server) callStart(raw json.RawMessage) (string, error) {
 	err = s.ensureDaemon(a)
 	var response controlResponse
 	if err == nil {
-		response, err = controlCall(a.Socket, controlRequest{Op: "send", Message: in.Prompt, Delivery: "steer"})
+		response, err = controlCall(a.Socket, controlRequest{Op: "send", Message: sessions.SubagentMarker + "\n" + in.Prompt, Delivery: "steer"})
 	}
 	a.opMu.Unlock()
 	if err != nil {

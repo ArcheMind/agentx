@@ -131,7 +131,7 @@ func TestClaudeSteerIsDeliveredInsideTheSameTurn(t *testing.T) {
 		t.Fatal(accepted)
 	}
 	report := waitReports(t, s, "c", 1)
-	want := "turn:task-A+" + steerPrefix + "fix-B"
+	want := "turn:[sm:subagent]\ntask-A+" + steerPrefix + "fix-B"
 	if report.Status != "completed" || report.Report != want {
 		t.Fatalf("steer not delivered in the same turn: %#v", report)
 	}

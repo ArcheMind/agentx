@@ -31,6 +31,13 @@ type (
 	Session      = transcript.Session
 )
 
+const SubagentMarker = "[sm:subagent]"
+
+func hasSubagentMarker(text string) bool {
+	line, _, _ := strings.Cut(text, "\n")
+	return strings.TrimSuffix(line, "\r") == SubagentMarker
+}
+
 type Summary struct {
 	ID                string `json:"id" yaml:"id"`
 	Agent             string `json:"agent" yaml:"agent"`
@@ -63,6 +70,9 @@ func SummaryOf(detail Session) Summary {
 func (s *Summary) addUserMessage(text string) {
 	if !isSessionTitle(text) {
 		return
+	}
+	if s.FirstUserMessage == "" && hasSubagentMarker(text) {
+		s.IsSubagent = true
 	}
 	text = oneLine(text, 60)
 	if s.FirstUserMessage == "" {
@@ -828,13 +838,14 @@ func finishDetail(detail Session) (Session, bool) {
 		}
 	}
 	detail.MessageCount = len(detail.Messages)
-	if detail.Title == "" {
-		for _, message := range detail.Messages {
-			text := textContent(message.Content)
-			if message.Role == "user" && isSessionTitle(text) {
+	for _, message := range detail.Messages {
+		text := textContent(message.Content)
+		if message.Role == "user" && isSessionTitle(text) {
+			detail.IsSubagent = detail.IsSubagent || hasSubagentMarker(text)
+			if detail.Title == "" {
 				detail.Title = oneLine(text, 96)
-				break
 			}
+			break
 		}
 	}
 	return detail, true

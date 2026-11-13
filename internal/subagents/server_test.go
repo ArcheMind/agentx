@@ -193,7 +193,7 @@ func TestCodexSteerDeliveredInsideTheSameTurn(t *testing.T) {
 		t.Fatal(accepted)
 	}
 	report := waitReports(t, s, "c", 1)
-	want := "ECHO:WAIT task-A+STEER:" + steerPrefix + "fix-B"
+	want := "ECHO:[sm:subagent]\nWAIT task-A+STEER:" + steerPrefix + "fix-B"
 	if report.Status != "completed" || report.Report != want {
 		t.Fatalf("steer not delivered in the same turn: %#v", report)
 	}
@@ -453,7 +453,7 @@ func TestPiSteerQueueStopAndReportFields(t *testing.T) {
 		t.Fatal(accepted)
 	}
 	report := waitReports(t, s, "p", 1)
-	want := "ECHO:WAIT task-A+STEER:" + steerPrefix + "fix-B"
+	want := "ECHO:[sm:subagent]\nWAIT task-A+STEER:" + steerPrefix + "fix-B"
 	if report.Status != "completed" || report.Report != want || !strings.Contains(report.Auth, "PI_CODING_AGENT_DIR") {
 		t.Fatalf("pi steer report wrong: %#v", report)
 	}
