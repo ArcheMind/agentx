@@ -105,7 +105,7 @@ smoke-skills-clean:
 smoke-skills-live: build
 	sh test/smoke/skills-live.sh "$(CURDIR)/bin/sm"
 
-verify: fmt check test audit smoke
+verify: fmt check test audit smoke test-pi-bridge
 
 clean:
 	rm -f bin/sm
@@ -114,3 +114,11 @@ clean:
 smoke-claude-models: build
 	./bin/sm --json agent models claude
 	./bin/sm status
+
+.PHONY: test-pi-bridge
+test-pi-bridge:
+	node test/bridge/pi-delegation.mjs
+
+.PHONY: smoke-mcp-duplex-live
+smoke-mcp-duplex-live: build
+	node test/smoke/mcp-duplex-live.mjs "$(CURDIR)/bin/sm"

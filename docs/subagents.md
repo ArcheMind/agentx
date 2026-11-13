@@ -146,25 +146,23 @@ call picks one `mode`, fixed for that ExternalSubagent:
 
 | `mode` | Claude | Codex | Pi |
 | --- | --- | --- | --- |
-| `normal` (default, also when omitted) | No permission flags: Claude's own settings decide | Only `approval_policy="never"`: the sandbox is whatever the user's Codex configuration sets | Read-only tool allowlist |
-| `yolo` | `--dangerously-skip-permissions` | `sandbox_mode="danger-full-access"` plus `approval_policy="never"` | Rejected before any work starts |
+| `normal` | No permission flags: Claude's own settings decide | Native approval and sandbox configuration | Native tools with `--no-approve` |
+| `yolo` | `--dangerously-skip-permissions` | Thread `sandbox: "danger-full-access"` and `approvalPolicy: "never"` | Rejected before any work starts |
 
-- `normal` is a passthrough. SessionMan injects no sandbox, approval or permission
-  flag, except `approval_policy="never"` for Codex: a headless run cannot answer
-  an approval prompt. Claude in print mode refuses tools its settings do not
-  allow; that refusal is Claude's own behavior.
+- `normal` uses the native agent's configuration. Codex app-server receives no
+  approval or sandbox override; approval requests that need a human are denied
+  because this channel is headless. Claude refuses tools its settings do not allow.
 - `yolo` bypasses the agent's permission checks and sandbox entirely. Use it
   only where the agent may do anything the user could.
 - Pi has no runtime permission boundary to bypass, so `yolo` is rejected for
-  Pi presets. Pi always runs with its read-only tool allowlist.
+  Pi presets. Pi uses its native tools, with `--no-approve`.
 - `isolation` is independent of `mode`: it only chooses where the agent works.
   See [Isolation](#isolation).
 
-The preset's `user_config` and `flags` are passed through unchanged. With
-`user_config: false` Codex runs with `--ignore-user-config --ignore-rules
---disable hooks`, so MCP servers, hooks and `notify` programs from the user's
-`config.toml` are not loaded; user-config defaults such as model effort,
-personality and service tier then also do not apply.
+Preset flags apply to the native streaming process. Codex `user_config: false`
+is rejected before execution: app-server loads its `CODEX_HOME` configuration
+and cannot honor the exec-only `--ignore-user-config` behavior. There is no
+exec fallback. Pi `user_config: false` disables skills and prompt templates.
 
 ### Authentication
 
@@ -227,6 +225,13 @@ seq. Each tool response and report includes a connection ID. Match
 it to `status.connections` to identify the current host, its client name/version
 and whether it sent `notifications/initialized`. Foreground calls
 (`run_in_background:false`) wait and return the first report directly.
+Pi's injected bridge exposes `delegate`, `delegate_send`, `delegate_stop` and
+`delegate_list`. It automatically runs one wait per background agent and re-arms
+it after each event, delivering the original untrusted event text through
+`sendUserMessage`. Do not also arm a manual wait in Pi. Foreground calls return
+their report directly without a duplicate wake. Session shutdown closes the
+MCP connection and all bridge waiters.
+
 Set `SM_LOG=debug` to log daemon and native stream traffic to stderr.
 
 ## Tool contract
@@ -236,7 +241,7 @@ ExternalSubagent({"description":"Review authentication", "prompt":"Review token 
        "model":"codex-review", "name":"reviewer", "run_in_background":true})
 ExternalSubagent({"description":"Fix the flaky test", "prompt":"Fix and run the test",
        "model":"codex-review", "isolation":"worktree", "mode":"yolo"})
-SendExternalSubagentMessage({"to":"reviewer", "message":"Now inspect logout handling", "summary":"Check logout"})
+SendExternalSubagentMessage({"to":"reviewer", "message":"Now inspect logout handling", "summary":"Check logout", "delivery":"steer"})
 StopExternalSubagent({"task_id":"reviewer"})
 listExternalSubagentSessions({})
 ```
@@ -248,7 +253,7 @@ override. Reports name the preset, agent, actual model and effort, and a
 `Native evidence:` line states the executed effort that the
 native records show for that turn. `isolation` accepts only `worktree` (see
 below); any other value is rejected before any work starts. `mode` is
-`normal` (default) or `yolo`; see
+`normal` or `yolo`; omission uses the preset's mode; see
 [Permission mode and isolation](#permission-mode-and-isolation). Reports carry a
 `Mode:` line and the discovered `Auth` line. Names start with an ASCII
 letter or digit and contain 1–64 ASCII letters, digits, `_`, or `-`.
@@ -264,7 +269,10 @@ submission. `SendExternalSubagentMessage` accepts text plus an optional
 disposition — `steered` (read inside the running turn at the next safe point),
 `queued` (held until the current run settles, then a new round) or `started`
 (agent was idle; new round began, warm or cold resume) — never a claim of
-completion. Completed ExternalSubagents resume via their exact native session.
+completion. Claude uses stream-json, Codex uses app-server and Pi uses RPC;
+all three keep a native process alive across rounds. After an idle process has
+exited, continuation resumes the exact native session. Codex steering that races
+with turn completion is queued; other native errors remain errors.
 
 Every ExternalSubagent call creates an independent object. Reusing a name makes that name
 refer to the newest object; previous objects remain addressable by ID. Cancel
@@ -351,37 +359,30 @@ stale metadata. The branch stays until you delete it.
 
 ## Nested delegation
 
-A dispatched Codex ExternalSubagent automatically has SessionMan available as an
-MCP server and can call `ExternalSubagent` itself. This gives dispatched agents
-the ability to delegate subtasks to other agents without user configuration.
+Dispatched Claude and Codex agents receive SessionMan as an MCP server. Pi
+receives the same delegation tools through its extension bridge.
 
-- **Codex only.** SessionMan injects its own MCP server configuration into the
-  Codex `-c` flags alongside `--ignore-user-config`, so the only MCP server
-  available to the dispatched Codex is SessionMan. Pi has no MCP server support.
-- **Depth limit.** Delegation depth is tracked via `SM_DELEGATION_DEPTH` and
-  capped at 2. A depth-0 server (the top-level connection from Claude Code)
-  injects depth 1; a depth-1 server injects depth 2; a depth-2 server does
-  not inject further. The initialization instructions report the current depth
-  and whether further delegation is available.
-- **Foreground only.** Nested hosts (Codex exec) do not arm event waits, so
-  `run_in_background` is forced to false regardless of the caller's request.
-  The dispatched agent waits for each sub-agent to complete before continuing.
-- **Independent mode.** Each nested ExternalSubagent call picks its own
-  `mode`, the same as a top-level call. A `normal` parent does not prevent a
-  `yolo` nested call (same as how Claude Code orchestrates top-level calls).
-- **Independent auth.** The nested SessionMan discovers credentials per execution
-  through the same `CODEX_HOME` / `PI_CODING_AGENT_DIR` mechanism. Credential
-  environment variables are stripped as usual.
-- **`SM_SUBAGENT_HOME`.** If set in the parent process, it is propagated to
-  the nested MCP server so the same preset collection is used.
+- **Depth limit.** `SM_DELEGATION_DEPTH` starts at 0 for top-level hosts and is
+  incremented for dispatched agents, with a limit of 2. At the limit no further
+  delegation integration is injected.
+- **Foreground nested calls.** Servers at depth greater than 0 force delegated
+  work to foreground. The dispatched agent gets its nested task's report directly.
+- **MessageHost.** A dispatched agent's server exposes this fifth tool only when
+  `SM_HOST_AGENT_DIR` identifies its host channel. Pi calls it as `message_host`.
+  It writes a `message` event while the sender continues working; the host sees
+  that text marked as untrusted ExternalSubagent content, never user authorization.
+  Top-level hosts retain the four delegation tools.
+- **Independent mode and auth.** Each nested call selects its own `mode`; native
+  credentials are discovered through `CODEX_HOME` or `PI_CODING_AGENT_DIR`.
+- **`SM_SUBAGENT_HOME`.** An explicit preset home is passed to the nested server.
 
 ## Native execution and permission limits
 
 | Adapter | Boundary | Native continuation | Effort |
 | --- | --- | --- | --- |
 | Claude | `normal`: no permission flags (Claude's own settings); `yolo`: `--dangerously-skip-permissions`; native auth | Exact session UUID (`--resume`) | Preset effort via `--effort`, or native default |
-| Codex | `normal`: only `approval_policy="never"` (sandbox from the user's Codex config); `yolo`: `sandbox_mode="danger-full-access"` plus `approval_policy="never"`; `user_config: false` skips user config/rules/hooks; discovered `CODEX_HOME` | Exact thread UUID | Preset effort via `model_reasoning_effort`, or native default; each turn checked against `response.completed` telemetry; native errors remain errors |
-| Pi | Read-only only, `yolo` rejected: `--tools read,grep,find,ls --no-extensions --no-skills --no-prompt-templates --no-approve`, discovered `PI_CODING_AGENT_DIR`; with an explicit effort, only SessionMan's observer extension is added (`--extension`) | Dedicated exact session path and pinned native ID | Preset effort via `--thinking` (`low`..`max`), or native default; each turn checked against the session thinking level and every provider request |
+| Codex | Native app-server thread policy in `normal`; `yolo` sets `approvalPolicy: "never"` and `sandbox: "danger-full-access"`; discovered `CODEX_HOME`; `user_config: false` rejected | Warm thread, or exact UUID via `thread/resume` | Preset effort via app-server config; each turn checked against `response.completed` telemetry |
+| Pi | Native tools with `--no-approve`; `yolo` rejected; discovered `PI_CODING_AGENT_DIR`; delegation bridge and effort observer injected when applicable | Persistent RPC process and exact dedicated session file | Preset `--thinking`; each turn checked against the session thinking level and provider requests |
 
 ### Effort verification
 
@@ -422,7 +423,7 @@ Verified per level on 2026-10-21 (Codex 0.163.0, Pi 0.84.4, see
 Other models are checked the same way at run time; no level is claimed for
 them in advance.
 
-Pi's allowlist is an application-level tool filter, not an OS sandbox.
+Pi provides no OS sandbox through this integration.
 Native project context (for example AGENTS.md) still applies. Credentials
 and policies are not inherited from Claude. Other
 agents (including Gemini) remain available for ordinary SessionMan launch/exec but
@@ -450,6 +451,8 @@ make smoke-mcp-contract
 make smoke-presets
 make smoke-mcp-live
 make smoke-mcp-duplex
+make smoke-mcp-duplex-live
+make test-pi-bridge
 make smoke-mcp-effort-live
 make smoke-mcp-isolation-live
 ```
@@ -458,8 +461,16 @@ The live backend suite uses existing native logins, isolated SessionMan configur
 and Codex `gpt-5.6-luna` / Pi `openai-codex/gpt-5.6-luna`. Override
 `SM_MCP_CODEX_MODEL` / `SM_MCP_PI_MODEL` with exact accessible models. It verifies
 native inference, independent memory continuation and actual cancellation. The
-duplex smoke drives a deterministic fake streaming claude over MCP stdio and
+duplex smoke drives deterministic native streaming fakes over MCP stdio and
 asserts steer, MessageHost wakes, report events, re-armed waits and stop.
+`test-pi-bridge` verifies automatic event delivery, one waiter per agent,
+re-arming, foreground deduplication, nested host tools and shutdown cleanup.
+`smoke-mcp-duplex-live` covers same-turn steer, a second-round report and Stop
+against native Codex/Pi, plus mid-run MessageHost delivery. Its model defaults
+are Codex `gpt-6-luna` and Pi `deepseek/deepseek-v4-pro`.
+
+OSC 7501 status consumption is gated off: the tested headless native processes
+emit no such status. This release adds neither a PTY nor a `blocked` state.
 
 Live smokes that read Codex rollouts (`$CODEX_HOME/sessions/**/rollout-*-<thread>.jsonl`)
 do so because Codex code mode keeps nested shell and patch calls out of
@@ -492,9 +503,6 @@ to refresh tool metadata; update any explicit MCP tool permission rules to the
 new names. Native Claude tools retain their own names and behavior.
 
 Saved host transcripts from before this rename remain historical evidence.
-To inspect one, pass `MCP_EVIDENCE_FORMAT=historical` to
-`make verify-mcp-host-evidence`; the default parser and current smoke harnesses
-use the new names. No new live model run is implied by renaming a harness.
 `smoke-mcp-contract` checks the built binary over stdio without creating work;
 set `SM_MCP_BINARY` to verify an installed binary through the same Make target.
 

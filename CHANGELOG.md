@@ -4,6 +4,32 @@ All notable changes to SessionMan are documented here. The format follows [Keep 
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-11-12
+
+### Added
+
+- One daemon per ExternalSubagent with native duplex streams: Claude stream-json,
+  Codex app-server and Pi RPC. Running agents accept `delivery: "steer"`; explicit
+  `"queued"` messages start a new round after the current run settles.
+- `MessageHost` lets dispatched agents send progress or questions while working.
+- Per-agent report/message events and `sm wait <id> --after <seq>`. One re-armed
+  wait follows an agent across messages and runs.
+- Pi's delegation bridge arms and re-arms event waits automatically and delivers
+  wakes through `sendUserMessage`. It mirrors named delegation, delivery mode
+  and the conditional host-message tool.
+
+### Changed
+
+- Native processes stay alive across rounds; cold continuation uses the exact
+  native session. Stop kills the native process group and discards queued work.
+- Codex duplex execution uses app-server without an exec fallback. Presets with
+  `user_config: false` are rejected because app-server cannot honor that setting.
+
+### Removed
+
+- Per-task result files and their shell polling commands. Completion and mid-run
+  messages use the per-agent event stream.
+
 ## [0.11.0] - 2026-11-12
 
 ### Added
