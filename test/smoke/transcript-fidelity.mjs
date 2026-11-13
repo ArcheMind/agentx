@@ -116,9 +116,9 @@ const ws='/tmp/agentx-fidelity-ws'
 
 {
   const P='pi',id='01a15000-2222-7333-8444-955566667777'
-  // Pi import does not write into ~/.pi; the CLI writes a fresh-UUID .jsonl into ~/.local/state/agentx/resume and returns that path.
-  const resumeDir=join(home,'.local','state','agentx','resume')
-  const {source,transcript,output,written}=await roundTrip(P,id,`.pi/agent/sessions/--${ws.slice(1).replaceAll('/','-')}--/2026-10-20T12-00-00-000Z_${id}.jsonl`,async token=>{check('pi','import path in resume dir',token.startsWith(resumeDir)&&token.endsWith('.jsonl'),token);return token})
+  // Pi import writes a fresh-UUID .jsonl into Pi's native per-workspace session store and returns that path.
+  const nativeDir=join(home,'.pi','agent','sessions',`--${ws.slice(1).replaceAll('/','-')}--`)
+  const {source,transcript,output,written}=await roundTrip(P,id,`.pi/agent/sessions/--${ws.slice(1).replaceAll('/','-')}--/2026-10-20T12-00-00-000Z_${id}.jsonl`,async token=>{check('pi','import path in pi native store',token.startsWith(nativeDir)&&token.endsWith('.jsonl')&&!token.includes(id),token);return token})
   same(P,'export roles (compaction dropped)',transcript.messages.map(m=>m.role),['user','assistant','tool','tool','assistant'])
   check(P,'no synthetic pi-N ids in export',!transcript.messages.some(m=>/^pi-\d+$/.test(m.id)),JSON.stringify(transcript.messages.map(m=>m.id)))
   const msgs=records=>records.filter(r=>r.type==='message')

@@ -274,11 +274,9 @@ async function runPair(src,dst){
   if(imported.agent!==dst)throw new Error('import agent '+JSON.stringify(imported))
   let written,id
   if(dst==='pi'){
-    // Pi import writes a resume file for `pi --session`, not into pi's session store; place it where pi's store scan finds it so export can read it back.
+    // Pi import lands a fresh-UUID session directly in pi's native per-workspace store.
     written=imported.session
     id=basename(written,'.jsonl')
-    await mkdir(dirname(join(home,providers.pi.path(id))),{recursive:true})
-    await copyFile(written,join(home,providers.pi.path(id)))
   }else{
     id=imported.session
     written=await findFile(join(home,dst==='claude'?'.claude/projects':'.codex/sessions'),id+'.jsonl')
