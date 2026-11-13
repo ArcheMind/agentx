@@ -26,6 +26,15 @@ func (s Service) List() inventory.Result {
 			{filepath.Join(base, ".gemini", "settings.json"), "gemini", "json"},
 			{filepath.Join(base, ".codex", "config.toml"), "codex", "toml"},
 		}
+		agyBase := filepath.Join(base, ".agents")
+		if scope == "user" {
+			agyBase = inventory.UserDirectory(base, "agy")
+		}
+		candidates = append(candidates, struct{ path, agent, format string }{filepath.Join(agyBase, "mcp_config.json"), "agy", "json"})
+		plugins, _ := filepath.Glob(filepath.Join(agyBase, "plugins", "*", "mcp_config.json"))
+		for _, path := range plugins {
+			candidates = append(candidates, struct{ path, agent, format string }{path, "agy", "json"})
+		}
 		openBase := filepath.Join(base, ".opencode")
 		if scope == "user" {
 			openBase = filepath.Join(base, ".config", "opencode")
@@ -138,7 +147,7 @@ func (s Service) List() inventory.Result {
 		sources = append(sources, inventory.Source{Scope: "user", Path: agent + " MCP discovery", Agents: []string{agent}, Status: "unsupported"})
 	}
 	sources = append(sources, inventory.Source{Scope: "user", Path: "AX MCP common configuration (no defined storage contract)", Status: "unsupported"})
-	for _, agent := range []string{"claude", "codex", "gemini", "opencode"} {
+	for _, agent := range []string{"agy", "claude", "codex", "gemini", "opencode"} {
 		sources = append(sources, inventory.Source{Scope: "user", Path: agent + " dynamic/plugin/managed/CLI MCP sources", Agents: []string{agent}, Status: "unsupported", Error: "Runtime and managed sources are not inspected"})
 	}
 	return inventory.Normalize(sources)

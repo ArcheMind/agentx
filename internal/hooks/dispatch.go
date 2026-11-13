@@ -158,7 +158,7 @@ func aggregate(agent, event string, results []commandResult) (DispatchResult, er
 			contexts = append(contexts, result.output.HookSpecificOutput.AdditionalContext)
 		}
 		decision := strings.ToLower(result.output.Decision)
-		if event == "UserPromptSubmit" && (decision == "block" || decision == "deny" || result.exitCode == 2) {
+		if (event == "UserPromptSubmit" || (agent == "agy" && event == "Stop")) && (decision == "block" || decision == "deny" || result.exitCode == 2) {
 			blocked = true
 			if blockReason == "" {
 				blockReason = result.output.Reason
@@ -195,6 +195,28 @@ func aggregate(agent, event string, results []commandResult) (DispatchResult, er
 }
 
 func encodeOutput(agent, event, systemMessage, additionalContext, decision, reason string) (string, error) {
+	if agent == "agy" {
+		output := map[string]any{}
+		if event == "SessionStart" {
+			text := strings.TrimSpace(strings.Join([]string{systemMessage, additionalContext}, "\n"))
+			if text != "" {
+				output["injectSteps"] = []any{map[string]any{"systemMessage": map[string]string{"systemMessage": text}}}
+			}
+		} else if event == "Stop" {
+			output["decision"] = "stop"
+			if decision == "block" {
+				output["decision"], output["reason"] = "continue", reason
+			}
+		} else {
+			return "", fmt.Errorf("unsupported agy portable output event %q", event)
+		}
+		if len(output) == 0 {
+			return "", nil
+		}
+		data, err := json.Marshal(output)
+		return string(data) + "\n", err
+	}
+
 	if systemMessage == "" && additionalContext == "" && decision == "" {
 		return "", nil
 	}
@@ -244,4 +266,29 @@ func matches(pattern, subject string) bool {
 	}
 	matched, err := regexp.MatchString(pattern, subject)
 	return err == nil && matched
+}
+
+func (s Service) DispatchAgy(ctx context.Context, runner agentruntime.Runner, event string, payload []byte) (DispatchResult, error) {
+	canonical, input, err := canonicalInput("agy", event, event, payload)
+	if err != nil {
+		return DispatchResult{}, err
+	}
+	if canonical.CWD == "" {
+		return DispatchResult{}, fmt.Errorf("agy hook has no workspace path")
+	}
+	s.Project = canonical.CWD
+	result, err := s.List()
+	if err != nil {
+		return DispatchResult{}, err
+	}
+	handlers := []Handler{}
+	for _, item := range result.Hooks {
+		if item.Event == event {
+			handler := projectedHandler(item, s.Project)
+			if matches(handler.Matcher, matcherSubject(canonical)) {
+				handlers = append(handlers, handler)
+			}
+		}
+	}
+	return dispatchHandlers(ctx, runner, "agy", event, canonical, input, handlers)
 }

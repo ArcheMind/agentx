@@ -29,6 +29,20 @@ func (s Service) Inventory() inventory.Result {
 			{filepath.Join(base, ".codex", "skills"), []string{"codex"}, false},
 			{filepath.Join(base, ".gemini", "skills"), []string{"gemini"}, false},
 		}
+		if scope == "project" {
+			roots[0].agents = append(roots[0].agents, "agy")
+		}
+		if scope == "user" {
+			roots = append(roots, skillRoot{filepath.Join(base, ".gemini", "skills"), []string{"agy"}, false}, skillRoot{filepath.Join(base, ".gemini", "antigravity-cli", "skills"), []string{"agy"}, false}, skillRoot{filepath.Join(inventory.UserDirectory(base, "agy"), "skills"), []string{"agy"}, false})
+		}
+		agyBase := filepath.Join(base, ".agents")
+		if scope == "user" {
+			agyBase = inventory.UserDirectory(base, "agy")
+		}
+		pluginRoots, _ := filepath.Glob(filepath.Join(agyBase, "plugins", "*", "skills"))
+		for _, path := range pluginRoots {
+			roots = append(roots, skillRoot{path, []string{"agy"}, false})
+		}
 		dshBase := filepath.Join(base, ".dsh")
 		if scope == "user" {
 			if value := os.Getenv("DSH_HOME"); value != "" {
@@ -73,7 +87,11 @@ func (s Service) Inventory() inventory.Result {
 			if len(ancestors) > 0 {
 				root := ancestors[len(ancestors)-1]
 				if _, err := os.Stat(filepath.Join(root, ".git")); err == nil {
-					roots[4].path = filepath.Join(root, ".dsh", "skills")
+					for i := range roots {
+						if roots[i].path == filepath.Join(base, ".dsh", "skills") {
+							roots[i].path = filepath.Join(root, ".dsh", "skills")
+						}
+					}
 					if root != s.Project {
 						roots[0].agents = []string{"codex", "gemini", "opencode", "pi"}
 						roots = append(roots, skillRoot{filepath.Join(root, ".agents", "skills"), []string{"dsh"}, true})

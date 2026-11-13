@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/ArcheMind/agentx/internal/presets"
 	"github.com/ArcheMind/agentx/internal/runtime"
@@ -37,6 +38,22 @@ func (a App) mcpServe(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	return a.serveMCPAt(ctx, cwd)
+}
+
+func (a App) agyMCPServe(ctx context.Context) error {
+	cwd := os.Getenv("SM_MCP_CWD")
+	if !filepath.IsAbs(cwd) {
+		return fmt.Errorf("SessionMan's native agy plugin requires a workspace from sm agy; start agy through SessionMan")
+	}
+	info, err := os.Stat(cwd)
+	if err != nil || !info.IsDir() {
+		return fmt.Errorf("SessionMan agy workspace %q is not accessible", cwd)
+	}
+	return a.serveMCPAt(ctx, cwd)
+}
+
+func (a App) serveMCPAt(ctx context.Context, cwd string) error {
 	server := &subagents.Server{Home: a.presetHome(), Cwd: cwd, Runner: a.Runner}
 	if r, ok := a.Runner.(runtime.ExecRunner); ok && r.Debug {
 		server.Log = a.Stderr

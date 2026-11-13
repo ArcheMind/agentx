@@ -16,6 +16,7 @@ const (
 )
 
 var agentColors = map[string]string{
+	"agy":      "\x1b[38;5;111m",
 	"claude":   "\x1b[38;5;208m",
 	"codex":    "\x1b[38;5;42m",
 	"dsh":      "\x1b[38;5;33m",

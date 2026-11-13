@@ -35,7 +35,7 @@ func TestListDeduplicatesClaudeProjectionAndReportsSupport(t *testing.T) {
 		t.Fatalf("skills = %#v", result.Skills)
 	}
 	item := result.Skills[0]
-	if strings.Join(item.Agents, ",") != "claude,codex,dsh,gemini,opencode,pi" || item.Path != inventory.Physical(canonical) {
+	if strings.Join(item.Agents, ",") != "agy,claude,codex,dsh,gemini,opencode,pi" || item.Path != inventory.Physical(canonical) {
 		t.Fatalf("skill = %#v", item)
 	}
 	for _, support := range result.Agents {
@@ -85,7 +85,7 @@ func TestInstallLocalSkillAndClaudeProjection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(result.Skills) != 1 || strings.Join(result.Skills[0].Agents, ",") != "claude,codex,dsh,gemini,opencode,pi" {
+	if len(result.Skills) != 1 || strings.Join(result.Skills[0].Agents, ",") != "agy,claude,codex,dsh,gemini,opencode,pi" {
 		t.Fatalf("skills = %#v", result.Skills)
 	}
 	if result.Skills[0].Source != "local" || result.Skills[0].Origin != source {
@@ -206,5 +206,42 @@ func writeSkill(t *testing.T, path, name, description string) {
 	content := "---\nname: " + name + "\ndescription: " + description + "\n---\n\n# " + name + "\n"
 	if err := os.WriteFile(filepath.Join(path, "SKILL.md"), []byte(content), 0o644); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestAgyUserInstallHasExplicitNativeProjection(t *testing.T) {
+	home, project, source := t.TempDir(), t.TempDir(), t.TempDir()
+	if err := os.WriteFile(filepath.Join(source, "SKILL.md"), []byte("---\nname: review\ndescription: Review changes\n---\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	service := Service{Home: home, Project: project}
+	plan, err := service.Install(context.Background(), InstallOptions{Source: source, Scope: ScopeUser})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(home, ".gemini", "config", "skills", "review")
+	if plan.AgyProjection != want {
+		t.Fatalf("%+v", plan)
+	}
+	target, err := os.Readlink(want)
+	if err != nil || target != plan.Destination {
+		t.Fatalf("%s %v", target, err)
+	}
+	result, err := service.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, item := range result.Skills {
+		if item.Name == "review" {
+			for _, agent := range item.Agents {
+				if agent == "agy" {
+					found = true
+				}
+			}
+		}
+	}
+	if !found {
+		t.Fatal("explicit native user projection not discovered")
 	}
 }

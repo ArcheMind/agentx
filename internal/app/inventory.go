@@ -16,6 +16,9 @@ func (a App) mcp(ctx context.Context, args []string) error {
 		}
 		return a.mcpServe(ctx)
 	}
+	if len(args) == 1 && args[0] == "__agy_serve" {
+		return a.agyMCPServe(ctx)
+	}
 	if len(args) > 0 && args[0] == "__daemon" {
 		return a.mcpDaemon(ctx, args[1:])
 	}

@@ -137,3 +137,13 @@ test-pi-bridge:
 .PHONY: smoke-mcp-duplex-live
 smoke-mcp-duplex-live: build
 	node test/smoke/mcp-duplex-live.mjs "$(CURDIR)/bin/sm"
+
+.PHONY: smoke-agy-native-live smoke-agy-duplex-live smoke-agy-extensions-live
+smoke-agy-native-live: build
+	node test/smoke/agy-native-live.mjs "$(CURDIR)/bin/sm"
+
+smoke-agy-duplex-live: build
+	node test/smoke/agy-duplex-live.mjs "$(CURDIR)/bin/sm"
+
+smoke-agy-extensions-live: build
+	node test/smoke/agy-extensions-live.mjs "$(CURDIR)/bin/sm"

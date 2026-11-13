@@ -58,15 +58,16 @@ type InstallOptions struct {
 }
 
 type InstallPlan struct {
-	Source       string   `json:"source" yaml:"source"`
-	SourceType   string   `json:"source_type" yaml:"source_type"`
-	Subpath      string   `json:"subpath,omitempty" yaml:"subpath,omitempty"`
-	Scope        Scope    `json:"scope" yaml:"scope"`
-	Name         string   `json:"name,omitempty" yaml:"name,omitempty"`
-	Destination  string   `json:"destination,omitempty" yaml:"destination,omitempty"`
-	Projection   string   `json:"claude_projection,omitempty" yaml:"claude_projection,omitempty"`
-	Agents       []string `json:"agents" yaml:"agents"`
-	WillValidate bool     `json:"will_validate" yaml:"will_validate"`
+	Source        string   `json:"source" yaml:"source"`
+	SourceType    string   `json:"source_type" yaml:"source_type"`
+	Subpath       string   `json:"subpath,omitempty" yaml:"subpath,omitempty"`
+	Scope         Scope    `json:"scope" yaml:"scope"`
+	Name          string   `json:"name,omitempty" yaml:"name,omitempty"`
+	Destination   string   `json:"destination,omitempty" yaml:"destination,omitempty"`
+	Projection    string   `json:"claude_projection,omitempty" yaml:"claude_projection,omitempty"`
+	AgyProjection string   `json:"agy_projection,omitempty" yaml:"agy_projection,omitempty"`
+	Agents        []string `json:"agents" yaml:"agents"`
+	WillValidate  bool     `json:"will_validate" yaml:"will_validate"`
 }
 
 type Service struct {
@@ -137,7 +138,7 @@ func (s Service) Install(ctx context.Context, options InstallOptions) (InstallPl
 	if options.Source == "" {
 		return InstallPlan{}, errors.New("skill source is required")
 	}
-	plan := InstallPlan{Source: options.Source, Subpath: options.Path, Scope: options.Scope, Agents: []string{"claude", "codex", "gemini", "pi"}, WillValidate: true}
+	plan := InstallPlan{Source: options.Source, Subpath: options.Path, Scope: options.Scope, Agents: []string{"agy", "claude", "codex", "gemini", "pi"}, WillValidate: true}
 	root, sourceType, cleanup, err := s.resolveSource(ctx, options.Source, options.Path)
 	if err != nil {
 		return plan, err
@@ -152,7 +153,14 @@ func (s Service) Install(ctx context.Context, options InstallOptions) (InstallPl
 	canonicalRoot, claudeRoot := s.roots(options.Scope)
 	plan.Destination = filepath.Join(canonicalRoot, metadata.Name)
 	plan.Projection = filepath.Join(claudeRoot, metadata.Name)
-	if err := ensureAvailable(plan.Destination, plan.Projection); err != nil {
+	if options.Scope == ScopeUser {
+		plan.AgyProjection = filepath.Join(s.Home, ".gemini", "config", "skills", metadata.Name)
+	}
+	paths := []string{plan.Destination, plan.Projection}
+	if plan.AgyProjection != "" {
+		paths = append(paths, plan.AgyProjection)
+	}
+	if err := ensureAvailable(paths...); err != nil {
 		return plan, err
 	}
 	if options.DryRun {
@@ -185,6 +193,18 @@ func (s Service) Install(ctx context.Context, options InstallOptions) (InstallPl
 		_ = os.RemoveAll(plan.Destination)
 		return plan, fmt.Errorf("create Claude skill projection: %w", err)
 	}
+	if plan.AgyProjection != "" {
+		if err := os.MkdirAll(filepath.Dir(plan.AgyProjection), 0755); err != nil {
+			_ = os.Remove(plan.Projection)
+			_ = os.RemoveAll(plan.Destination)
+			return plan, err
+		}
+		if err := os.Symlink(plan.Destination, plan.AgyProjection); err != nil {
+			_ = os.Remove(plan.Projection)
+			_ = os.RemoveAll(plan.Destination)
+			return plan, fmt.Errorf("create agy skill projection: %w", err)
+		}
+	}
 	origin := options.Source
 	if sourceType == "local" {
 		origin, _ = filepath.Abs(root)
@@ -193,6 +213,9 @@ func (s Service) Install(ctx context.Context, options InstallOptions) (InstallPl
 	}
 	if err := writeOrigin(canonicalRoot, metadata.Name, originRecord{Source: sourceType, Origin: origin}); err != nil {
 		_ = os.Remove(plan.Projection)
+		if plan.AgyProjection != "" {
+			_ = os.Remove(plan.AgyProjection)
+		}
 		_ = os.RemoveAll(plan.Destination)
 		return plan, err
 	}
@@ -407,6 +430,7 @@ func appendUnique(values []string, candidates ...string) []string {
 
 func supportMatrix() []AgentSupport {
 	return []AgentSupport{
+		{Agent: "agy", Supported: true},
 		{Agent: "claude", Supported: true},
 		{Agent: "codex", Supported: true},
 		{Agent: "dsh", Supported: false},

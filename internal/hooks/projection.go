@@ -40,6 +40,8 @@ func (s Service) Prepare(agent, executable string, write bool) (Projection, erro
 	}
 	events := configuredEvents(result.Hooks)
 	switch agent {
+	case "agy":
+		return Projection{}, fmt.Errorf("agy hooks require the native SessionMan plugin")
 	case "claude":
 		root := projectionRoot(s.Home, agent)
 		config, err := jsonHookConfig(agent, executable, s.Project, events, result.Hooks)
@@ -126,7 +128,7 @@ func configuredEvents(items []Hook) []string {
 
 func isPortableTarget(agent string) bool {
 	switch agent {
-	case "claude", "codex", "gemini", "pi":
+	case "agy", "claude", "codex", "gemini", "pi":
 		return true
 	default:
 		return false
@@ -297,6 +299,7 @@ func validateOwnedDirectory(root string) error {
 
 func agentEvent(agent, event string) (string, error) {
 	mapping := map[string]map[string]string{
+		"agy":    {"SessionStart": "SessionStart", "Stop": "Stop"},
 		"claude": {"SessionStart": "SessionStart", "SessionEnd": "SessionEnd", "UserPromptSubmit": "UserPromptSubmit", "Stop": "Stop"},
 		"codex":  {"SessionStart": "SessionStart", "SessionEnd": "SessionEnd", "UserPromptSubmit": "UserPromptSubmit", "Stop": "Stop"},
 		"gemini": {"SessionStart": "SessionStart", "SessionEnd": "SessionEnd", "UserPromptSubmit": "BeforeAgent", "Stop": "AfterAgent"},

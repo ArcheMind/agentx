@@ -355,6 +355,9 @@ func (a App) startPreset(ctx context.Context, reader *bufio.Reader, home string,
 		return false, err
 	}
 	plan, err := agent.Launch.PlanRun(request)
+	if err == nil {
+		prepareAgyNativePlan(agent.ID, &plan)
+	}
 	if err != nil {
 		return a.startFailure(ctx, reader, home, p, err.Error(), true)
 	}

@@ -15,7 +15,7 @@ import (
 
 func (a App) execAgent(ctx context.Context, args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: ax agent exec <codex|pi|gemini> [--model <model>] [--resume <session-id>] [--cwd <path>] [--dry-run] < prompt.txt")
+		return fmt.Errorf("usage: ax agent exec <agy|codex|pi|gemini> [--model <model>] [--resume <session-id>] [--cwd <path>] [--dry-run] < prompt.txt")
 	}
 	model, resume, cwd := "", "", ""
 	dryRun := false
@@ -62,6 +62,12 @@ func (a App) execAgent(ctx context.Context, args []string) error {
 	plan, err := drivers.ExecPlan(args[0], cwd, model, resume)
 	if err != nil {
 		return err
+	}
+	if args[0] == "agy" {
+		if err := a.prepareHooks(&runtime.RunRequest{Cwd: cwd}, "agy", !dryRun); err != nil {
+			return err
+		}
+		prepareAgyNativePlan("agy", &plan)
 	}
 	if dryRun {
 		return writeStructured(a.Stdout, plan, a.structuredDefault())

@@ -401,6 +401,9 @@ func (a App) runAgent(ctx context.Context, args []string) error {
 		return err
 	}
 	plan, err := agent.Launch.PlanRun(request)
+	if err == nil {
+		prepareAgyNativePlan(agent.ID, &plan)
+	}
 	if err != nil {
 		return err
 	}
@@ -823,7 +826,7 @@ func (a App) sessionImport(ctx context.Context, args []string) error {
 		return writeStructured(a.Stdout, map[string]string{"agent": agent.ID, "session": token}, a.Output)
 	}
 	fmt.Fprintf(a.Stdout, "Imported transcript into %s: %s\n", agent.ID, token)
-	if agent.ID == "claude" || agent.ID == "codex" {
+	if agent.ID == "agy" || agent.ID == "claude" || agent.ID == "codex" {
 		fmt.Fprintf(a.Stdout, "Resume: ax session resume %s %s\n", agent.ID, token)
 	}
 	return nil
@@ -944,6 +947,9 @@ func (a App) resumeSession(ctx context.Context, agent runtime.Agent, detail sess
 		return err
 	}
 	plan, err := agent.Launch.PlanRun(request)
+	if err == nil {
+		prepareAgyNativePlan(agent.ID, &plan)
+	}
 	if err != nil {
 		return err
 	}
@@ -1040,8 +1046,8 @@ Usage:
   sm [--json|--yaml] preset <list|show> [args...]
   sm wait <agent-id> --after <seq>
 
-  sm agent exec <codex|pi|gemini> [--model <model>] [--resume <session-id>] [--cwd <path>] [--dry-run] < prompt.txt
-  sm --json session continue <claude|codex|pi> [--model <model>] [--mcp-config <file>] [--mode yolo] < transcript.json
+  sm agent exec <agy|codex|pi|gemini> [--model <model>] [--resume <session-id>] [--cwd <path>] [--dry-run] < prompt.txt
+  sm --json session continue <agy|claude|codex|pi> [--model <model>] [--mcp-config <file>] [--mode yolo] < transcript.json
 
   sm version
 
@@ -1063,14 +1069,14 @@ resumes an exported transcript interactively.
 Presets live in ~/.sessionman/presets/<name>/PRESET.md and are shared with MCP
 ExternalSubagents. The sm <agent> shortcut launches an installed agent directly.
 
-Agents: claude, codex, dsh, gemini, opencode, pi
+Agents: agy, claude, codex, dsh, gemini, opencode, pi
 
 Set SM_LOG=debug or pass --verbose before the command to log raw external input,
 output, and errors as JSON on stderr.
 `)
 }
 
-var convertProviders = []string{"claude", "codex", "gemini", "opencode", "pi"}
+var convertProviders = []string{"agy", "claude", "codex", "gemini", "opencode", "pi"}
 
 func isConvertProvider(id string) bool {
 	for _, p := range convertProviders {
@@ -1109,6 +1115,8 @@ func (a App) convertTo(provider string) error {
 	}
 
 	switch provider {
+	case "agy":
+		return a.convertToAgy(detail)
 	case "claude":
 		return writeJSONL(a.Stdout, sessions.SerializeClaude(detail))
 	case "codex":
@@ -1134,6 +1142,9 @@ func (a App) convertFrom(provider string) error {
 		return fmt.Errorf("read stdin: %w", err)
 	}
 
+	if provider == "agy" {
+		return a.convertFromAgy(data)
+	}
 	var records []map[string]any
 	switch provider {
 	case "gemini":

@@ -82,7 +82,7 @@ func (a App) sessionContinue(ctx context.Context, args []string) error {
 			return fmt.Errorf("unknown session continue option %q", args[index])
 		}
 	}
-	if agent.ID != "claude" && agent.ID != "codex" && agent.ID != "pi" {
+	if agent.ID != "agy" && agent.ID != "claude" && agent.ID != "codex" && agent.ID != "pi" {
 		return fmt.Errorf("%s has no headless continue adapter", agent.ID)
 	}
 	// The caller owns this process (a host harness); SIGTERM/SIGINT must cancel
@@ -153,6 +153,12 @@ func (a App) sessionContinue(ctx context.Context, args []string) error {
 		return err
 	}
 	plan.Env, plan.UnsetEnv = subagents.AuthEnvironment(auth)
+	if agent.ID == "agy" {
+		if err := a.prepareHooks(&runtime.RunRequest{Cwd: workspace}, "agy", true); err != nil {
+			return err
+		}
+		prepareAgyNativePlan("agy", &plan)
+	}
 	result, execErr := a.Runner.Execute(ctx, plan, runtime.ExecuteOptions{Stdin: strings.NewReader(prompt), CancelProcessGroup: true})
 	if ctx.Err() != nil {
 		return fmt.Errorf("session continue cancelled: %w", ctx.Err())
@@ -307,6 +313,8 @@ func resolveContinueWorkspace(flagValue, transcriptValue string) (string, error)
 // continueSessionFile maps a session token to the native file that records it.
 func (a App) continueSessionFile(agentID, workspace, token, codexHome string) (string, error) {
 	switch agentID {
+	case "agy":
+		return filepath.Join(a.Sessions.HomeDir, ".gemini", "antigravity-cli", "conversations", token+".db"), nil
 	case "claude":
 		return sessions.ClaudeProjectFile(a.Sessions.HomeDir, workspace, token), nil
 	case "codex":
@@ -390,24 +398,55 @@ type continueRun struct {
 // store afterwards, not from the stream.
 func parseContinueStream(agentID, model, expectSession, output string) (continueRun, error) {
 	run := continueRun{}
+	if agentID != "agy" && agentID != "claude" && agentID != "codex" && agentID != "pi" {
+		return run, fmt.Errorf("unsupported continue agent %q", agentID)
+	}
 	for _, line := range strings.Split(output, "\n") {
 		if strings.TrimSpace(line) == "" {
 			continue
 		}
 		var event struct {
-			Type    string          `json:"type"`
-			Subtype string          `json:"subtype"`
-			Thread  string          `json:"thread_id"`
-			ID      string          `json:"id"`
-			Session string          `json:"session_id"`
-			IsError bool            `json:"is_error"`
-			Error   json.RawMessage `json:"error"`
-			Message json.RawMessage `json:"message"`
+			Type         string          `json:"type"`
+			Event        string          `json:"event"`
+			Conversation string          `json:"conversation_id"`
+			Result       json.RawMessage `json:"result"`
+			Subtype      string          `json:"subtype"`
+			Thread       string          `json:"thread_id"`
+			ID           string          `json:"id"`
+			Session      string          `json:"session_id"`
+			IsError      bool            `json:"is_error"`
+			Error        json.RawMessage `json:"error"`
+			Message      json.RawMessage `json:"message"`
 		}
 		if err := json.Unmarshal([]byte(line), &event); err != nil {
 			return run, fmt.Errorf("invalid %s event: %w", agentID, err)
 		}
 		switch agentID {
+		case "agy":
+			if event.Event == "init" {
+				if expectSession != "" && event.Conversation != expectSession {
+					return run, fmt.Errorf("agy continued conversation %s instead of %s", event.Conversation, expectSession)
+				}
+				run.sessionID = event.Conversation
+			}
+			if event.Event == "result" {
+				var result struct {
+					Conversation string `json:"conversation_id"`
+					Status       string `json:"status"`
+					Response     string `json:"response"`
+				}
+				if err := json.Unmarshal(event.Result, &result); err != nil {
+					return run, fmt.Errorf("invalid agy result: %w", err)
+				}
+				if expectSession != "" && result.Conversation != expectSession {
+					return run, fmt.Errorf("agy continued conversation %s instead of %s", result.Conversation, expectSession)
+				}
+				run.sessionID = result.Conversation
+				run.completed = result.Status == "SUCCESS"
+				if !run.completed {
+					run.failure = result.Status + ": " + result.Response
+				}
+			}
 		case "claude":
 			switch event.Type {
 			case "system":
@@ -452,7 +491,7 @@ func parseContinueStream(agentID, model, expectSession, output string) (continue
 				}
 				run.failure = failure
 			}
-		default:
+		case "pi":
 			switch event.Type {
 			case "session":
 				run.sessionID = event.ID

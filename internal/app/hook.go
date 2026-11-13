@@ -11,10 +11,14 @@ import (
 	"strings"
 
 	"github.com/ArcheMind/agentx/internal/hooks"
+	"github.com/ArcheMind/agentx/internal/mcp"
 	"github.com/ArcheMind/agentx/internal/runtime"
 )
 
 func (a App) hook(ctx context.Context, args []string) error {
+	if len(args) > 0 && args[0] == "__agy_dispatch" {
+		return a.dispatchAgyHook(ctx, args[1:])
+	}
 	if len(args) > 0 && args[0] == "__dispatch" {
 		return a.dispatchHook(ctx, args[1:])
 	}
@@ -55,6 +59,21 @@ func (a App) prepareHooks(request *runtime.RunRequest, agent string, write bool)
 	executable, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("resolve SessionMan executable: %w", err)
+	}
+	if agent == "agy" {
+		if _, err := mcp.PrepareAgyPlugin(a.Hooks.Home, executable, write); err != nil {
+			return err
+		}
+		result, err := service.List()
+		if err != nil {
+			return err
+		}
+		for _, item := range result.Hooks {
+			if item.Event == "SessionEnd" || item.Event == "UserPromptSubmit" {
+				fmt.Fprintf(a.Stderr, "warning: agy does not support portable %s; hook is not projected\n", item.Event)
+			}
+		}
+		return nil
 	}
 	projection, err := service.Prepare(agent, executable, write)
 	if err != nil {
@@ -121,6 +140,27 @@ func (a App) dispatchHook(ctx context.Context, args []string) error {
 			}
 			return &ExitError{Code: result.ExitCode, Err: errors.New(message)}
 		}
+		return err
+	}
+	if result.Stderr != "" {
+		fmt.Fprintln(a.Stderr, result.Stderr)
+	}
+	if result.Stdout != "" {
+		fmt.Fprint(a.Stdout, result.Stdout)
+	}
+	return nil
+}
+
+func (a App) dispatchAgyHook(ctx context.Context, args []string) error {
+	if len(args) != 2 || args[0] != "--event" || (args[1] != "SessionStart" && args[1] != "Stop") {
+		return fmt.Errorf("unsupported agy hook dispatch event")
+	}
+	payload, err := io.ReadAll(a.Stdin)
+	if err != nil {
+		return err
+	}
+	result, err := a.Hooks.DispatchAgy(ctx, a.Runner, args[1], payload)
+	if err != nil {
 		return err
 	}
 	if result.Stderr != "" {

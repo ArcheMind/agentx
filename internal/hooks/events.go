@@ -3,6 +3,9 @@ package hooks
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
+	"os"
+	"strings"
 )
 
 type Name string
@@ -65,6 +68,43 @@ func Decode(agent, event string, payload []byte) (Event, error) {
 		return Event{}, fmt.Errorf("decode %s %s hook input: %w", agent, event, err)
 	}
 
+	if agent == "agy" {
+		var agy struct {
+			ConversationID    string   `json:"conversationId"`
+			WorkspacePaths    []string `json:"workspacePaths"`
+			CWD               string   `json:"cwd"`
+			TranscriptPath    string   `json:"transcriptPath"`
+			Model             string   `json:"modelName"`
+			LastUserInput     string   `json:"lastUserInput"`
+			TerminationReason string   `json:"terminationReason"`
+		}
+		if err := json.Unmarshal(payload, &agy); err != nil {
+			return Event{}, err
+		}
+		native.SessionID, native.CWD, native.TranscriptPath, native.Model, native.Prompt = agy.ConversationID, agy.CWD, agy.TranscriptPath, agy.Model, agy.LastUserInput
+		if native.CWD == "" && len(agy.WorkspacePaths) > 0 {
+			native.CWD = agy.WorkspacePaths[0]
+		}
+		native.Reason = agy.TerminationReason
+		if strings.HasPrefix(native.CWD, "file://") {
+			if parsed, err := url.Parse(native.CWD); err == nil {
+				native.CWD = parsed.Path
+			}
+		}
+		if native.CWD != "" {
+			if info, err := os.Stat(native.CWD); err != nil || !info.IsDir() {
+				native.CWD = ""
+			}
+		}
+		if native.CWD == "" && len(agy.WorkspacePaths) > 0 {
+			native.CWD = agy.WorkspacePaths[0]
+			if strings.HasPrefix(native.CWD, "file://") {
+				if parsed, err := url.Parse(native.CWD); err == nil {
+					native.CWD = parsed.Path
+				}
+			}
+		}
+	}
 	name, err := eventName(agent, event)
 	if err != nil {
 		return Event{}, err
@@ -104,6 +144,7 @@ func Decode(agent, event string, payload []byte) (Event, error) {
 
 func eventName(agent, event string) (Name, error) {
 	events := map[string]map[string]Name{
+		"agy":    {"SessionStart": SessionStart, "Stop": TurnAfter},
 		"claude": {"SessionStart": SessionStart, "SessionEnd": SessionEnd, "UserPromptSubmit": TurnBefore, "Stop": TurnAfter, "StopFailure": TurnAfter},
 		"codex":  {"SessionStart": SessionStart, "SessionEnd": SessionEnd, "UserPromptSubmit": TurnBefore, "Stop": TurnAfter, "Interrupt": TurnAfter},
 		"gemini": {"SessionStart": SessionStart, "SessionEnd": SessionEnd, "BeforeAgent": TurnBefore, "AfterAgent": TurnAfter},
