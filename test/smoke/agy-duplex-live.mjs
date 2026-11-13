@@ -1,6 +1,6 @@
-import {spawn, execFileSync} from 'node:child_process'
-import {mkdtemp, mkdir, writeFile, readFile, appendFile, readdir, access, copyFile, realpath} from 'node:fs/promises'
-import {tmpdir} from 'node:os'
+import {spawn, spawnSync, execFileSync} from 'node:child_process'
+import {mkdtemp, mkdir, writeFile, readFile, appendFile, readdir, access, copyFile, realpath, cp, rm} from 'node:fs/promises'
+import {tmpdir, homedir} from 'node:os'
 import {randomUUID} from 'node:crypto'
 import {join, resolve} from 'node:path'
 
@@ -26,23 +26,88 @@ const checkpoint=async(phase)=>{console.log(JSON.stringify({agent,phase,evidence
 const child=spawn(binary,['mcp','serve'],{cwd:work,env,stdio:['pipe','pipe','pipe']})
 let pending='',counter=0
 const requests=new Map()
+const waiters=new Set()
 child.stderr.on('data',c=>log('serve-stderr.log',c.toString()).catch(()=>{}))
 child.stdout.on('data',chunk=>{pending+=chunk;let end;while((end=pending.indexOf('\n'))>=0){const line=pending.slice(0,end);pending=pending.slice(end+1);log('mcp.jsonl',line).catch(()=>{});const event=JSON.parse(line);if(event.id!==undefined){const r=requests.get(event.id);requests.delete(event.id);event.error?r.reject(Error(JSON.stringify(event.error))):r.resolve(event.result)}}})
 function rpc(method,params={}){return new Promise((resolve,reject)=>{const id=++counter;requests.set(id,{resolve,reject});const line=JSON.stringify({jsonrpc:'2.0',id,method,params});log('mcp.jsonl','>> '+line).catch(()=>{});child.stdin.write(line+'\n')})}
 async function call(name,args={}){const r=await rpc('tools/call',{name,arguments:args});const text=r.content.map(x=>x.text).join('\n');if(r.isError)throw Error(text);return text}
 function assert(value,message){if(!value)throw Error('ASSERT FAILED: '+message)}
-function armWait(id,seq){return new Promise((resolve,reject)=>{const p=spawn(binary,['wait',id,'--after',String(seq)],{env});let out='';p.stdout.on('data',c=>out+=c);p.stderr.on('data',c=>out+=c);p.on('close',code=>{log('waits.log',`--- wait --after ${seq} (exit ${code}) ---\n`+out).catch(()=>{});code===0?resolve(out):reject(Error('wait exited '+code+': '+out))})})}
+function armWait(id,seq){return new Promise((resolve,reject)=>{const p=spawn(binary,['wait',id,'--after',String(seq)],{env});waiters.add(p);let out='';p.stdout.on('data',c=>out+=c);p.stderr.on('data',c=>out+=c);p.on('close',code=>{waiters.delete(p);log('waits.log',`--- wait --after ${seq} (exit ${code}) ---\n`+out).catch(()=>{});code===0?resolve(out):reject(Error('wait exited '+code+': '+out))})})}
 const rearm=text=>{const m=text.match(/sm wait (ax-[a-f0-9]+) --after (\d+)/);assert(m,'no wait command: '+text);return {id:m[1],seq:Number(m[2])}}
 const seqOf=text=>Number(text.match(/Re-arm: sm wait ax-[a-f0-9]+ --after (\d+)/)[1])
 const pidAlive=pid=>{try{process.kill(pid,0);return true}catch{return false}}
 const sleep=ms=>new Promise(r=>setTimeout(r,ms))
 const verdict={}
+const ownedPlugin=join(homedir(),'.gemini','config','plugins','sessionman')
+const ownership='sessionman native agy plugin\n'
+let pluginSnapshot=null
+let pluginTouched=false
+let installerProcess=null
+let coexistNativeIDs=[]
+async function productExec(){
+ const result=await new Promise((resolve,reject)=>{
+  const process=spawn(binary,['agent','exec','agy','--cwd',work,'--model',globalThis.process.env.SM_AGY_MODEL||'gemini-3.8-flash-low'],{cwd:work,env,stdio:['pipe','pipe','pipe']})
+  installerProcess=process
+  let stdout='',stderr=''
+  process.stdout.on('data',chunk=>stdout+=chunk)
+  process.stderr.on('data',chunk=>stderr+=chunk)
+  process.on('error',reject)
+  process.on('close',code=>resolve({code,stdout,stderr}))
+  process.stdin.end('Do not use tools. Reply exactly PLUGIN-INSTALLED.')
+ })
+ await log('coexist-product-exec.json',result)
+ assert(result.code===0&&result.stdout.includes('PLUGIN-INSTALLED'),'product agent exec did not install plugin successfully: '+JSON.stringify(result))
+ assert(result.stdout.trim().split('\n').map(JSON.parse).some(x=>x.event==='result'&&x.result?.status==='SUCCESS'),'product exec lacked native NDJSON success')
+}
+
 const terminalWait='If the terminal tool returns an asynchronous/running command ID, keep calling its status/wait tool until the command exits. Do not finish your turn or describe waiting while the command is still running.'
 
-const timer=setTimeout(()=>{console.error('GLOBAL TIMEOUT');child.kill('SIGTERM');process.exit(1)},900000)
+const timer=setTimeout(()=>{console.error('GLOBAL TIMEOUT');for(const request of requests.values())request.reject(Error('GLOBAL TIMEOUT'));requests.clear();for(const waiter of waiters)waiter.kill('SIGTERM');installerProcess?.kill('SIGTERM');child.kill('SIGTERM')},900000)
 try{
  await rpc('initialize',{protocolVersion:'2024-11-05',capabilities:{},clientInfo:{name:'duplex-live-acceptance',version:'1'}})
  child.stdin.write(JSON.stringify({jsonrpc:'2.0',method:'notifications/initialized'})+'\n')
+
+ if(process.env.SM_AGY_COEXIST==='1'){
+  let existed=true
+  try{await access(ownedPlugin)}catch(error){if(error.code==='ENOENT')existed=false;else throw error}
+  if(existed){
+   assert(await readFile(join(ownedPlugin,'.sessionman-owned'),'utf8')===ownership,'refusing foreign plugin')
+   pluginSnapshot=join(evidenceDir,'original-owned-plugin')
+   await cp(ownedPlugin,pluginSnapshot,{recursive:true})
+  }
+  pluginTouched=true
+  await productExec()
+  assert(await readFile(join(ownedPlugin,'.sessionman-owned'),'utf8')===ownership,'installed plugin has no owned marker')
+  await log('coexist-installed-plugin.json',{manifest:JSON.parse(await readFile(join(ownedPlugin,'mcp_config.json'),'utf8'))})
+  const parentToken='PARENT-'+randomUUID(),childToken='CHILD-'+randomUUID(),answerToken='NESTED-'+randomUUID()
+  const prompt=`First call EACH distinct available SessionMan MessageHost tool once with message ${parentToken}. Both server namespaces may be offered; exercise both if offered. Then call the SessionMan ExternalSubagent tool whose full name contains sessionman twice if offered (otherwise choose the offered one), with model "duplex-live", name "inner", description "coexist nested acceptance", run_in_background false, prompt "Call EACH distinct available MessageHost tool exactly once with message ${childToken}, including both server namespaces if offered. Then reply exactly ${answerToken}. Do not use other tools." Include its completed report verbatim in your final answer.`
+  const accepted=await call('ExternalSubagent',{description:'coexisting native MCP servers',name:'coexist',model:'duplex-live',prompt,run_in_background:true})
+  const arm=rearm(accepted)
+  let seq=arm.seq,report
+  while(!report){const wake=await armWait(arm.id,seq);seq=seqOf(wake);if(wake.includes('kind=report'))report=wake}
+  assert(report.includes('Report status: completed.')&&report.includes(answerToken),'coexist parent did not complete native nested turn: '+report)
+  const identities=await Promise.all((await readdir(join(home,'.local','state','sessionman','agents'))).map(async id=>({id,...await meta(id)})))
+  const parent=identities.find(x=>x.id===arm.id),nested=identities.find(x=>x.name==='inner')
+  assert(parent?.cwd===work&&parent.delegation_depth===0&&nested?.cwd===work&&nested.delegation_depth===1,'coexist identity/cwd/depth mismatch: '+JSON.stringify(identities))
+  const parentEvents=await events(parent.id),childEvents=await events(nested.id)
+  assert(parentEvents.filter(x=>x.kind==='message'&&x.message===parentToken).length>=2,'both parent server paths did not deliver MessageHost')
+  assert(childEvents.filter(x=>x.kind==='message'&&x.message===childToken).length>=2,'both nested server paths did not deliver MessageHost')
+  assert(!parentEvents.some(x=>x.message===childToken)&&!childEvents.some(x=>x.message===parentToken),'coexistent native server routed MessageHost to another layer')
+  const observed=[]
+  for(const identity of [parent,nested]){
+   const messages=await nativeMessages(identity.id)
+   const names=[...new Set(messages.filter(x=>x.direction==='out'&&x.method==='session/update').map(x=>x.params?.update?.name).filter(x=>x?.includes('MessageHost')))]
+   const start=(await nativeLog(identity.id)).find(x=>x.event==='stream_start')
+   assert(start?.input.env.SM_MCP_CWD===work&&start.input.env.SM_HOST_AGENT_DIR===agentDir(identity.id)&&start.input.env.SM_DELEGATION_DEPTH===String(identity.delegation_depth+1),'coexist native plugin inherited wrong child environment')
+   assert(names.some(x=>(x.match(/sessionman/g)||[]).length>=2)&&names.some(x=>(x.match(/sessionman/g)||[]).length===1),'did not observe calls through both actually exposed SessionMan namespaces: '+JSON.stringify(names))
+   observed.push({id:identity.id,names,start})
+  }
+  await log('coexist.json',{identities,parentEvents,childEvents,observed,report})
+  verdict.coexist='PASS: product exec installs owned plugin; global and temporary native server namespaces both route parent/nested MessageHost to correct layer/cwd/depth'
+  coexistNativeIDs=[parent.session,nested.session]
+  continue
+ }
+
 
  // (a) long task, steer mid-run, consumed within the same turn
  const started=await call('ExternalSubagent',{description:'live steer test',prompt:terminalWait+" Use your terminal tool to run exactly this command once: python3 -c 'import time; time.sleep(25); print(\"slept\")' . Do NOT run it in background. When it finishes, reply with a single line that starts with DONE and also contains every extra marker you were asked for during this turn.",name:'live',model:'duplex-live',run_in_background:true})
@@ -222,6 +287,34 @@ try{
   }
  }catch{}
  child.stdin.end()
- await new Promise(resolve=>child.once('close',resolve))
+ if(child.exitCode===null&&child.signalCode===null)await new Promise(resolve=>child.once('close',resolve))
+ if(pluginTouched){
+  let present=true
+  try{await access(ownedPlugin)}catch(error){if(error.code==='ENOENT')present=false;else throw error}
+  if(present){
+   assert(await readFile(join(ownedPlugin,'.sessionman-owned'),'utf8')===ownership,'refusing to restore over a foreign plugin marker')
+   await rm(ownedPlugin,{recursive:true})
+  }
+  if(pluginSnapshot)await cp(pluginSnapshot,ownedPlugin,{recursive:true})
+  await log('coexist-restored.json',{existedBefore:!!pluginSnapshot,restored:true})
+ }
+ if(coexistNativeIDs.length){
+  assert((await readdir(join(home,'.local','state','sessionman','agents'))).length===0,'MCP sidecar agent directories remain after shutdown')
+  const listed=include=>{
+   const args=['--json','session','list','--source','agy','--all',...(include?['--include-subagents']:[])]
+   const result=spawnSync(binary,args,{cwd:work,env,encoding:'utf8',timeout:30000,maxBuffer:32*1024*1024})
+   assert(!result.error&&result.status===0,'native catalog command failed: '+result.stderr)
+   return JSON.parse(result.stdout)
+  }
+  const hidden=listed(false),included=listed(true)
+  for(const id of coexistNativeIDs){
+   assert(!JSON.stringify(hidden).includes(id),'native child session remains visible without sidecar by default: '+id)
+   assert(JSON.stringify(included).includes(id),'native marked session missing with --include-subagents: '+id)
+  }
+  await log('coexist-native-visibility.json',{ids:coexistNativeIDs,defaultHidden:true,explicitlyIncluded:true,sidecarsRemoved:true})
+  verdict.visibility='PASS: native parent/nested sessions retain first-line marker and hide by default after MCP sidecar cleanup; --include-subagents reveals both'
+  await log('verdict.json',verdict)
+  console.log(JSON.stringify({passed:true,agent,verdict,evidence:evidenceDir},null,2))
+ }
 }
 }

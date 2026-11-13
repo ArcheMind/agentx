@@ -4,11 +4,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/ArcheMind/agentx/internal/drivers"
 	"github.com/ArcheMind/agentx/internal/runtime"
+	"github.com/ArcheMind/agentx/internal/sessions"
 )
 
 type agyError struct {
@@ -102,7 +104,11 @@ func (d *Daemon) sendAgyLocked(message, delivery string) controlResponse {
 	} else {
 		state.text, state.results, state.terminal, state.failure, state.cancelled = "", nil, "", "", false
 		if state.role != "" {
-			message = state.role + "\n\n" + message
+			if body, marked := strings.CutPrefix(message, sessions.SubagentMarker+"\n"); marked {
+				message = sessions.SubagentMarker + "\n" + state.role + "\n\n" + body
+			} else {
+				message = state.role + "\n\n" + message
+			}
 		}
 	}
 	state.rpcMu.Lock()

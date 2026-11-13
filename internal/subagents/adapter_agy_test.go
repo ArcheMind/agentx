@@ -166,6 +166,10 @@ func TestAgySteerWaitsForAllInflightAndThenDeliversQueue(t *testing.T) {
 	if _, ok := fakeRequest(t, records, "initialize")["clientInfo"].(map[string]any)["version"]; ok {
 		t.Fatal("fabricated client version")
 	}
+	firstPrompt := fakeRequest(t, records, "session/prompt")["prompt"].([]any)[0].(map[string]any)["text"].(string)
+	if !strings.HasPrefix(firstPrompt, "[sm:subagent]\nRole: agy-test\nreview\n\nHOLD") {
+		t.Fatal("first native prompt lost its first-line subagent marker", firstPrompt)
+	}
 	if fakeRequest(t, records, "session/set_config_option")["value"] != "low" {
 		t.Fatal(records)
 	}
