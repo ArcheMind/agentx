@@ -131,7 +131,7 @@ func (d *Daemon) startAgyLocked() error {
 		args = append(args, "--include-default-customizations=false")
 	}
 	args = append(args, a.Option.Flags...)
-	stream, err := d.startStream(runtime.CommandPlan{Executable: "agy", Args: args, Cwd: a.Cwd})
+	stream, err := d.startStream(runtime.CommandPlan{Executable: "agy", Args: args, Cwd: a.Cwd, Env: d.agyEnvironment()})
 	if err != nil {
 		return err
 	}
@@ -189,13 +189,18 @@ func (d *Daemon) startAgyLocked() error {
 	return nil
 }
 
+func (d *Daemon) agyEnvironment() map[string]string {
+	env := map[string]string{"SM_MCP_CWD": d.agent.Cwd, "SM_HOST_AGENT_DIR": d.Dir, "SM_DELEGATION_DEPTH": fmt.Sprint(d.meta.DelegationDepth + 1)}
+	if home := os.Getenv("SM_SUBAGENT_HOME"); home != "" {
+		env["SM_SUBAGENT_HOME"] = home
+	}
+	return env
+}
+
 func (d *Daemon) agyMCPServers() []drivers.AgyMCPServer {
 	config := drivers.MCPConfig{Servers: map[string]drivers.MCPServer{}}
 	if d.meta.AxBinary != "" && d.meta.DelegationDepth < MaxDelegationDepth {
-		env := map[string]string{"SM_DELEGATION_DEPTH": fmt.Sprint(d.meta.DelegationDepth + 1), "SM_HOST_AGENT_DIR": d.Dir}
-		if home := os.Getenv("SM_SUBAGENT_HOME"); home != "" {
-			env["SM_SUBAGENT_HOME"] = home
-		}
+		env := d.agyEnvironment()
 		config.Servers["sessionman"] = drivers.MCPServer{Command: d.meta.AxBinary, Args: []string{"mcp", "serve"}, Env: env}
 	}
 	return drivers.AgyMCPServers(config)

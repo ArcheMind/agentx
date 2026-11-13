@@ -222,7 +222,7 @@ func continueAgy(cwd, model, resume, effort, systemPrompt string, yolo bool, mcp
 	if systemPrompt != "" {
 		return runtime.CommandPlan{}, fmt.Errorf("agy ordinary CLI has no verified append-system-prompt mechanism")
 	}
-	args := []string{"--print", "--output-format", "stream-json"}
+	args := []string{"--input-format", "stream-json", "--output-format", "stream-json"}
 	if resume != "" {
 		if !sessionID.MatchString(resume) {
 			return runtime.CommandPlan{}, fmt.Errorf("continue requires an agy conversation UUID")

@@ -1,6 +1,7 @@
 import {spawn, execFileSync} from 'node:child_process'
-import {mkdtemp, mkdir, writeFile, readFile, appendFile} from 'node:fs/promises'
+import {mkdtemp, mkdir, writeFile, readFile, appendFile, readdir, access} from 'node:fs/promises'
 import {tmpdir} from 'node:os'
+import {randomUUID} from 'node:crypto'
 import {join, resolve} from 'node:path'
 
 for (const agent of ['agy']) {
@@ -13,7 +14,15 @@ const home=await mkdtemp(join(tmpdir(),'agentx-live-duplex-'))
 const work=await mkdtemp(join(tmpdir(),'agentx-live-cwd-'))
 const dir=join(home,'.sessionman','presets','duplex-live');await mkdir(dir,{recursive:true})
 await writeFile(join(dir,'PRESET.md'),`---\nagent: ${agent}\nmodel: ${process.env.SM_AGY_MODEL || 'gemini-3.8-flash-low'}\n---\n\nDuplex live acceptance. Follow instructions exactly; keep replies to one short line.\n`)
+const normalDir=join(home,'.sessionman','presets','duplex-normal');await mkdir(normalDir,{recursive:true})
+await writeFile(join(normalDir,'PRESET.md'),`---\nagent: agy\nmodel: ${process.env.SM_AGY_MODEL || 'gemini-3.8-flash-low'}\nmode: normal\n---\n\nNative normal permission acceptance.\n`)
 const env={...process.env,SM_SUBAGENT_HOME:home,SM_LOG:'debug'}
+const agentDir=id=>join(home,'.local','state','sessionman','agents',id)
+const meta=async id=>JSON.parse(await readFile(join(agentDir(id),'meta.json'),'utf8'))
+const events=async id=>(await Promise.all((await readdir(join(agentDir(id),'events'))).filter(x=>x.endsWith('.json')).map(async file=>JSON.parse(await readFile(join(agentDir(id),'events',file),'utf8'))))).sort((a,b)=>a.seq-b.seq)
+const nativeLog=async id=>(await readFile(join(agentDir(id),'daemon.log'),'utf8')).split('\n').flatMap(line=>{try{return [JSON.parse(line)]}catch{return []}})
+const nativeMessages=async id=>(await nativeLog(id)).filter(x=>x.event==='stream_line').map(x=>({direction:x.direction,...JSON.parse(x.line)}))
+const checkpoint=async(phase)=>{console.log(JSON.stringify({agent,phase,evidence:evidenceDir}));await log('progress.jsonl',{phase})}
 const child=spawn(binary,['mcp','serve'],{cwd:work,env,stdio:['pipe','pipe','pipe']})
 let pending='',counter=0
 const requests=new Map()
@@ -46,6 +55,21 @@ try{
  assert(woke1.includes('kind=report')&&woke1.includes('Report status: completed.'),'(a) no completed report: '+woke1)
  assert(woke1.includes('MARKER-ALPHA-42')&&woke1.includes('DONE'),'(a) steer not consumed in the same turn: '+woke1)
  verdict.a='PASS: steer delivered mid-turn, single report contains DONE + MARKER-ALPHA-42'
+ const firstReport=(await events(arm1.id)).find(x=>x.kind==='report')
+ const prompts=firstReport.usage?.prompts
+ assert(Array.isArray(prompts)&&prompts.length===2,'steered usage must retain both native RPCs: '+JSON.stringify(firstReport))
+ assert(new Set(prompts.map(x=>x.id)).size===2,'usage RPC identifiers are not distinct')
+ const messages=await nativeMessages(arm1.id)
+ for(const prompt of prompts){
+  const native=messages.find(x=>x.direction==='out'&&x.id===prompt.id&&x.result?.usage)
+  assert(native,'native usage response missing for RPC '+prompt.id)
+  assert(JSON.stringify(native.result.usage)===JSON.stringify(prompt.usage),'raw native usage changed for RPC '+prompt.id)
+  assert(prompt.stopReason===native.result.stopReason,'native terminal reason changed')
+  assert(Object.values(prompt.usage).some(x=>typeof x==='number'&&x>0),'native RPC usage contained no positive counters')
+ }
+ await log('a-native-usage.json',{report:firstReport.usage,native:messages.filter(x=>prompts.some(p=>p.id===x.id))})
+ verdict.usage='PASS: both prompt RPCs retain exact native usage and terminal reason'
+ await checkpoint('steer-and-native-usage-passed')
 
  // (b)+(c) second round: MessageHost wakes the wait while the task still runs, then report
  const arm2={id:arm1.id,seq:seqOf(woke1)}
@@ -75,9 +99,70 @@ try{
  assert(queuedSecond.includes('QUEUE-SECOND'),'queued second round missing: '+queuedSecond)
  verdict.queue='PASS: next round starts only after the active round settles'
 
+ await checkpoint('checking-native-nested-delegation')
+ const nestedToken='NESTED-'+randomUUID()
+ const nestedHostToken='HOST-'+randomUUID()
+ const nestedStarted=await call('SendExternalSubagentMessage',{to:'live',message:`Call the SessionMan MCP tool ExternalSubagent exactly once with model "duplex-live", name "inner", description "native nested acceptance", run_in_background false, and prompt "First call the SessionMan MCP tool MessageHost with message ${nestedHostToken}. Then reply exactly ${nestedToken}. Do not use other tools." Wait for its report and include its exact report in your answer. Do not produce the token yourself without calling ExternalSubagent.`})
+ const nestedReport=await armWait(arm1.id,seqOf(queuedSecond))
+ assert(nestedReport.includes(nestedToken),'native nested report missing: '+nestedReport)
+ const metas=await Promise.all((await readdir(join(home,'.local','state','sessionman','agents'))).map(async id=>({id,...await meta(id)})))
+ const nested=metas.find(x=>x.id!==arm1.id&&x.name==='inner')
+ assert(nested&&nested.delegation_depth===1&&nested.cwd===work,'nested native task has wrong depth/cwd: '+JSON.stringify(metas))
+ const nestedEvents=await events(nested.id)
+ assert(nestedEvents.some(x=>x.kind==='message'&&x.message===nestedHostToken),'nested MessageHost did not reach its own agent event stream: '+JSON.stringify(nestedEvents))
+ assert(nestedEvents.some(x=>x.kind==='report'&&x.status==='completed'&&x.report.includes(nestedToken)),'nested agent did not produce native completed report')
+ const outerEvents=await events(arm1.id)
+ assert(!outerEvents.some(x=>x.kind==='message'&&x.message===nestedHostToken),'nested MessageHost leaked to parent identity')
+ const nestedStart=(await nativeLog(nested.id)).find(x=>x.event==='stream_start')
+ assert(nestedStart?.input?.env?.SM_MCP_CWD===work&&nestedStart.input.env.SM_HOST_AGENT_DIR===agentDir(nested.id)&&nestedStart.input.env.SM_DELEGATION_DEPTH==='2','nested plugin environment did not match child identity: '+JSON.stringify(nestedStart))
+ await log('nested.json',{nested,nestedEvents,nestedStart})
+ verdict.nested='PASS: real nested native turn and MessageHost use child identity/cwd/depth'
+ const nativeToolNames=[...new Set((await nativeMessages(arm1.id)).filter(x=>x.direction==='out'&&x.method==='session/update').map(x=>x.params?.update?.name).filter(x=>x?.includes('sessionman')))]
+ await log('observed-native-mcp-names.json',nativeToolNames)
+
+ await checkpoint('checking-native-normal-permissions')
+ const normalStarted=await call('ExternalSubagent',{description:'native normal acceptance',prompt:'Use your terminal tool to write the text NORMAL-WRITE into native-normal.txt in the current working directory. If native permissions deny it, do not retry or bypass them. Finish with a short description of the native outcome.',name:'normal',model:'duplex-normal',run_in_background:true})
+ const normalArm=rearm(normalStarted)
+ const normalReport=await armWait(normalArm.id,normalArm.seq)
+ const normalEvent=(await events(normalArm.id)).filter(x=>x.kind==='report').at(-1)
+ assert(['completed','cancelled'].includes(normalEvent?.status),'normal run did not settle through native permissions: '+normalReport)
+ const normalLog=await nativeLog(normalArm.id)
+ const normalStart=normalLog.find(x=>x.event==='stream_start')
+ const yoloStart=(await nativeLog(arm1.id)).find(x=>x.event==='stream_start')
+ assert(normalStart&&!normalStart.input.args.includes('--dangerously-skip-permissions'),'normal missing native start or enabled bypass')
+ assert(yoloStart?.input?.args.includes('--dangerously-skip-permissions'),'yolo omitted native bypass')
+ assert(!(await nativeMessages(normalArm.id)).some(x=>x.method==='session/set_mode'),'normal overwrote native permission mode')
+ await log('normal-yolo.json',{normalEvent,normalStart,yoloStart,permissionRequests:(await nativeMessages(normalArm.id)).filter(x=>x.method==='session/request_permission')})
+ verdict.modes='PASS: real normal turn settles under native configuration; yolo uses only native bypass flag'
+
+ await checkpoint('recording-native-cold-recovery-token')
+ const coldToken='COLD-'+randomUUID()
+ await call('SendExternalSubagentMessage',{to:'live',message:`Remember this exact cold recovery token for a later task: ${coldToken}. Reply exactly STORED, without using tools.`})
+ const stored=await armWait(arm1.id,seqOf(nestedReport))
+ assert(stored.includes('STORED'),'cold token store failed: '+stored)
+ const beforeCold=await meta(arm1.id)
+ assert(beforeCold.session,'native session ID missing before cold recovery')
+ await checkpoint('waiting-for-idle-daemon-to-exit')
+ const coldDeadline=Date.now()+80000
+ let daemonGone=false
+ while(Date.now()<coldDeadline){try{await access(join(agentDir(arm1.id),'daemon.pid'))}catch{daemonGone=true;break}await sleep(500)}
+ assert(daemonGone,'idle daemon did not exit before cold recovery')
+ const coldSent=await call('SendExternalSubagentMessage',{to:'live',message:'Return exactly the cold recovery token I asked you to remember in the previous task. Do not use tools.'})
+ assert(coldSent.includes('disposition: started'),'cold recovery did not start')
+ const recalled=await armWait(arm1.id,seqOf(stored))
+ assert(recalled.includes(coldToken),'same-session cold memory retrieval failed: '+recalled)
+ const afterCold=await meta(arm1.id)
+ assert(afterCold.session===beforeCold.session&&afterCold.native_id===beforeCold.native_id,'cold recovery replaced native session ID')
+ const coldMessages=await nativeMessages(arm1.id)
+ const loads=coldMessages.filter(x=>x.direction==='in'&&x.method==='session/load')
+ assert(loads.some(x=>x.params.sessionId===beforeCold.session),'product cold recovery did not issue native session/load with original ID')
+ assert(coldMessages.filter(x=>x.direction==='in'&&x.method==='session/new').length===1,'cold recovery created a replacement session')
+ await log('cold-recovery.json',{beforeCold,afterCold,loads,recalled})
+ verdict.cold='PASS: exited daemon cold-loads original native ID and retrieves unrepeated token'
+ await checkpoint('checking-native-stop-process-tree')
 
  // (d) stop mid-run: cancelled report, daemon gone, no orphan native processes
- const psBefore=()=>execFileSync('ps',['-axo','pid=,ppid=,command='],{encoding:'utf8'})
+ const psBefore=()=>execFileSync('ps',['-axo','pid=,ppid='],{encoding:'utf8'})
  const round3=await call('SendExternalSubagentMessage',{to:'live',message:"New task: use Bash to run in foreground: python3 -c 'import time; time.sleep(120)' . Reply NEVER when done."})
  await log('d-send.txt',round3)
  await sleep(10000)

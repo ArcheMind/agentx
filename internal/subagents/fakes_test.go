@@ -40,7 +40,7 @@ func fakeRecorder() func(fakeRecord) {
 
 func fakeSpawnRecord(rec func(fakeRecord)) {
 	env := map[string]string{}
-	for _, key := range []string{"CODEX_HOME", "PI_CODING_AGENT_DIR", "RUST_LOG", "SM_BINARY", "SM_DELEGATION_DEPTH", "SM_HOST_AGENT_DIR"} {
+	for _, key := range []string{"CODEX_HOME", "PI_CODING_AGENT_DIR", "RUST_LOG", "SM_BINARY", "SM_DELEGATION_DEPTH", "SM_HOST_AGENT_DIR", "SM_MCP_CWD"} {
 		if value, ok := os.LookupEnv(key); ok {
 			env[key] = value
 		}

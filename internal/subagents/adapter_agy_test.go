@@ -247,9 +247,9 @@ func TestAgyStopTerminatesDetachedDescendant(t *testing.T) {
 }
 
 func TestAgyNestedMCPAndUnknownExecutor(t *testing.T) {
-	d := &Daemon{Dir: "/agent", meta: AgentMeta{AxBinary: "/sm", DelegationDepth: 1}}
+	d := &Daemon{Dir: "/agent", agent: &ExternalSubagentState{Cwd: "/child-work"}, meta: AgentMeta{AxBinary: "/sm", DelegationDepth: 1}}
 	mount := d.agyMCPServers()
-	if len(mount) != 1 || mount[0].Command != "/sm" || len(mount[0].Env) != 2 {
+	if len(mount) != 1 || mount[0].Command != "/sm" || len(mount[0].Env) != 3 {
 		t.Fatal(mount)
 	}
 	d.agent = &ExternalSubagentState{Option: presets.Preset{Agent: "unknown"}}
@@ -293,9 +293,12 @@ func TestAgyNormalLeavesNativePermissionConfiguration(t *testing.T) {
 	}
 	preset.Mode = ModeNormal
 	savePreset(t, s.Home, preset)
-	startAgyTest(t, s, "normal", false)
+	a := startAgyTest(t, s, "normal", false)
 	records := readFakeRecords(t, record)
 	for _, record := range records {
+		if record.Kind == "spawn" && (record.Env["SM_MCP_CWD"] != a.Cwd || record.Env["SM_HOST_AGENT_DIR"] != a.Dir || record.Env["SM_DELEGATION_DEPTH"] != "1") {
+			t.Fatal(record)
+		}
 		if record.Kind == "spawn" && strings.Contains(strings.Join(record.Argv, " "), "--dangerously-skip-permissions") {
 			t.Fatal(record)
 		}
@@ -327,5 +330,19 @@ func TestAgyRequiresNativeTerminalReason(t *testing.T) {
 				t.Fatal("implicit retry")
 			}
 		})
+	}
+}
+
+func TestAgyPluginEnvironmentOverridesParentIdentity(t *testing.T) {
+	t.Setenv("SM_MCP_CWD", "/parent-work")
+	t.Setenv("SM_HOST_AGENT_DIR", "/parent-agent")
+	t.Setenv("SM_DELEGATION_DEPTH", "0")
+	t.Setenv("SM_SUBAGENT_HOME", "/preset-home")
+	d := &Daemon{Dir: "/child-agent", agent: &ExternalSubagentState{Cwd: "/child-work"}, meta: AgentMeta{DelegationDepth: 1}}
+	env := d.agyEnvironment()
+	for key, want := range map[string]string{"SM_MCP_CWD": "/child-work", "SM_HOST_AGENT_DIR": "/child-agent", "SM_DELEGATION_DEPTH": "2", "SM_SUBAGENT_HOME": "/preset-home"} {
+		if env[key] != want {
+			t.Fatal(env)
+		}
 	}
 }

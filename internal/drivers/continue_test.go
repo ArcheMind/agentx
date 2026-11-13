@@ -166,7 +166,7 @@ func TestAgyContinueUsesNativeConversationAndRejectsUnverifiedMount(t *testing.T
 		t.Fatal(err)
 	}
 	args := strings.Join(plan.Args, " ")
-	for _, want := range []string{"--print --output-format stream-json", "--conversation " + continueUUID, "--effort high", "--model native-model", "--dangerously-skip-permissions"} {
+	for _, want := range []string{"--input-format stream-json --output-format stream-json", "--conversation " + continueUUID, "--effort high", "--model native-model", "--dangerously-skip-permissions"} {
 		if !strings.Contains(args, want) {
 			t.Fatal(args, want)
 		}

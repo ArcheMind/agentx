@@ -16,7 +16,7 @@ func ExecPlan(agent, cwd, model, resume string) (runtime.CommandPlan, error) {
 	var args []string
 	switch agent {
 	case "agy":
-		args = []string{"--print", "--output-format", "stream-json"}
+		args = []string{"--input-format", "stream-json", "--output-format", "stream-json"}
 		if resume != "" {
 			args = append(args, "--conversation", resume)
 		}
