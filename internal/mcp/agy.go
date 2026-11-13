@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 )
 
@@ -29,7 +30,7 @@ func PrepareAgyPlugin(home, executable string, write bool) (string, error) {
 	if !write {
 		return root, nil
 	}
-	command := "'" + strings.ReplaceAll(executable, "'", "'\"'\"'") + "' hook __agy_dispatch --event "
+	command := agyShellExecutable(executable, runtime.GOOS) + " hook __agy_dispatch --event "
 	events := map[string]any{}
 	for _, event := range []string{"SessionStart", "Stop"} {
 		events[event] = []any{map[string]any{"type": "command", "command": command + event}}
@@ -88,4 +89,11 @@ func PrepareAgyPlugin(home, executable string, write bool) (string, error) {
 		}
 	}
 	return root, nil
+}
+
+func agyShellExecutable(value, platform string) string {
+	if platform == "windows" {
+		return `"` + strings.ReplaceAll(value, `"`, `\"`) + `"`
+	}
+	return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'"
 }

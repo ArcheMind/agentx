@@ -26,7 +26,10 @@ type sessionGroup struct {
 func (a App) recentSessionGroups(includeSubagents bool) ([]sessionGroup, error) {
 	items, err := a.Sessions.RecentGroups("", recentSessionsPerAgent, includeSubagents)
 	if err != nil {
-		return nil, err
+		if !sessions.IsCatalogError(err) {
+			return nil, err
+		}
+		fmt.Fprintf(a.Stderr, "warning: partial session catalog: %s\n", err)
 	}
 	return []sessionGroup{
 		{Heading: "Current workspace", Items: items.Current},

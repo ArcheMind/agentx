@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -159,7 +160,11 @@ func (a App) sessionContinue(ctx context.Context, args []string) error {
 		}
 		prepareAgyNativePlan("agy", &plan)
 	}
-	result, execErr := a.Runner.Execute(ctx, plan, runtime.ExecuteOptions{Stdin: strings.NewReader(prompt), CancelProcessGroup: true})
+	input := io.Reader(strings.NewReader(prompt))
+	if agent.ID == "agy" {
+		input = agyPromptInput(prompt)
+	}
+	result, execErr := a.Runner.Execute(ctx, plan, runtime.ExecuteOptions{Stdin: input, CancelProcessGroup: true})
 	if ctx.Err() != nil {
 		return fmt.Errorf("session continue cancelled: %w", ctx.Err())
 	}

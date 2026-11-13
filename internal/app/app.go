@@ -670,7 +670,10 @@ func (a App) sessionList(args []string) error {
 	}
 	items, err := a.Sessions.List(options)
 	if err != nil {
-		return err
+		if !sessions.IsCatalogError(err) {
+			return err
+		}
+		fmt.Fprintf(a.Stderr, "warning: partial session catalog: %s\n", err)
 	}
 	if a.Output != OutputText {
 		return writeStructured(a.Stdout, items, a.Output)

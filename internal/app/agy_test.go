@@ -2,6 +2,10 @@ package app
 
 import (
 	"bytes"
+	"context"
+	"github.com/ArcheMind/agentx/internal/runtime"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -53,5 +57,39 @@ func TestAgyContinueNativePath(t *testing.T) {
 	path, err := application.continueSessionFile("agy", "/workspace", "id", "")
 	if err != nil || path != "/home/native/.gemini/antigravity-cli/conversations/id.db" {
 		t.Fatalf("%s %v", path, err)
+	}
+}
+
+func TestAgyMCPRequiresExplicitWorkspace(t *testing.T) {
+	t.Setenv("SM_MCP_CWD", "")
+	if err := (App{}).agyMCPServe(context.Background()); err == nil || !strings.Contains(err.Error(), "start agy through SessionMan") {
+		t.Fatalf("%v", err)
+	}
+	plan := runtime.CommandPlan{Cwd: t.TempDir(), Env: map[string]string{"existing": "kept"}}
+	prepareAgyNativePlan("agy", &plan)
+	if plan.Env["SM_MCP_CWD"] != plan.Cwd || plan.Env["existing"] != "kept" {
+		t.Fatalf("%+v", plan)
+	}
+}
+
+func TestAgyCatalogPartialWarningKeepsUsableList(t *testing.T) {
+	home := t.TempDir()
+	valid := sessions.Session{Workspace: t.TempDir(), Messages: []sessions.Message{{ID: "u", Role: "user", Content: []sessions.ContentBlock{{Type: "text", Text: "usable transcript"}}}}}
+	id, err := sessions.WriteAgySessionFile(valid, home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bad := filepath.Join(home, ".gemini", "antigravity-cli", "conversations", "broken.db")
+	if err := os.WriteFile(bad, []byte("broken SQLite"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr bytes.Buffer
+	application := New(false, strings.NewReader(""), &stdout, &stderr)
+	application.Sessions = sessions.Service{HomeDir: home}
+	if err := application.Run(context.Background(), []string{"--json", "session", "list", "--all"}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(stdout.String(), id) || !strings.Contains(stderr.String(), "partial session catalog") || !strings.Contains(stderr.String(), "broken.db") {
+		t.Fatalf("stdout=%s stderr=%s", stdout.String(), stderr.String())
 	}
 }

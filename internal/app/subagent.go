@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -77,7 +78,15 @@ func (a App) execAgent(ctx context.Context, args []string) error {
 	}
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	result, err := a.Runner.Execute(ctx, plan, runtime.ExecuteOptions{Stdin: a.Stdin, Stdout: a.Stdout, Stderr: a.Stderr, CancelProcessGroup: true})
+	input := a.Stdin
+	if args[0] == "agy" {
+		prompt, err := io.ReadAll(input)
+		if err != nil {
+			return err
+		}
+		input = agyPromptInput(string(prompt))
+	}
+	result, err := a.Runner.Execute(ctx, plan, runtime.ExecuteOptions{Stdin: input, Stdout: a.Stdout, Stderr: a.Stderr, CancelProcessGroup: true})
 	if err != nil {
 		return &ExitError{Code: result.ExitCode, Err: err}
 	}

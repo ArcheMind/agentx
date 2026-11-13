@@ -91,6 +91,9 @@ func readConfig(path string, scope Scope) ([]Hook, []Warning, error) {
 	}
 	hooksValue, ok := root["hooks"]
 	if !ok {
+		if isAgyNativeConfig(root) {
+			return nil, []Warning{{Source: path, Message: "native agy hook profiles are preserved and loaded by agy; not projected as portable hooks"}}, nil
+		}
 		return nil, nil, fmt.Errorf("invalid hook configuration %s: hooks is required", path)
 	}
 	var events map[string]json.RawMessage
@@ -258,4 +261,33 @@ func portableMatcher(value string) bool {
 		}
 	}
 	return !strings.Contains(value, "*")
+}
+
+func isAgyNativeConfig(root map[string]json.RawMessage) bool {
+	if len(root) == 0 {
+		return false
+	}
+	known := map[string]bool{"SessionStart": true, "PreInvocation": true, "PostInvocation": true, "PreToolUse": true, "PostToolUse": true, "Stop": true}
+	count := 0
+	for _, profile := range root {
+		var events map[string][]struct {
+			Type    string `json:"type"`
+			Command string `json:"command"`
+		}
+		if err := json.Unmarshal(profile, &events); err != nil || len(events) == 0 {
+			return false
+		}
+		for event, handlers := range events {
+			if !known[event] {
+				return false
+			}
+			for _, handler := range handlers {
+				if handler.Type != "command" || strings.TrimSpace(handler.Command) == "" {
+					return false
+				}
+				count++
+			}
+		}
+	}
+	return count > 0
 }

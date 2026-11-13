@@ -47,3 +47,31 @@ func TestAgyHookUsesActualWorkspace(t *testing.T) {
 		t.Fatalf("%+v %v", list, err)
 	}
 }
+
+func TestAgyHookOutputUsesNativeContract(t *testing.T) {
+	output, err := encodeOutput("agy", "SessionStart", "notice", "portable context", "", "")
+	if err != nil || !strings.Contains(output, `"injectSteps"`) || strings.Contains(output, "hookSpecificOutput") || !strings.Contains(output, "portable context") {
+		t.Fatalf("%s %v", output, err)
+	}
+	output, err = encodeOutput("agy", "Stop", "", "", "block", "finish first")
+	if err != nil || !strings.Contains(output, `"decision":"continue"`) || !strings.Contains(output, "finish first") {
+		t.Fatalf("%s %v", output, err)
+	}
+}
+
+func TestAgyNativeProfileIsPreserved(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "hooks.json")
+	data := []byte(`{"native-project":{"PreInvocation":[{"type":"command","command":"echo native"}]}}`)
+	if err := os.WriteFile(path, data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	hooks, warnings, err := readConfig(path, ScopeProject)
+	if err != nil || len(hooks) != 0 || len(warnings) != 1 || !strings.Contains(warnings[0].Message, "native agy") {
+		t.Fatalf("%+v %+v %v", hooks, warnings, err)
+	}
+	actual, err := os.ReadFile(path)
+	if err != nil || string(actual) != string(data) {
+		t.Fatal("native config changed")
+	}
+}

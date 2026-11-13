@@ -1,9 +1,12 @@
 package app
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/ArcheMind/agentx/internal/runtime"
 	"github.com/ArcheMind/agentx/internal/sessions"
@@ -52,4 +55,9 @@ func prepareAgyNativePlan(agent string, plan *runtime.CommandPlan) {
 		plan.Env = map[string]string{}
 	}
 	plan.Env["SM_MCP_CWD"] = plan.Cwd
+}
+
+func agyPromptInput(prompt string) io.Reader {
+	data, _ := json.Marshal(map[string]any{"event": "user", "message": map[string]string{"content": prompt}})
+	return strings.NewReader(string(data) + "\n")
 }

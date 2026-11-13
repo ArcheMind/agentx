@@ -48,3 +48,15 @@ func TestAgyPluginForeignCollision(t *testing.T) {
 		t.Fatal("foreign plugin overwritten")
 	}
 }
+
+func TestAgyHookExecutableQuoting(t *testing.T) {
+	cases := []struct{ value, platform, want string }{
+		{`C:\Program Files\SessionMan\sm.exe`, "windows", `"C:\Program Files\SessionMan\sm.exe"`},
+		{"/Applications/Session Man's/sm", "darwin", "'/Applications/Session Man'\"'\"'s/sm'"},
+	}
+	for _, test := range cases {
+		if got := agyShellExecutable(test.value, test.platform); got != test.want {
+			t.Fatalf("got %q want %q", got, test.want)
+		}
+	}
+}
