@@ -55,7 +55,6 @@ type nativeEvent struct {
 	AgentType            string `json:"agent_type"`
 	PermissionMode       string `json:"permission_mode"`
 	LastAssistantMessage string `json:"last_assistant_message"`
-	PromptResponse       string `json:"prompt_response"`
 	Error                string `json:"error"`
 	StartedAt            string `json:"started_at"`
 	EndedAt              string `json:"ended_at"`
@@ -142,9 +141,6 @@ func Decode(agent, event string, payload []byte) (Event, error) {
 		}
 		result.Outcome = normalizeOutcome(event, native.Outcome, native.Error)
 		result.LastAssistantMessage = native.LastAssistantMessage
-		if result.LastAssistantMessage == "" && agent == "gemini" {
-			result.LastAssistantMessage = native.PromptResponse
-		}
 	}
 	return result, nil
 }
@@ -154,7 +150,6 @@ func eventName(agent, event string) (Name, error) {
 		"agy":    {"SessionStart": SessionStart, "Stop": TurnAfter},
 		"claude": {"SessionStart": SessionStart, "SessionEnd": SessionEnd, "UserPromptSubmit": TurnBefore, "Stop": TurnAfter, "StopFailure": TurnAfter},
 		"codex":  {"SessionStart": SessionStart, "SessionEnd": SessionEnd, "UserPromptSubmit": TurnBefore, "Stop": TurnAfter, "Interrupt": TurnAfter},
-		"gemini": {"SessionStart": SessionStart, "SessionEnd": SessionEnd, "BeforeAgent": TurnBefore, "AfterAgent": TurnAfter},
 		"pi":     {"session_start": SessionStart, "session_shutdown": SessionEnd, "input": TurnBefore, "agent_settled": TurnAfter},
 	}
 	agentEvents, ok := events[agent]

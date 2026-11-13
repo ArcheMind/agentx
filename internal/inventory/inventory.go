@@ -249,11 +249,6 @@ func UserDirectory(home, agent string) string {
 		variable, fallback = "PI_CODING_AGENT_DIR", filepath.Join(home, ".pi", "agent")
 	case "agy":
 		return filepath.Join(home, ".gemini", "config")
-	case "gemini":
-		if value := os.Getenv("GEMINI_CLI_HOME"); value != "" {
-			home = value
-		}
-		return filepath.Join(home, ".gemini")
 	case "opencode":
 		base := os.Getenv("XDG_CONFIG_HOME")
 		if base == "" {

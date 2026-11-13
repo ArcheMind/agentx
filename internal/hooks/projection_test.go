@@ -49,16 +49,6 @@ func TestPortableHooksProjectThroughEachNativeLoadingSurface(t *testing.T) {
 				t.Fatalf("codex artifacts = %#v", projection.Artifacts)
 			}
 		}},
-		{"gemini", func(t *testing.T, projection hooks.Projection) {
-			if len(projection.Args) != 0 || len(projection.Artifacts) != 1 {
-				t.Fatalf("projection = %#v", projection)
-			}
-			root := projection.Artifacts[0]
-			assertFileContains(t, filepath.Join(root, "gemini-extension.json"), `"name": "sessionman-hooks"`)
-			content := readFile(t, filepath.Join(root, "hooks", "hooks.json"))
-			assertContains(t, content, `"BeforeAgent"`, `"AfterAgent"`)
-			assertProjectedHandler(t, content, "gemini", "UserPromptSubmit", hooks.Handler{Command: "project-before", Timeout: 600, Project: project})
-		}},
 		{"pi", func(t *testing.T, projection hooks.Projection) {
 			if len(projection.Args) != 2 || projection.Args[0] != "--extension" {
 				t.Fatalf("args = %#v", projection.Args)
@@ -108,11 +98,11 @@ func TestHookProjectionDryRunDoesNotWriteAndOwnedArtifactIsRequired(t *testing.T
 		t.Fatalf("dry-run artifact stat error = %v", err)
 	}
 
-	geminiRoot := filepath.Join(home, ".gemini", "extensions", "sessionman-hooks")
-	if err := os.MkdirAll(geminiRoot, 0o755); err != nil {
+	claudeRoot := filepath.Join(home, ".agents", ".sessionman", "hooks", "claude")
+	if err := os.MkdirAll(claudeRoot, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.Prepare("gemini", "/opt/sessionman/bin/sm", false); err == nil || !strings.Contains(err.Error(), "non-SessionMan") {
+	if _, err := service.Prepare("claude", "/opt/sessionman/bin/sm", false); err == nil || !strings.Contains(err.Error(), "non-SessionMan") {
 		t.Fatalf("collision error = %v", err)
 	}
 }
@@ -123,28 +113,28 @@ func TestEmptyConfigurationRemovesOnlyOwnedProjection(t *testing.T) {
 	path := filepath.Join(project, ".agents", "hooks.json")
 	writeConfig(t, path, `{"hooks":{"SessionStart":[{"hooks":[{"type":"command","command":"start"}]}]}}`)
 	service := hooks.Service{Home: home, Project: project}
-	projection, err := service.Prepare("gemini", "/opt/sessionman/bin/sm", true)
+	projection, err := service.Prepare("claude", "/opt/sessionman/bin/sm", true)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Remove(path); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.Prepare("gemini", "/opt/sessionman/bin/sm", true); err != nil {
+	if _, err := service.Prepare("claude", "/opt/sessionman/bin/sm", true); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(projection.Artifacts[0]); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("stale artifact stat error = %v", err)
 	}
 
-	userRoot := filepath.Join(home, ".gemini", "extensions", "sessionman-hooks")
+	userRoot := filepath.Join(home, ".agents", ".sessionman", "hooks", "claude")
 	if err := os.MkdirAll(userRoot, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(userRoot, "keep"), []byte("user-owned"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.Prepare("gemini", "/opt/sessionman/bin/sm", true); err != nil {
+	if _, err := service.Prepare("claude", "/opt/sessionman/bin/sm", true); err != nil {
 		t.Fatal(err)
 	}
 	assertFileContains(t, filepath.Join(userRoot, "keep"), "user-owned")
@@ -182,7 +172,6 @@ func TestDispatchPresentsCanonicalCommandIOAcrossAgents(t *testing.T) {
 	}{
 		{"claude", `{"hook_event_name":"UserPromptSubmit","session_id":"s1","cwd":"` + project + `","prompt":"review this"}`, "UserPromptSubmit"},
 		{"codex", `{"hook_event_name":"UserPromptSubmit","session_id":"s1","cwd":"` + project + `","prompt":"review this"}`, "UserPromptSubmit"},
-		{"gemini", `{"hook_event_name":"BeforeAgent","session_id":"s1","cwd":"` + project + `","prompt":"review this"}`, "BeforeAgent"},
 		{"pi", `{"hook_event_name":"input","session_id":"s1","cwd":"` + project + `","text":"review this"}`, "UserPromptSubmit"},
 	}
 	for _, test := range tests {
@@ -232,7 +221,6 @@ func TestUserPromptBlockUsesEachAgentDecision(t *testing.T) {
 	}{
 		{"claude", `{"hook_event_name":"UserPromptSubmit","session_id":"s1","cwd":"/work","prompt":"stop"}`, "block"},
 		{"codex", `{"hook_event_name":"UserPromptSubmit","session_id":"s1","cwd":"/work","prompt":"stop"}`, "block"},
-		{"gemini", `{"hook_event_name":"BeforeAgent","session_id":"s1","cwd":"/work","prompt":"stop"}`, "deny"},
 		{"pi", `{"hook_event_name":"input","session_id":"s1","cwd":"/work","text":"stop"}`, "block"},
 	}
 	for _, test := range tests {
@@ -362,4 +350,31 @@ func decodeHandler(t *testing.T, suffix string) hooks.Handler {
 		t.Fatal(err)
 	}
 	return handler
+}
+
+func TestGeminiHooksAreNotProjectedOrDispatched(t *testing.T) {
+	home, project := t.TempDir(), t.TempDir()
+	legacyRoot := filepath.Join(home, ".gemini", "extensions", "sessionman-hooks")
+	writeConfig(t, filepath.Join(legacyRoot, ".sessionman-owned"), "sessionman hooks projection\n")
+	writeConfig(t, filepath.Join(legacyRoot, "keep"), "native artifact")
+	service := hooks.Service{Home: home, Project: project}
+	for _, configured := range []bool{false, true} {
+		if configured {
+			writeConfig(t, filepath.Join(project, ".agents", "hooks.json"), `{"hooks":{"SessionStart":[{"hooks":[{"type":"command","command":"start"}]}]}}`)
+		}
+		projection, err := service.Prepare("gemini", "/opt/sessionman/bin/sm", true)
+		if err != nil || len(projection.Args) != 0 || len(projection.Artifacts) != 0 {
+			t.Fatalf("legacy projection = %+v, %v", projection, err)
+		}
+		assertFileContains(t, filepath.Join(legacyRoot, "keep"), "native artifact")
+	}
+	for _, event := range []string{"SessionStart", "SessionEnd", "BeforeAgent", "AfterAgent"} {
+		if _, err := hooks.Decode("gemini", event, []byte(`{}`)); err == nil {
+			t.Fatalf("legacy event %s accepted", event)
+		}
+	}
+	runner := &recordingHookRunner{}
+	if _, err := hooks.DispatchOne(context.Background(), runner, "gemini", "UserPromptSubmit", []byte(`{}`), hooks.Handler{Command: "policy"}); err == nil || len(runner.inputs) != 0 {
+		t.Fatalf("legacy dispatch error = %v, inputs = %+v", err, runner.inputs)
+	}
 }

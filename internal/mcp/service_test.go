@@ -21,10 +21,10 @@ func TestDiscoveryF01F03F04F07F09F10(t *testing.T) {
 	t.Setenv("CODEX_HOME", filepath.Join(home, ".codex"))
 	put(t, filepath.Join(home, ".claude.json"), `{"mcpServers":{"alpha":{"command":"x"}},"projects":{`+quote(project)+`:{"mcpServers":{"local":{"command":"x"}}},`+quote(other)+`:{"mcpServers":{"foreign":{}}}}}`)
 	put(t, filepath.Join(project, ".mcp.json"), `{"mcpServers":{"alpha":{"command":"x"}}}`)
-	put(t, filepath.Join(project, ".gemini", "settings.json"), `{"mcpServers":{}}`)
+	put(t, filepath.Join(project, ".agents", "mcp_config.json"), `{"mcpServers":{}}`)
 	put(t, filepath.Join(home, ".codex", "config.toml"), "[mcp_servers.'alpha']\ncommand='x'\n")
 	put(t, filepath.Join(project, "opencode.jsonc"), "{ // comment\n \"mcp\": {\"open\": {\"type\":\"local\",\"command\":[\"x\"],},},}")
-	put(t, filepath.Join(home, ".gemini", "settings.json"), `{"mcpServers":`)
+	put(t, filepath.Join(home, ".gemini", "config", "mcp_config.json"), `{"mcpServers":`)
 	result := (Service{Home: home, Project: project}).List()
 	counts := map[string]int{}
 	empty, failed, unsupported := false, false, false
@@ -61,7 +61,7 @@ func TestMCPLinkProjectionsF03(t *testing.T) {
 	home, project := t.TempDir(), t.TempDir()
 	path := filepath.Join(project, ".mcp.json")
 	put(t, path, `{"mcpServers":{"alpha":{"command":"x"}}}`)
-	projection := filepath.Join(project, ".gemini", "settings.json")
+	projection := filepath.Join(project, ".agents", "mcp_config.json")
 	if err := os.MkdirAll(filepath.Dir(projection), 0755); err != nil {
 		t.Fatal(err)
 	}
@@ -119,5 +119,31 @@ func TestClaudeConfigOverride(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("override missing")
+	}
+}
+
+func TestCodexOverridePreservesAgyRootsAndIgnoresGeminiCLI(t *testing.T) {
+	home, project, codex, legacy := t.TempDir(), t.TempDir(), t.TempDir(), t.TempDir()
+	t.Setenv("CODEX_HOME", codex)
+	t.Setenv("GEMINI_CLI_HOME", legacy)
+	put(t, filepath.Join(codex, "config.toml"), "[mcp_servers.codex]\ncommand='native'\n")
+	put(t, filepath.Join(home, ".gemini", "config", "mcp_config.json"), `{"mcpServers":{"agy":{}}}`)
+	put(t, filepath.Join(home, ".gemini", "config", "plugins", "native", "mcp_config.json"), `{"mcpServers":{"agy-plugin":{}}}`)
+	for _, base := range []string{home, project, legacy} {
+		put(t, filepath.Join(base, ".gemini", "settings.json"), `{"mcpServers":{"legacy":{}}}`)
+	}
+	found := map[string]string{}
+	for _, source := range (Service{Home: home, Project: project}).List().Sources {
+		for _, agent := range source.Agents {
+			if agent == "gemini" {
+				t.Fatalf("legacy source discovered: %+v", source)
+			}
+		}
+		for _, item := range source.Resources {
+			found[item.Name] = item.Agents[0]
+		}
+	}
+	if len(found) != 3 || found["codex"] != "codex" || found["agy"] != "agy" || found["agy-plugin"] != "agy" {
+		t.Fatalf("resources = %+v", found)
 	}
 }

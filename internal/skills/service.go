@@ -138,7 +138,7 @@ func (s Service) Install(ctx context.Context, options InstallOptions) (InstallPl
 	if options.Source == "" {
 		return InstallPlan{}, errors.New("skill source is required")
 	}
-	plan := InstallPlan{Source: options.Source, Subpath: options.Path, Scope: options.Scope, Agents: []string{"agy", "claude", "codex", "gemini", "pi"}, WillValidate: true}
+	plan := InstallPlan{Source: options.Source, Subpath: options.Path, Scope: options.Scope, Agents: []string{"agy", "claude", "codex", "pi"}, WillValidate: true}
 	root, sourceType, cleanup, err := s.resolveSource(ctx, options.Source, options.Path)
 	if err != nil {
 		return plan, err
@@ -434,7 +434,6 @@ func supportMatrix() []AgentSupport {
 		{Agent: "claude", Supported: true},
 		{Agent: "codex", Supported: true},
 		{Agent: "dsh", Supported: false},
-		{Agent: "gemini", Supported: true},
 		{Agent: "pi", Supported: true},
 	}
 }

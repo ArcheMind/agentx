@@ -225,11 +225,7 @@ func encodeOutput(agent, event, systemMessage, additionalContext, decision, reas
 		output["systemMessage"] = systemMessage
 	}
 	if decision != "" {
-		nativeDecision := decision
-		if agent == "gemini" && decision == "block" {
-			nativeDecision = "deny"
-		}
-		output["decision"] = nativeDecision
+		output["decision"] = decision
 		output["reason"] = reason
 	}
 	if additionalContext != "" {

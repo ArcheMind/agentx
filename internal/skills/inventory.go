@@ -24,10 +24,9 @@ func (s Service) Inventory() inventory.Result {
 			base = s.Home
 		}
 		roots := []skillRoot{
-			{filepath.Join(base, ".agents", "skills"), []string{"codex", "dsh", "gemini", "opencode", "pi"}, true},
+			{filepath.Join(base, ".agents", "skills"), []string{"codex", "dsh", "opencode", "pi"}, true},
 			{filepath.Join(base, ".claude", "skills"), []string{"claude", "opencode"}, false},
 			{filepath.Join(base, ".codex", "skills"), []string{"codex"}, false},
-			{filepath.Join(base, ".gemini", "skills"), []string{"gemini"}, false},
 		}
 		if scope == "project" {
 			roots[0].agents = append(roots[0].agents, "agy")
@@ -71,7 +70,7 @@ func (s Service) Inventory() inventory.Result {
 			roots[2].path = filepath.Join(codexBase, "skills")
 			roots = append(roots, skillRoot{filepath.Join(codexBase, "skills", ".system"), []string{"codex"}, false})
 			if value := os.Getenv("DSH_AGENTS_HOME"); value != "" {
-				roots[0].agents = []string{"codex", "gemini", "opencode", "pi"}
+				roots[0].agents = []string{"codex", "opencode", "pi"}
 				roots = append(roots, skillRoot{filepath.Join(value, "skills"), []string{"dsh"}, false})
 			}
 		} else {
@@ -93,7 +92,7 @@ func (s Service) Inventory() inventory.Result {
 						}
 					}
 					if root != s.Project {
-						roots[0].agents = []string{"codex", "gemini", "opencode", "pi"}
+						roots[0].agents = []string{"codex", "opencode", "pi"}
 						roots = append(roots, skillRoot{filepath.Join(root, ".agents", "skills"), []string{"dsh"}, true})
 					}
 				}
@@ -101,22 +100,9 @@ func (s Service) Inventory() inventory.Result {
 		}
 
 		if scope == "user" {
-			if value := os.Getenv("GEMINI_CLI_HOME"); value != "" {
-				agents := []string{}
-				for _, agent := range roots[0].agents {
-					if agent != "gemini" {
-						agents = append(agents, agent)
-					}
-				}
-				roots[0].agents = agents
-				roots = append(roots, skillRoot{filepath.Join(value, ".agents", "skills"), []string{"gemini"}, false})
-			}
-
 			for index := range roots {
 				root := &roots[index]
 				switch root.path {
-				case filepath.Join(base, ".gemini", "skills"):
-					root.path = filepath.Join(inventory.UserDirectory(base, "gemini"), "skills")
 				case filepath.Join(base, ".claude", "skills"):
 					if os.Getenv("CLAUDE_CONFIG_DIR") != "" {
 						root.agents = []string{"opencode"}
@@ -268,7 +254,7 @@ func (s Service) Inventory() inventory.Result {
 		}
 
 	}
-	for _, agent := range []string{"agy", "claude", "codex", "dsh", "gemini", "opencode", "pi"} {
+	for _, agent := range []string{"agy", "claude", "codex", "dsh", "opencode", "pi"} {
 		path := agent + " dynamic/plugin/package/CLI/settings skill sources"
 		if agent == "agy" {
 			path = "agy dynamic/package/CLI/settings skill sources"

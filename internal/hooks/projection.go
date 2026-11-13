@@ -78,23 +78,6 @@ func (s Service) Prepare(agent, executable string, write bool) (Projection, erro
 			projection.Args = append(projection.Args, "-c", value)
 		}
 		return projection, nil
-	case "gemini":
-		root := projectionRoot(s.Home, agent)
-		config, err := jsonHookConfig(agent, executable, s.Project, events, result.Hooks)
-		if err != nil {
-			return Projection{}, err
-		}
-		projection.Artifacts = []string{root}
-		if err := validateOwnedDirectory(root); err != nil {
-			return Projection{}, err
-		}
-		if write {
-			err = writeOwnedDirectory(root, map[string][]byte{
-				"gemini-extension.json": []byte("{\n  \"name\": \"sessionman-hooks\",\n  \"version\": \"1.0.0\",\n  \"description\": \"SessionMan portable hook bridge\"\n}\n"),
-				"hooks/hooks.json":      config,
-			})
-		}
-		return projection, err
 	case "pi":
 		root := projectionRoot(s.Home, agent)
 		path := filepath.Join(root, "sessionman-hooks.ts")
@@ -128,7 +111,7 @@ func configuredEvents(items []Hook) []string {
 
 func isPortableTarget(agent string) bool {
 	switch agent {
-	case "agy", "claude", "codex", "gemini", "pi":
+	case "agy", "claude", "codex", "pi":
 		return true
 	default:
 		return false
@@ -164,9 +147,6 @@ func jsonHookConfig(agent, executable, project string, events []string, hooks []
 				return nil, err
 			}
 			timeout := handlerBridgeTimeout(projected)
-			if agent == "gemini" {
-				timeout *= 1000
-			}
 			groups = append(groups, group{Hooks: []handler{{Type: "command", Command: command, Timeout: timeout}}})
 		}
 		root.Hooks[native] = groups
@@ -256,8 +236,6 @@ func projectionRoot(home, agent string) string {
 	switch agent {
 	case "claude", "pi":
 		return filepath.Join(home, ".agents", ".sessionman", "hooks", agent)
-	case "gemini":
-		return filepath.Join(home, ".gemini", "extensions", "sessionman-hooks")
 	default:
 		return ""
 	}
@@ -302,7 +280,6 @@ func agentEvent(agent, event string) (string, error) {
 		"agy":    {"SessionStart": "SessionStart", "Stop": "Stop"},
 		"claude": {"SessionStart": "SessionStart", "SessionEnd": "SessionEnd", "UserPromptSubmit": "UserPromptSubmit", "Stop": "Stop"},
 		"codex":  {"SessionStart": "SessionStart", "SessionEnd": "SessionEnd", "UserPromptSubmit": "UserPromptSubmit", "Stop": "Stop"},
-		"gemini": {"SessionStart": "SessionStart", "SessionEnd": "SessionEnd", "UserPromptSubmit": "BeforeAgent", "Stop": "AfterAgent"},
 		"pi":     {"SessionStart": "session_start", "SessionEnd": "session_shutdown", "UserPromptSubmit": "input", "Stop": "agent_settled"},
 	}
 	agentEvents, ok := mapping[agent]

@@ -16,7 +16,6 @@ func TestSessionStart(t *testing.T) {
 	}{
 		{"claude", "SessionStart", `{"hook_event_name":"SessionStart","session_id":"session-1","cwd":"/work","source":"resume"}`},
 		{"codex", "SessionStart", `{"hook_event_name":"SessionStart","session_id":"session-1","cwd":"/work","source":"resume"}`},
-		{"gemini", "SessionStart", `{"hook_event_name":"SessionStart","session_id":"session-1","cwd":"/work","source":"resume"}`},
 		{"pi", "session_start", `{"session_id":"session-1","cwd":"/work","reason":"resume"}`},
 	}
 
@@ -42,7 +41,6 @@ func TestSessionEnd(t *testing.T) {
 	}{
 		{"claude", "SessionEnd", `{"hook_event_name":"SessionEnd","session_id":"session-1","cwd":"/work","reason":"exit"}`},
 		{"codex", "SessionEnd", `{"hook_event_name":"SessionEnd","session_id":"session-1","cwd":"/work","reason":"completed"}`},
-		{"gemini", "SessionEnd", `{"hook_event_name":"SessionEnd","session_id":"session-1","cwd":"/work","reason":"exit"}`},
 		{"pi", "session_shutdown", `{"session_id":"session-1","cwd":"/work","reason":"quit"}`},
 	}
 
@@ -68,7 +66,6 @@ func TestTurnBefore(t *testing.T) {
 	}{
 		{"claude", "UserPromptSubmit", `{"hook_event_name":"UserPromptSubmit","session_id":"session-1","cwd":"/work","prompt":"review this"}`},
 		{"codex", "UserPromptSubmit", `{"hook_event_name":"UserPromptSubmit","session_id":"session-1","cwd":"/work","prompt":"review this"}`},
-		{"gemini", "BeforeAgent", `{"hook_event_name":"BeforeAgent","session_id":"session-1","cwd":"/work","prompt":"review this"}`},
 		{"pi", "input", `{"session_id":"session-1","cwd":"/work","text":"review this"}`},
 	}
 
@@ -94,7 +91,6 @@ func TestTurnAfter(t *testing.T) {
 	}{
 		{"claude", "Stop", `{"hook_event_name":"Stop","session_id":"session-1","cwd":"/work","last_assistant_message":"done"}`},
 		{"codex", "Stop", `{"hook_event_name":"Stop","session_id":"session-1","cwd":"/work","last_assistant_message":"done"}`},
-		{"gemini", "AfterAgent", `{"hook_event_name":"AfterAgent","session_id":"session-1","cwd":"/work","prompt_response":"done"}`},
 		{"pi", "agent_settled", `{"session_id":"session-1","cwd":"/work","last_assistant_message":"done"}`},
 	}
 

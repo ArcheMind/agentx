@@ -1,8 +1,10 @@
 package mcp
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"testing"
 )
@@ -33,8 +35,20 @@ func TestAgyOwnedPluginConcurrentLaunches(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(data) == "" {
-		t.Fatal("empty hooks")
+	var hooks map[string]map[string][]struct {
+		Command string `json:"command"`
+	}
+	if err := json.Unmarshal(data, &hooks); err != nil {
+		t.Fatal(err)
+	}
+	if len(hooks["sessionman"]) != 2 {
+		t.Fatalf("hooks = %+v", hooks)
+	}
+	for _, event := range []string{"SessionStart", "Stop"} {
+		handlers := hooks["sessionman"][event]
+		if len(handlers) != 1 || handlers[0].Command != agyShellExecutable("/bin/new-sm", runtime.GOOS)+" hook __agy_dispatch --event "+event {
+			t.Fatalf("%s hooks = %+v", event, handlers)
+		}
 	}
 }
 

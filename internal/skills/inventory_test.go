@@ -36,7 +36,7 @@ func TestInventoryProjectionIndependentSourcesAndScopesF01F03F04F07F09F10(t *tes
 	if err := os.Symlink(common, cross); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(filepath.Join(project, ".gemini", "skills"), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Join(project, ".pi", "skills"), 0755); err != nil {
 		t.Fatal(err)
 	}
 	broken := filepath.Join(project, ".dsh", "skills", "broken")
@@ -84,7 +84,7 @@ func TestInventoryNativeFilesystemRoots(t *testing.T) {
 	t.Setenv("CODEX_HOME", filepath.Join(home, ".codex"))
 	t.Setenv("DSH_HOME", filepath.Join(home, ".dsh"))
 	t.Setenv("DSH_AGENTS_HOME", filepath.Join(home, ".agents"))
-	for _, root := range []string{".claude/skills", ".codex/skills", ".gemini/skills", ".dsh/skills", ".opencode/skills", ".pi/skills"} {
+	for _, root := range []string{".claude/skills", ".codex/skills", ".dsh/skills", ".opencode/skills", ".pi/skills"} {
 		writeSkill(t, filepath.Join(project, root, "native"), "native", "native")
 	}
 	counts := map[string]int{}
@@ -97,7 +97,7 @@ func TestInventoryNativeFilesystemRoots(t *testing.T) {
 			}
 		}
 	}
-	for _, agent := range []string{"claude", "codex", "gemini", "dsh", "opencode", "pi"} {
+	for _, agent := range []string{"claude", "codex", "dsh", "opencode", "pi"} {
 		if counts[agent] == 0 {
 			t.Fatalf("native %s missing: %v", agent, counts)
 		}
@@ -163,15 +163,12 @@ func TestFlatAndNestedAgentApplicability(t *testing.T) {
 
 func TestUserOverrides(t *testing.T) {
 	home, project, custom := t.TempDir(), t.TempDir(), t.TempDir()
-	for _, agent := range []struct{ name, env, dir string }{{"claude", "CLAUDE_CONFIG_DIR", "claude"}, {"codex", "CODEX_HOME", "codex"}, {"pi", "PI_CODING_AGENT_DIR", "pi"}, {"dsh", "DSH_HOME", "dsh"}, {"opencode", "XDG_CONFIG_HOME", "config"}, {"gemini", "GEMINI_CLI_HOME", "gemini-home"}} {
+	for _, agent := range []struct{ name, env, dir string }{{"claude", "CLAUDE_CONFIG_DIR", "claude"}, {"codex", "CODEX_HOME", "codex"}, {"pi", "PI_CODING_AGENT_DIR", "pi"}, {"dsh", "DSH_HOME", "dsh"}, {"opencode", "XDG_CONFIG_HOME", "config"}} {
 		base := filepath.Join(custom, agent.dir)
 		t.Setenv(agent.env, base)
 		root := filepath.Join(base, "skills")
 		if agent.name == "opencode" {
 			root = filepath.Join(base, "opencode", "skills")
-		}
-		if agent.name == "gemini" {
-			root = filepath.Join(base, ".gemini", "skills")
 		}
 		writeSkill(t, filepath.Join(root, agent.name), agent.name, "override")
 	}
@@ -186,7 +183,7 @@ func TestUserOverrides(t *testing.T) {
 			}
 		}
 	}
-	for _, agent := range []string{"claude", "codex", "pi", "dsh", "opencode", "gemini"} {
+	for _, agent := range []string{"claude", "codex", "pi", "dsh", "opencode"} {
 		if !found[agent] {
 			t.Fatalf("override %s missing", agent)
 		}
@@ -249,5 +246,39 @@ func TestPiOverrideFlatAndInvalidMetadata(t *testing.T) {
 	}
 	if !found || failures != 2 {
 		t.Fatalf("found=%v failures=%d", found, failures)
+	}
+}
+
+func TestAgyUserRootsIgnoreGeminiCLIHome(t *testing.T) {
+	home, project, legacy := t.TempDir(), t.TempDir(), t.TempDir()
+	t.Setenv("GEMINI_CLI_HOME", legacy)
+	for name, root := range map[string]string{
+		"shared":     filepath.Join(home, ".agents", "skills"),
+		"agy-skills": filepath.Join(home, ".gemini", "skills"),
+		"agy-cli":    filepath.Join(home, ".gemini", "antigravity-cli", "skills"),
+		"agy-config": filepath.Join(home, ".gemini", "config", "skills"),
+		"agy-plugin": filepath.Join(home, ".gemini", "config", "plugins", "native", "skills"),
+	} {
+		writeSkill(t, filepath.Join(root, name), name, "native")
+	}
+	writeSkill(t, filepath.Join(project, ".gemini", "skills", "legacy-project"), "legacy-project", "legacy")
+	writeSkill(t, filepath.Join(legacy, ".gemini", "skills", "legacy-user"), "legacy-user", "legacy")
+	writeSkill(t, filepath.Join(legacy, ".agents", "skills", "legacy-shared"), "legacy-shared", "legacy")
+	found := map[string]bool{}
+	for _, source := range (Service{Home: home, Project: project}).Inventory().Sources {
+		for _, agent := range source.Agents {
+			if agent == "gemini" {
+				t.Fatalf("legacy source discovered: %+v", source)
+			}
+		}
+		for _, item := range source.Resources {
+			found[item.Name] = true
+			if strings.HasPrefix(item.Name, "agy-") && strings.Join(item.Agents, ",") != "agy" {
+				t.Fatalf("AGY readers = %+v", item)
+			}
+		}
+	}
+	if len(found) != 5 || !found["shared"] || !found["agy-skills"] || !found["agy-cli"] || !found["agy-config"] || !found["agy-plugin"] {
+		t.Fatalf("skills = %+v", found)
 	}
 }

@@ -12,8 +12,7 @@ results=$workspace/results
 mkdir -p "$backup" "$project/.agents" "$results"
 
 owned_paths="$HOME/.agents/.sessionman/hooks/claude
-$HOME/.agents/.sessionman/hooks/pi
-$HOME/.gemini/extensions/sessionman-hooks"
+$HOME/.agents/.sessionman/hooks/pi"
 
 cleanup() {
 	printf '%s\n' "$owned_paths" | while IFS= read -r path; do
@@ -43,7 +42,7 @@ printf '%s\n' "$owned_paths" | while IFS= read -r path; do
 	fi
 done
 
-for agent in claude codex gemini pi; do
+for agent in claude codex pi; do
 	if ! command -v "$agent" >/dev/null 2>&1; then
 		"$ax" agent install "$agent"
 	fi
@@ -79,14 +78,10 @@ run_agent() {
 		set -- --debug-file "$agent_results/agent-debug.log" "$@"
 	fi
 	if ! "$ax" "$agent" --model "$model" --cwd "$project" -- "$@" >"$agent_results/stdout.log" 2>"$agent_results/stderr.log"; then
-		if [ "$agent" = gemini ]; then
-			printf 'Gemini smoke failed. If authentication is missing, run: %s auth login gemini\n' "$ax" >&2
-		fi
 		return 1
 	fi
 	case "$agent" in
 		claude) artifact=$HOME/.agents/.sessionman/hooks/claude ;;
-		gemini) artifact=$HOME/.gemini/extensions/sessionman-hooks ;;
 		pi) artifact=$HOME/.agents/.sessionman/hooks/pi ;;
 		*) artifact= ;;
 	esac
@@ -111,7 +106,6 @@ run_case() {
 
 run_case claude haiku --print "$prompt"
 run_case codex gpt-6-luna --dangerously-bypass-hook-trust exec --skip-git-repo-check "$prompt"
-run_case gemini gemini-2.5-flash-lite --skip-trust --prompt "$prompt"
 run_case pi "$pi_model" --print "$prompt"
 
 if [ -n "$failures" ]; then

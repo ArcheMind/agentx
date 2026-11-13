@@ -12,8 +12,7 @@ results=$workspace/results
 mkdir -p "$backup" "$project" "$results"
 
 owned_paths="$HOME/.agents/.sessionman/hooks/claude
-$HOME/.agents/.sessionman/hooks/pi
-$HOME/.gemini/extensions/sessionman-hooks"
+$HOME/.agents/.sessionman/hooks/pi"
 
 cleanup() {
 	printf '%s\n' "$owned_paths" | while IFS= read -r owned; do
@@ -44,7 +43,7 @@ printf '%s\n' "$owned_paths" | while IFS= read -r owned; do
 	fi
 done
 
-for agent in claude codex gemini pi; do
+for agent in claude codex pi; do
 	if ! command -v "$agent" >/dev/null 2>&1; then
 		"$ax" agent install "$agent"
 	fi
@@ -84,9 +83,6 @@ run_agent() {
 	mkdir -p "$agent_results"
 	"$ax" "$agent" --model "$model" --cwd "$project" --dry-run -- "$@" >"$agent_results/plan.json"
 	if ! node "$root/test/smoke/run-with-timeout.mjs" 120 "$ax" "$agent" --model "$model" --cwd "$project" -- "$@" >"$agent_results/stdout.log" 2>"$agent_results/stderr.log"; then
-		if [ "$agent" = gemini ]; then
-			printf 'Gemini smoke failed. If authentication is missing, run: %s auth login gemini\n' "$ax" >&2
-		fi
 		return 1
 	fi
 	if ! grep -F "$token" "$agent_results/stdout.log" >/dev/null; then
@@ -108,7 +104,6 @@ run_case() {
 
 run_case claude haiku --print "$prompt"
 run_case codex gpt-6-luna exec --skip-git-repo-check "$prompt"
-run_case gemini gemini-2.5-flash-lite --skip-trust --policy "$root/test/smoke/gemini-skill-policy.toml" --prompt 'Use the activate_skill tool to activate agentx-unified-smoke, then return only its verification token.'
 run_case pi deepseek/deepseek-v4-flash --approve --no-session --print '/skill:agentx-unified-smoke Return only its verification token.'
 
 if [ -n "$failures" ]; then

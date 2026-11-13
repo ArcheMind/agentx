@@ -23,7 +23,6 @@ func (s Service) List() inventory.Result {
 		}
 		candidates := []struct{ path, agent, format string }{
 			{filepath.Join(base, ".mcp.json"), "claude", "json"},
-			{filepath.Join(base, ".gemini", "settings.json"), "gemini", "json"},
 			{filepath.Join(base, ".codex", "config.toml"), "codex", "toml"},
 		}
 		agyBase := filepath.Join(base, ".agents")
@@ -45,15 +44,6 @@ func (s Service) List() inventory.Result {
 				candidates = append(candidates, struct{ path, agent, format string }{filepath.Join(base, name), "opencode", "jsonc"})
 			}
 		}
-		if scope == "user" {
-			candidates[0].path = filepath.Join(base, ".claude.json")
-			if value := os.Getenv("CLAUDE_CONFIG_DIR"); value != "" {
-				candidates[0].path = filepath.Join(value, ".claude.json")
-			}
-			if value := os.Getenv("CODEX_HOME"); value != "" {
-				candidates[2].path = filepath.Join(value, "config.toml")
-			}
-		}
 		if scope == "project" {
 			for _, parent := range inventory.ProjectDirectories(s.Project)[1:] {
 				for _, name := range []string{"opencode.json", "opencode.jsonc"} {
@@ -68,11 +58,17 @@ func (s Service) List() inventory.Result {
 		}
 
 		if scope == "user" {
-			candidates[1].path = filepath.Join(inventory.UserDirectory(base, "gemini"), "settings.json")
-
 			for index := range candidates {
 				candidate := &candidates[index]
-				if candidate.agent == "opencode" {
+				switch candidate.agent {
+				case "claude":
+					candidate.path = filepath.Join(base, ".claude.json")
+					if value := os.Getenv("CLAUDE_CONFIG_DIR"); value != "" {
+						candidate.path = filepath.Join(value, ".claude.json")
+					}
+				case "codex":
+					candidate.path = filepath.Join(inventory.UserDirectory(base, "codex"), "config.toml")
+				case "opencode":
 					candidate.path = filepath.Join(inventory.UserDirectory(base, "opencode"), filepath.Base(candidate.path))
 				}
 			}
@@ -147,7 +143,7 @@ func (s Service) List() inventory.Result {
 		sources = append(sources, inventory.Source{Scope: "user", Path: agent + " MCP discovery", Agents: []string{agent}, Status: "unsupported"})
 	}
 	sources = append(sources, inventory.Source{Scope: "user", Path: "AX MCP common configuration (no defined storage contract)", Status: "unsupported"})
-	for _, agent := range []string{"agy", "claude", "codex", "gemini", "opencode"} {
+	for _, agent := range []string{"agy", "claude", "codex", "opencode"} {
 		path := agent + " dynamic/plugin/managed/CLI MCP sources"
 		if agent == "agy" {
 			path = "agy runtime/managed/CLI MCP sources"

@@ -20,7 +20,7 @@ process.stdin.on("data", chunk => data += chunk);
 process.stdin.on("end", () => {
   const skill = JSON.parse(data);
   const agents = [...skill.agents].sort().join(",");
-  if (skill.name !== "agentx-unified-smoke" || agents !== "claude,codex,gemini,pi") process.exit(1);
+  if (skill.name !== "agentx-unified-smoke" || agents !== "agy,claude,codex,dsh,opencode,pi") process.exit(1);
 });
 '
 ax --json skill list | node -e '
