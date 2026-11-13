@@ -157,11 +157,3 @@ func (ClaudeModels) ListModels(ctx context.Context, runner runtime.Runner) ([]ru
 	}
 	return models, nil
 }
-
-type UnsupportedModels struct {
-	Agent string
-}
-
-func (d UnsupportedModels) ListModels(context.Context, runtime.Runner) ([]runtime.Model, error) {
-	return nil, fmt.Errorf("%s supports model selection but exposes no verified local model-list source", d.Agent)
-}
