@@ -1,5 +1,5 @@
 import {spawn, execFileSync} from 'node:child_process'
-import {mkdtemp, mkdir, writeFile, readFile, appendFile, readdir, access} from 'node:fs/promises'
+import {mkdtemp, mkdir, writeFile, readFile, appendFile, readdir, access, copyFile} from 'node:fs/promises'
 import {tmpdir} from 'node:os'
 import {randomUUID} from 'node:crypto'
 import {join, resolve} from 'node:path'
@@ -37,13 +37,15 @@ const seqOf=text=>Number(text.match(/Re-arm: sm wait ax-[a-f0-9]+ --after (\d+)/
 const pidAlive=pid=>{try{process.kill(pid,0);return true}catch{return false}}
 const sleep=ms=>new Promise(r=>setTimeout(r,ms))
 const verdict={}
+const terminalWait='If the terminal tool returns an asynchronous/running command ID, keep calling its status/wait tool until the command exits. Do not finish your turn or describe waiting while the command is still running.'
+
 const timer=setTimeout(()=>{console.error('GLOBAL TIMEOUT');child.kill('SIGTERM');process.exit(1)},900000)
 try{
  await rpc('initialize',{protocolVersion:'2024-11-05',capabilities:{},clientInfo:{name:'duplex-live-acceptance',version:'1'}})
  child.stdin.write(JSON.stringify({jsonrpc:'2.0',method:'notifications/initialized'})+'\n')
 
  // (a) long task, steer mid-run, consumed within the same turn
- const started=await call('ExternalSubagent',{description:'live steer test',prompt:"Use the Bash tool to run exactly this foreground command once: python3 -c 'import time; time.sleep(25); print(\"slept\")' . Do NOT run it in background. When it finishes, reply with a single line that starts with DONE and also contains every extra marker you were asked for during this turn.",name:'live',model:'duplex-live',run_in_background:true})
+ const started=await call('ExternalSubagent',{description:'live steer test',prompt:terminalWait+" Use your terminal tool to run exactly this command once: python3 -c 'import time; time.sleep(25); print(\"slept\")' . Do NOT run it in background. When it finishes, reply with a single line that starts with DONE and also contains every extra marker you were asked for during this turn.",name:'live',model:'duplex-live',run_in_background:true})
  await log('a-start.txt',started)
  const arm1=rearm(started)
  const wait1=armWait(arm1.id,arm1.seq)
@@ -74,7 +76,7 @@ try{
  // (b)+(c) second round: MessageHost wakes the wait while the task still runs, then report
  const arm2={id:arm1.id,seq:seqOf(woke1)}
  const wait2=armWait(arm2.id,arm2.seq)
- const round2=await call('SendExternalSubagentMessage',{to:'live',message:`New task. First call the MCP tool MessageHost (the tool whose name ends in MessageHost) with the message 'starting-sleep-now'. Then use Bash to run in foreground: python3 -c 'import time; time.sleep(20)' . When it finishes reply with the single line ROUND2-DONE.`})
+ const round2=await call('SendExternalSubagentMessage',{to:'live',message:`${terminalWait} New task. First call the MCP tool MessageHost (the tool whose name ends in MessageHost) with the message 'starting-sleep-now'. Then use Bash to run in foreground: python3 -c 'import time; time.sleep(20)' . When it finishes reply with the single line ROUND2-DONE.`})
  await log('b-send.txt',round2)
  assert(round2.includes('disposition: started'),'(b) second round not started: '+round2)
  const woke2=await wait2
@@ -88,7 +90,7 @@ try{
  assert(woke3.includes('kind=report')&&woke3.includes('ROUND2-DONE'),'(c) re-armed wait missed second-round report: '+woke3)
  verdict.c='PASS: report event delivered; re-armed wait survived the second round'
 
- const queuedRound=await call('SendExternalSubagentMessage',{to:'live',message:'Use your terminal tool to run a foreground sleep for 8 seconds, then reply QUEUE-FIRST.'})
+ const queuedRound=await call('SendExternalSubagentMessage',{to:'live',message:terminalWait+' Use your terminal tool to run python3 -c \"import time; time.sleep(8)\" and wait until it exits, then reply exactly QUEUE-FIRST.'})
  const queuedArm={id:arm1.id,seq:seqOf(woke3)}
  const queuedWait=armWait(queuedArm.id,queuedArm.seq)
  const queuedAck=await call('SendExternalSubagentMessage',{to:'live',message:'Reply exactly QUEUE-SECOND. Do not use tools.',delivery:'queued'})
@@ -163,7 +165,7 @@ try{
 
  // (d) stop mid-run: cancelled report, daemon gone, no orphan native processes
  const psBefore=()=>execFileSync('ps',['-axo','pid=,ppid='],{encoding:'utf8'})
- const round3=await call('SendExternalSubagentMessage',{to:'live',message:"New task: use Bash to run in foreground: python3 -c 'import time; time.sleep(120)' . Reply NEVER when done."})
+ const round3=await call('SendExternalSubagentMessage',{to:'live',message:terminalWait+" New task: use your terminal tool to run: python3 -c 'import time; time.sleep(120)' . Reply NEVER when done."})
  await log('d-send.txt',round3)
  await sleep(10000)
  const before=psBefore()
@@ -195,6 +197,15 @@ try{
  process.exitCode=1
 }finally{
  clearTimeout(timer)
+ try {
+  const ids=await readdir(join(home,'.local','state','sessionman','agents'))
+  for(const id of ids){
+   const target=join(evidenceDir,'agents',id)
+   await mkdir(target,{recursive:true})
+   for(const file of ['meta.json','daemon.log']){try{await copyFile(join(agentDir(id),file),join(target,file))}catch{}}
+   try{await writeFile(join(target,'events.json'),JSON.stringify(await events(id),null,2))}catch{}
+  }
+ }catch{}
  child.stdin.end()
  await new Promise(resolve=>child.once('close',resolve))
 }
