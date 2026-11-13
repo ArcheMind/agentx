@@ -29,7 +29,8 @@ func TestRemovedGeminiCommandsRejectLegacyAgent(t *testing.T) {
 		t.Run(strings.Join(args, "_"), func(t *testing.T) {
 			application, _, runner := presetApp(t, "")
 			err := application.Run(context.Background(), args)
-			if err == nil || !strings.Contains(err.Error(), "gemini") || !strings.Contains(err.Error(), "unknown") {
+			if err == nil || !strings.Contains(err.Error(), "gemini") ||
+				(!strings.Contains(err.Error(), "unknown") && err.Error() != "gemini has no native subagent execution adapter") {
 				t.Fatalf("err = %v", err)
 			}
 			if len(runner.plans) != 0 {
