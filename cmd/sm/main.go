@@ -9,7 +9,7 @@ import (
 
 func main() {
 	args := os.Args[1:]
-	debug := os.Getenv("AX_LOG") == "debug"
+	debug := os.Getenv("SM_LOG") == "debug"
 	appArgs := make([]string, 0, len(args))
 	for len(args) > 0 {
 		switch args[0] {

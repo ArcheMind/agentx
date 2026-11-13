@@ -1,18 +1,18 @@
-# AgentX MCP ExternalSubagents
+# SessionMan MCP ExternalSubagents
 
-AgentX exposes `ExternalSubagent`, `SendExternalSubagentMessage`, `StopExternalSubagent`, and `listExternalSubagentSessions` over stdio MCP.
-These are explicitly AgentX tools, not official Claude subagents. The selected
+SessionMan exposes `ExternalSubagent`, `SendExternalSubagentMessage`, `StopExternalSubagent`, and `listExternalSubagentSessions` over stdio MCP.
+These are explicitly SessionMan tools, not official Claude subagents. The selected
 native agent executes directly, without a Claude relay inference call. Claude chooses
-the combination and any orchestration; AgentX imposes no review/voting workflow.
+the combination and any orchestration; SessionMan imposes no review/voting workflow.
 
-## Presets: one collection for `ax` and MCP
+## Presets: one collection for `sm` and MCP
 
 A preset is a named, user-confirmed choice of agent, model and effort plus a
-description of when to use it. The same collection serves the bare `ax` home
+description of when to use it. The same collection serves the bare `sm` home
 screen and the `ExternalSubagent` choices; there is no separate MCP list.
 
 ```text
-~/.agentx/presets/
+~/.sessionman/presets/
   deep-review/
     PRESET.md
   daily/
@@ -34,7 +34,7 @@ Read-only research and code review. Not for large refactors.
 ```
 
 - `agent`: `claude`, `codex`, `gemini`, `opencode` or `pi`. Only `codex` and
-  `pi` can run as MCP `ExternalSubagent`. Other presets appear in `ax` only;
+  `pi` can run as MCP `ExternalSubagent`. Other presets appear in `sm` only;
   the MCP catalog, tool index and `status` leave them out, and a call naming
   one is rejected as `interactive launch only`.
 - `model`: the exact native model ID, passed unchanged to `--model`. Pi needs
@@ -55,17 +55,17 @@ Read-only research and code review. Not for large refactors.
 - The description is the Markdown body. `name` and `description` keys in the
   front matter and unknown keys are rejected, so there is one authority.
 
-`AX_SUBAGENT_HOME` replaces `~` for both the collection and the AgentX MCP
+`SM_SUBAGENT_HOME` replaces `~` for both the collection and the SessionMan MCP
 configuration/state in isolated environments; it does not change native
 credentials.
 
-### Create and manage from `ax`
+### Create and manage from `sm`
 
-Running `ax` with no arguments shows **New session · Presets** first, with
+Running `sm` with no arguments shows **New session · Presets** first, with
 `+ Create preset…` as its last entry, then recent sessions for the current
 workspace and globally. Enter on a preset starts a new native session in the
 current directory with exactly that agent, model and effort; Enter on a recent
-session continues it as before. `ax <agent>` direct launch is unchanged.
+session continues it as before. `sm <agent>` direct launch is unchanged.
 
 `+ Create preset…` asks for the agent, the model (listed when the agent exposes
 a reliable list; otherwise the limitation is shown and the exact ID is typed),
@@ -83,24 +83,24 @@ Start new session. Invalid entries are listed with their error and file
 location, can be repaired or deleted, and never hide other presets or recent
 sessions. Hand edits to `PRESET.md` appear on the next screen or MCP request.
 
-If a native agent is missing at start, AgentX shows the reason and offers to edit
+If a native agent is missing at start, SessionMan shows the reason and offers to edit
 the preset or go back; it never substitutes another agent, model or effort.
 Native rejection of a model or effort is the native agent's error.
 
-### Presets and the AgentX server
+### Presets and the SessionMan server
 
-The presets collection (`~/.agentx/presets/`) is the whole configuration. There is no AgentX switch or
-permission file. Agents launched through `ax` (`ax claude`, `ax codex`) get the
-AgentX MCP server and the ExternalSubagent tools automatically. A plain `claude` started without `ax` gets them only if you register the server yourself: `claude mcp add --scope user agentx -- "$(command -v ax)" mcp serve`.
+The presets collection (`~/.sessionman/presets/`) is the whole configuration. There is no SessionMan switch or
+permission file. Agents launched through `sm` (`sm claude`, `sm codex`) get the
+SessionMan MCP server and the ExternalSubagent tools automatically. A plain `claude` started without `sm` gets them only if you register the server yourself: `claude mcp add --scope user sessionman -- "$(command -v sm)" mcp serve`.
 
 ```sh
-ax preset list
-ax preset show codex-review
-ax claude
+sm preset list
+sm preset show codex-review
+sm claude
 ```
 
-- `ax preset list` shows the collection with static readiness, limits and
-  invalid entries; `ax preset show <name>` shows a single preset's detail.
+- `sm preset list` shows the collection with static readiness, limits and
+  invalid entries; `sm preset show <name>` shows a single preset's detail.
   Static checks do not verify login or model access; those are established per
   execution. No native-default model or automatic fallback is used.
 
@@ -111,8 +111,8 @@ stopped or switched by a change.
 
 ### Migrating from `subagents.json`
 
-`~/.config/agentx/subagents.json` (its `enabled` switch, the earlier
-`default`/`options` keys and the later `grants`) is no longer read. AgentX
+`~/.config/sessionman/subagents.json` (its `enabled` switch, the earlier
+`default`/`options` keys and the later `grants`) is no longer read. SessionMan
 ignores the file if it exists and never rewrites it; you can delete it. To
 migrate:
 
@@ -121,26 +121,26 @@ migrate:
   `enabled: false` option is simply not moved):
 
   ```sh
-  mkdir -p ~/.agentx/presets/codex-review ~/.agentx/presets/pi-review
-  printf -- '---\nagent: codex\nmodel: gpt-5.6-luna\neffort: low\n---\n\nResearch and code review using native Codex.\n' > ~/.agentx/presets/codex-review/PRESET.md
-  printf -- '---\nagent: pi\nmodel: openai-codex/gpt-5.6-luna\n---\n\nIndependent research and code review using Pi.\n' > ~/.agentx/presets/pi-review/PRESET.md
-  rm ~/.config/agentx/subagents.json
+  mkdir -p ~/.sessionman/presets/codex-review ~/.sessionman/presets/pi-review
+  printf -- '---\nagent: codex\nmodel: gpt-5.6-luna\neffort: low\n---\n\nResearch and code review using native Codex.\n' > ~/.sessionman/presets/codex-review/PRESET.md
+  printf -- '---\nagent: pi\nmodel: openai-codex/gpt-5.6-luna\n---\n\nIndependent research and code review using Pi.\n' > ~/.sessionman/presets/pi-review/PRESET.md
+  rm ~/.config/sessionman/subagents.json
   ```
 
-- A former `enabled: true` needs no replacement: `ax claude` and `ax codex`
-  attach AgentX; the earlier `enable`/`disable` subcommands no longer exist.
+- A former `enabled: true` needs no replacement: `sm claude` and `sm codex`
+  attach SessionMan; the earlier `enable`/`disable` subcommands no longer exist.
 - A former grant's `bounded-write` with `writable_roots` has no replacement:
   what an agent may write is decided by its own native configuration, or
   bypassed per call with `mode: "yolo"`; see
   [Permission mode and isolation](#permission-mode-and-isolation).
   Its `approval` has no replacement because `never` was the only value.
 - A former grant's `auth.path` becomes the native agent's own variable
-  (`CODEX_HOME`, `PI_CODING_AGENT_DIR`) in the environment AgentX runs in, or
+  (`CODEX_HOME`, `PI_CODING_AGENT_DIR`) in the environment SessionMan runs in, or
   nothing when it was the default directory.
 
 ## Permission mode and isolation
 
-Permissions belong to the native agent, not to AgentX. Each `ExternalSubagent`
+Permissions belong to the native agent, not to SessionMan. Each `ExternalSubagent`
 call picks one `mode`, fixed for that ExternalSubagent:
 `SendExternalSubagentMessage` and queued work reuse it and cannot change it.
 
@@ -149,7 +149,7 @@ call picks one `mode`, fixed for that ExternalSubagent:
 | `normal` (default, also when omitted) | No permission flags: Claude's own settings decide | Only `approval_policy="never"`: the sandbox is whatever the user's Codex configuration sets | Read-only tool allowlist |
 | `yolo` | `--dangerously-skip-permissions` | `sandbox_mode="danger-full-access"` plus `approval_policy="never"` | Rejected before any work starts |
 
-- `normal` is a passthrough. AgentX injects no sandbox, approval or permission
+- `normal` is a passthrough. SessionMan injects no sandbox, approval or permission
   flag, except `approval_policy="never"` for Codex: a headless run cannot answer
   an approval prompt. Claude in print mode refuses tools its settings do not
   allow; that refusal is Claude's own behavior.
@@ -168,12 +168,12 @@ personality and service tier then also do not apply.
 
 ### Authentication
 
-Authentication is discovered, not configured. Before every turn AgentX selects
+Authentication is discovered, not configured. Before every turn SessionMan selects
 the native agent's own credential directory, which is `CODEX_HOME` or
 `PI_CODING_AGENT_DIR` from its environment, otherwise `~/.codex` or
-`~/.pi/agent` (`AX_SUBAGENT_HOME` never changes it), and pins the native
+`~/.pi/agent` (`SM_SUBAGENT_HOME` never changes it), and pins the native
 process to it through that variable. Each report carries an
-`Auth source for this turn:` line with the variable and directory. AgentX runs
+`Auth source for this turn:` line with the variable and directory. SessionMan runs
 no login or readiness check of its own: whether the directory can serve the
 preset's model is decided by the runtime, which resolves models and credentials
 with its own rules and reports a failure in its native stream. A relative
@@ -183,7 +183,7 @@ Inherited environment variables whose names look like credentials (`*KEY*`,
 `*TOKEN*`, `*SECRET*`, `*PASSWORD*`, `*CREDENTIAL*`, `*AUTH*`, `*COOKIE*`,
 `AWS_PROFILE`) are removed from the native process. Without this, Pi would
 silently use an inherited `OPENAI_API_KEY` when the directory has no login.
-AgentX never copies credentials between runtimes. Identity means the directory;
+SessionMan never copies credentials between runtimes. Identity means the directory;
 the login method, provider and account inside it are not checked.
 
 ## Claude discovery and background delivery
@@ -198,28 +198,28 @@ carries only a compact index (one line per preset: agent, model,
 effort, callability, description) because hosts truncate tool descriptions
 (Claude Code keeps 4096 characters); limits are only in
 the initialization data. With no presets the catalog says so and that the user
-creates them in `ax`; none are generated. Static checks do not verify login or
+creates them in `sm`; none are generated. Static checks do not verify login or
 model access. Session listing reports created objects, not presets.
 A call result notes when presets changed since initialization.
 Initialization instructions are a connection snapshot. After saving, renaming or
-deleting a preset, `ax` says whether running AgentX MCP connections still show
+deleting a preset, `sm` says whether running SessionMan MCP connections still show
 the old list and to reconnect (`/mcp`) or restart Claude. New calls always use the saved preset; a call
 result notes when the collection changed since the connection initialized. A
 fresh `tools/list` reads the current collection.
 
-Restart or reconnect the host for tool discovery. `ax claude`
-adds the MCP connection and allows exactly the four AgentX tools for that session
+Restart or reconnect the host for tool discovery. `sm claude`
+adds the MCP connection and allows exactly the four SessionMan tools for that session
 with `--allowedTools`; Claude's persistent `settings.json` is not modified.
 Background delivery is file based and host agnostic. When a task ends
 (completed, failed or cancelled, including queued work cancelled before it
-started), AgentX atomically writes one JSON document to:
+started), SessionMan atomically writes one JSON document to:
 
 ```text
-~/.local/state/agentx/connections/<connection-id>/jobs/<task-id>.json
+~/.local/state/sessionman/connections/<connection-id>/jobs/<task-id>.json
 ```
 
 The document is `{"content": <rendered report>, "meta": {"report_origin":
-"agentx-subagent", "agent_id", "task_id", "status"}}`. The immediate response of
+"sessionman-subagent", "agent_id", "task_id", "status"}}`. The immediate response of
 `ExternalSubagent` (background) and `SendExternalSubagentMessage` includes the
 absolute path and a wait command:
 
@@ -233,7 +233,7 @@ ID and result file. Each tool response and report includes a connection ID. Matc
 it to `status.connections` to identify the current host, its client name/version
 and whether it sent `notifications/initialized`. Foreground calls
 (`run_in_background:false`) wait and return the terminal result directly.
-Set `AX_LOG=debug` to log each result file path and write error to stderr.
+Set `SM_LOG=debug` to log each result file path and write error to stderr.
 
 ## Tool contract
 
@@ -281,7 +281,7 @@ ExternalSubagents are session-scoped, like Claude Code's native subagents: they
 belong to the MCP connection that created them, and listExternalSubagentSessions
 shows only those. A reconnect, or a resumed parent Claude session, starts a new
 connection with no ExternalSubagents; an old name or ID then fails explicitly
-as unknown. Native transcript files may remain on disk, but AgentX does not
+as unknown. Native transcript files may remain on disk, but SessionMan does not
 restore objects across connections, by design. Session loss or identity
 mismatch is failure, not retry.
 
@@ -293,14 +293,14 @@ the same in either `mode`:
 
 - **What is created.** The repository is the one containing the MCP server's
   working directory, and the worktree starts at its `HEAD` commit. It lives at
-  `~/.local/state/agentx/worktrees/<id>` on branch `agentx/<id>`, where `<id>`
+  `~/.local/state/sessionman/worktrees/<id>` on branch `sessionman/<id>`, where `<id>`
   is the ExternalSubagent ID. The native agent's working directory is the
   matching path inside the worktree.
-- **The original checkout.** AgentX never modifies its files. Its uncommitted
+- **The original checkout.** SessionMan never modifies its files. Its uncommitted
   and untracked changes are not copied into the worktree. Whether the agent
   itself can reach the original by absolute path is decided by the agent's
   native configuration (`normal`) or not restricted at all (`yolo`). The original repository
-  does gain branch `agentx/<id>` and git's worktree metadata under
+  does gain branch `sessionman/<id>` and git's worktree metadata under
   `.git/worktrees/`.
 - **Rejections.** The call is rejected before any work starts in three cases:
   the working directory is not inside a git work tree, there is no commit at
@@ -309,15 +309,15 @@ the same in either `mode`:
   worktree or branch behind.
 - **Repository hooks.** `git worktree add` runs the repository's own
   `post-checkout` hook, as git always does. That hook is the repository's code,
-  not the agent's. It runs outside any agent sandbox, with AgentX's full
+  not the agent's. It runs outside any agent sandbox, with SessionMan's full
   inherited environment, credential-like variables included. Choose worktree
   isolation only for repositories whose hooks you trust.
 - **Why the worktree is outside the repository.** A nested worktree would show
   up as an untracked entry in the original checkout, and `git add -A` there
   would record it as an embedded repository.
-- **Concurrent creation.** Worktree creation is serialized within one AgentX
+- **Concurrent creation.** Worktree creation is serialized within one SessionMan
   process, because concurrent `git worktree add` in one repository fails
-  (git 2.39 reads another worktree's half-written metadata). Separate AgentX
+  (git 2.39 reads another worktree's half-written metadata). Separate SessionMan
   processes on the same repository can still hit this; the call then fails
   explicitly with no task started.
 - **Pi.** For Pi a worktree changes only the working directory.
@@ -326,7 +326,7 @@ The worktree is fixed for the ExternalSubagent's lifetime. Continuation reuses
 it and cannot rebind it. If the worktree has been removed, continuation fails
 and never falls back to the original directory.
 
-Retention: AgentX never removes a worktree, whether the task completed, failed
+Retention: SessionMan never removes a worktree, whether the task completed, failed
 or was cancelled, and including after the MCP connection ends. This includes a
 task that failed before native execution started: the worktree was already
 created, and the failure report names the worktree path. Continuation
@@ -335,7 +335,7 @@ report names the path, branch, base commit and mode. After
 each task, the report also records the state: whether `HEAD` moved, plus
 `git status --porcelain`. It ends with the cleanup command:
 `git -C <repo> worktree remove <path>` (which refuses while changes remain; add
-`--force` to discard them), then `git -C <repo> branch -D agentx/<id>`. To take
+`--force` to discard them), then `git -C <repo> branch -D sessionman/<id>`. To take
 the agent's changes, inspect or copy them from the worktree, or commit them
 there yourself.
 
@@ -343,26 +343,26 @@ Bulk cleanup. Retained worktrees accumulate until you remove them. To list
 them:
 
 ```sh
-git -C <repo> worktree list                   # paths and branches, incl. AgentX ones
-git -C <repo> branch --list 'agentx/*'        # AgentX branches
-ls ~/.local/state/agentx/worktrees            # worktrees from every repository
+git -C <repo> worktree list                   # paths and branches, incl. SessionMan ones
+git -C <repo> branch --list 'sessionman/*'        # SessionMan branches
+ls ~/.local/state/sessionman/worktrees            # worktrees from every repository
 ```
 
 Inspect each one before removing it. Then run `git -C <repo> worktree remove
-<path>` and `git -C <repo> branch -D agentx/<id>` for each. If a worktree
+<path>` and `git -C <repo> branch -D sessionman/<id>` for each. If a worktree
 directory was deleted by hand, run `git -C <repo> worktree prune` to drop its
 stale metadata. The branch stays until you delete it.
 
 ## Nested delegation
 
-A dispatched Codex ExternalSubagent automatically has AgentX available as an
+A dispatched Codex ExternalSubagent automatically has SessionMan available as an
 MCP server and can call `ExternalSubagent` itself. This gives dispatched agents
 the ability to delegate subtasks to other agents without user configuration.
 
-- **Codex only.** AgentX injects its own MCP server configuration into the
+- **Codex only.** SessionMan injects its own MCP server configuration into the
   Codex `-c` flags alongside `--ignore-user-config`, so the only MCP server
-  available to the dispatched Codex is AgentX. Pi has no MCP server support.
-- **Depth limit.** Delegation depth is tracked via `AX_DELEGATION_DEPTH` and
+  available to the dispatched Codex is SessionMan. Pi has no MCP server support.
+- **Depth limit.** Delegation depth is tracked via `SM_DELEGATION_DEPTH` and
   capped at 2. A depth-0 server (the top-level connection from Claude Code)
   injects depth 1; a depth-1 server injects depth 2; a depth-2 server does
   not inject further. The initialization instructions report the current depth
@@ -373,10 +373,10 @@ the ability to delegate subtasks to other agents without user configuration.
 - **Independent mode.** Each nested ExternalSubagent call picks its own
   `mode`, the same as a top-level call. A `normal` parent does not prevent a
   `yolo` nested call (same as how Claude Code orchestrates top-level calls).
-- **Independent auth.** The nested AgentX discovers credentials per execution
+- **Independent auth.** The nested SessionMan discovers credentials per execution
   through the same `CODEX_HOME` / `PI_CODING_AGENT_DIR` mechanism. Credential
   environment variables are stripped as usual.
-- **`AX_SUBAGENT_HOME`.** If set in the parent process, it is propagated to
+- **`SM_SUBAGENT_HOME`.** If set in the parent process, it is propagated to
   the nested MCP server so the same preset collection is used.
 
 ## Native execution and permission limits
@@ -385,18 +385,18 @@ the ability to delegate subtasks to other agents without user configuration.
 | --- | --- | --- | --- |
 | Claude | `normal`: no permission flags (Claude's own settings); `yolo`: `--dangerously-skip-permissions`; native auth | Exact session UUID (`--resume`) | Preset effort via `--effort`, or native default |
 | Codex | `normal`: only `approval_policy="never"` (sandbox from the user's Codex config); `yolo`: `sandbox_mode="danger-full-access"` plus `approval_policy="never"`; `user_config: false` skips user config/rules/hooks; discovered `CODEX_HOME` | Exact thread UUID | Preset effort via `model_reasoning_effort`, or native default; each turn checked against `response.completed` telemetry; native errors remain errors |
-| Pi | Read-only only, `yolo` rejected: `--tools read,grep,find,ls --no-extensions --no-skills --no-prompt-templates --no-approve`, discovered `PI_CODING_AGENT_DIR`; with an explicit effort, only AgentX's observer extension is added (`--extension`) | Dedicated exact session path and pinned native ID | Preset effort via `--thinking` (`low`..`max`), or native default; each turn checked against the session thinking level and every provider request |
+| Pi | Read-only only, `yolo` rejected: `--tools read,grep,find,ls --no-extensions --no-skills --no-prompt-templates --no-approve`, discovered `PI_CODING_AGENT_DIR`; with an explicit effort, only SessionMan's observer extension is added (`--extension`) | Dedicated exact session path and pinned native ID | Preset effort via `--thinking` (`low`..`max`), or native default; each turn checked against the session thinking level and every provider request |
 
 ### Effort verification
 
 Native CLIs can run a different effort from the one requested without failing,
-and their own records may still show the requested one. AgentX therefore
+and their own records may still show the requested one. SessionMan therefore
 checks what was actually sent or run, per turn, and fails the turn on any
 difference. The failed report still carries the agent's text, labelled
 untrusted, and the ExternalSubagent cannot be continued; nothing is retried.
 
 - Codex: the configured level is echoed in the rollout `turn_context` even
-  when Codex sends another one (`gpt-5.6-luna` with `ultra` sends `max`). AgentX
+  when Codex sends another one (`gpt-5.6-luna` with `ultra` sends `max`). SessionMan
   starts Codex with `RUST_LOG=codex_otel.trace_safe=info` and reads every
   `codex.sse_event` `response.completed` event, whose `model_reasoning_effort`
   is the level the model response ran with. These trace-safe events carry no
@@ -407,8 +407,8 @@ untrusted, and the ExternalSubagent cannot be continued; nothing is retried.
 - Pi: Pi clamps a level the model cannot use (recorded in the session as
   `thinking_level_change`) and its providers may then remap or drop it
   without any session trace (Codex-backed models: `minimal` is sent as `low`,
-  `off` sends no effort). AgentX loads its own observer extension, which only
-  appends an `agentx-provider-request` entry with the request's reasoning
+  `off` sends no effort). SessionMan loads its own observer extension, which only
+  appends an `sessionman-provider-request` entry with the request's reasoning
   effort to the Pi session before each provider request. A turn passes only
   if the session's thinking level equals the preset effort and every provider
   request of that turn carried exactly that effort. Models whose requests carry
@@ -429,7 +429,7 @@ them in advance.
 Pi's allowlist is an application-level tool filter, not an OS sandbox.
 Native project context (for example AGENTS.md) still applies. Credentials
 and policies are not inherited from Claude. Other
-agents (including Gemini) remain available for ordinary AgentX launch/exec but
+agents (including Gemini) remain available for ordinary SessionMan launch/exec but
 are not delivered MCP combinations in this integration.
 
 Reports identify preset, execution agent, actual selected model, effort, mode, discovered auth, ExternalSubagent/task
@@ -437,8 +437,8 @@ IDs, status, failure reason, and continuation/cancellation instructions. Reports
 are labelled untrusted ExternalSubagent content and never user
 authorization. Available native usage is shown as backend-reported external
 usage with native field names; unknown usage stays unknown. Codex resume usage
-may include context/cumulative fields; AgentX does not reinterpret it as Claude
-usage or fabricate tool counts. `AX_LOG=debug` logs raw command plans, stdin,
+may include context/cumulative fields; SessionMan does not reinterpret it as Claude
+usage or fabricate tool counts. `SM_LOG=debug` logs raw command plans, stdin,
 stdout, stderr and errors to stderr; it may contain task contents. Values of
 credential-like plan environment variables are logged as `<redacted>`, and
 `sk-…` keys, JWTs, bearer tokens and JSON token/key fields in logged I/O are
@@ -458,22 +458,22 @@ make smoke-mcp-effort-live
 make smoke-mcp-isolation-live
 ```
 
-The live backend suite uses existing native logins, isolated AgentX configuration,
+The live backend suite uses existing native logins, isolated SessionMan configuration,
 and Codex `gpt-5.6-luna` / Pi `openai-codex/gpt-5.6-luna`. Override
-`AX_MCP_CODEX_MODEL` / `AX_MCP_PI_MODEL` with exact accessible models. It verifies
+`SM_MCP_CODEX_MODEL` / `SM_MCP_PI_MODEL` with exact accessible models. It verifies
 native inference, independent memory continuation and actual cancellation. The
 job-file smoke starts a background task against a deterministic fixture over MCP
 stdio and asserts the result file appears with the expected fields.
 
 Live smokes that read Codex rollouts (`$CODEX_HOME/sessions/**/rollout-*-<thread>.jsonl`)
 do so because Codex code mode keeps nested shell and patch calls out of
-`exec --json`. Override `AX_MCP_CODEX_HOME` and `AX_MCP_PI_AGENT_DIR` to
+`exec --json`. Override `SM_MCP_CODEX_HOME` and `SM_MCP_PI_AGENT_DIR` to
 select the credential directories the live smokes pass to the server as
 `CODEX_HOME`/`PI_CODING_AGENT_DIR` (defaults: `~/.codex`, `~/.pi/agent`).
 
 `smoke-mcp-effort-live` runs every Codex level and Pi
 `low`..`max` on gpt-5.6-luna, a Pi preset that Pi clamps
-(`AX_MCP_PI_CLAMP_MODEL`, default `deepseek/deepseek-flash`, whose credential
+(`SM_MCP_PI_CLAMP_MODEL`, default `deepseek/deepseek-flash`, whose credential
 must be in the same Pi agent directory), and direct Pi `off`/`minimal` runs with the observer to show why those
 stay rejected. Evidence is written to `evidence.json` in the printed directory.
 
@@ -500,7 +500,7 @@ To inspect one, pass `MCP_EVIDENCE_FORMAT=historical` to
 `make verify-mcp-host-evidence`; the default parser and current smoke harnesses
 use the new names. No new live model run is implied by renaming a harness.
 `smoke-mcp-contract` checks the built binary over stdio without creating work;
-set `AX_MCP_BINARY` to verify an installed binary through the same Make target.
+set `SM_MCP_BINARY` to verify an installed binary through the same Make target.
 
 `make smoke-mcp-presets` records an isolated real Claude natural-language
 observation with randomized preset names. Override `MCP_PRESET_PROMPT` for

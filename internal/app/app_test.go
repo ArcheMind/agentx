@@ -320,7 +320,7 @@ func chooseRecent(application App, groups []sessionGroup) (sessions.Summary, err
 func newHomeApp(t *testing.T, input string, stdout *bytes.Buffer) App {
 	application := New(false, strings.NewReader(input), stdout, &bytes.Buffer{})
 	application.Hooks.Home = t.TempDir()
-	t.Setenv("AX_SUBAGENT_HOME", "")
+	t.Setenv("SM_SUBAGENT_HOME", "")
 	return application
 }
 

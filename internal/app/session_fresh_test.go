@@ -151,7 +151,7 @@ func TestFreshSessionDetailOffloadsAndRechains(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	historyPath := filepath.Join(home, ".local", "state", "agentx", "history", "orig-session.json")
+	historyPath := filepath.Join(home, ".local", "state", "sessionman", "history", "orig-session.json")
 	info, err := os.Stat(historyPath)
 	if err != nil {
 		t.Fatal(err)
@@ -227,7 +227,7 @@ func TestFreshSessionDetailKeepsShortTranscriptsWhole(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	historyPath := filepath.Join(home, ".local", "state", "agentx", "history", "short.json")
+	historyPath := filepath.Join(home, ".local", "state", "sessionman", "history", "short.json")
 	if _, err := os.Stat(historyPath); err != nil {
 		t.Fatal(err)
 	}
@@ -319,7 +319,7 @@ func TestFreshKeyResumesAsNewNativeSessionSameAgent(t *testing.T) {
 	if plan.Executable != "codex" || token == "" || token == "orig-id" {
 		t.Fatalf("fresh resume must launch a new native session, plan = %#v", plan)
 	}
-	historyPath := filepath.Join(home, ".local", "state", "agentx", "history", "orig-id.json")
+	historyPath := filepath.Join(home, ".local", "state", "sessionman", "history", "orig-id.json")
 	history, err := os.ReadFile(historyPath)
 	if err != nil {
 		t.Fatal(err)

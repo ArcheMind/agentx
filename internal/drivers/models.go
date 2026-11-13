@@ -44,7 +44,7 @@ func (CodexAppServerModels) ListModels(ctx context.Context, runner runtime.Runne
 		return nil, fmt.Errorf("Codex model discovery requires JSON-RPC command support")
 	}
 	requests := []json.RawMessage{
-		json.RawMessage(`{"id":1,"method":"initialize","params":{"clientInfo":{"name":"agentx","title":"AgentX","version":"0"},"capabilities":{"experimentalApi":false}}}`),
+		json.RawMessage(`{"id":1,"method":"initialize","params":{"clientInfo":{"name":"sessionman","title":"SessionMan","version":"0"},"capabilities":{"experimentalApi":false}}}`),
 		json.RawMessage(`{"method":"initialized"}`),
 		json.RawMessage(`{"id":2,"method":"model/list","params":{"includeHidden":false}}`),
 	}
@@ -111,8 +111,8 @@ func (ClaudeModels) ListModels(ctx context.Context, runner runtime.Runner) ([]ru
 	if !ok {
 		return nil, fmt.Errorf("Claude model discovery requires control-protocol command support")
 	}
-	const requestID = "agentx-models"
-	request := json.RawMessage(`{"type":"control_request","request_id":"agentx-models","request":{"subtype":"initialize"}}`)
+	const requestID = "sessionman-models"
+	request := json.RawMessage(`{"type":"control_request","request_id":"sessionman-models","request":{"subtype":"initialize"}}`)
 	commandCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	args := []string{"--print", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose", "--no-session-persistence", "--strict-mcp-config", "--mcp-config", `{"mcpServers":{}}`, "--settings", `{"disableAllHooks":true}`}

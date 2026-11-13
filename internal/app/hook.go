@@ -54,7 +54,7 @@ func (a App) prepareHooks(request *runtime.RunRequest, agent string, write bool)
 	service.Project = request.Cwd
 	executable, err := os.Executable()
 	if err != nil {
-		return fmt.Errorf("resolve AgentX executable: %w", err)
+		return fmt.Errorf("resolve SessionMan executable: %w", err)
 	}
 	projection, err := service.Prepare(agent, executable, write)
 	if err != nil {
@@ -96,10 +96,10 @@ func (a App) dispatchHook(ctx context.Context, args []string) error {
 			}
 			data, decodeErr := base64.RawURLEncoding.DecodeString(args[index])
 			if decodeErr != nil {
-				return errors.New("--handler must be a valid AgentX hook payload")
+				return errors.New("--handler must be a valid SessionMan hook payload")
 			}
 			if decodeErr := json.Unmarshal(data, &handler); decodeErr != nil {
-				return errors.New("--handler must be a valid AgentX hook payload")
+				return errors.New("--handler must be a valid SessionMan hook payload")
 			}
 		default:
 			return fmt.Errorf("unknown hook dispatch option %q", args[index])

@@ -1,6 +1,6 @@
 # Architecture
 
-AgentX is a small native runtime shell around existing coding-agent CLIs. The architecture keeps ownership boundaries visible.
+SessionMan is a small native runtime shell around existing coding-agent CLIs. The architecture keeps ownership boundaries visible.
 
 ```text
 CLI grammar and output protocol
@@ -40,13 +40,13 @@ This avoids a large adapter filled with optional methods and prevents the CLI fr
 
 `internal/sessions` reads each agent's local native session format and normalizes only the fields required for discovery, inspection, and bounded handoff. The native file path remains visible as the source.
 
-Resume never writes a source agent's database. AgentX builds a bounded transcript and invokes the target agent through its launch driver.
+Resume never writes a source agent's database. SessionMan builds a bounded transcript and invokes the target agent through its launch driver.
 
 ## Agent Skills
 
 `internal/skills` discovers and validates standard `SKILL.md` directories. The canonical stores are `~/.agents/skills` for user scope and `.agents/skills` for project scope. Codex, Gemini, and Pi consume those directories directly. Claude receives a relative symbolic-link projection under the equivalent `.claude/skills` directory, preserving one physical source of truth. DeepSeek Harness is reported as unsupported; OpenCode remains outside this actively developed integration.
 
-Installation accepts a local directory or a Git repository plus subpath, validates frontmatter and resource safety before writing, rejects conflicts, and stages the canonical copy before publishing it. Source provenance is stored outside the skill in the canonical store's `.agentx-origins.yaml`; the skill itself remains the standard Agent Skills format.
+Installation accepts a local directory or a Git repository plus subpath, validates frontmatter and resource safety before writing, rejects conflicts, and stages the canonical copy before publishing it. Source provenance is stored outside the skill in the canonical store's `.sessionman-origins.yaml`; the skill itself remains the standard Agent Skills format.
 
 ## External commands
 
@@ -54,7 +54,7 @@ Installation accepts a local directory or a Git repository plus subpath, validat
 
 ## Data ownership
 
-| Data | Owner | AgentX behavior |
+| Data | Owner | SessionMan behavior |
 | --- | --- | --- |
 | Agent executable | Native package manager | Locate or delegate installation |
 | Credentials | Native agent | Invoke native login, status, and logout flows |
@@ -62,8 +62,8 @@ Installation accepts a local directory or a Git repository plus subpath, validat
 | Sessions | Native agent | Read and normalize without mutation |
 | Skills | User or project `.agents/skills` | Validate, install, discover, and project to Claude |
 | Run output | Native agent | Pass through unchanged |
-| Dry-run plans | AgentX | Emit as text, JSON, or YAML |
+| Dry-run plans | SessionMan | Emit as text, JSON, or YAML |
 
 ## Adding an agent capability
 
-A change starts with evidence of a stable native source or command. Add the smallest orthogonal driver, register the capability, update the lifecycle audit, and extend the consistency checks. If agents do not share semantics, keep the feature native instead of forcing it into AgentX.
+A change starts with evidence of a stable native source or command. Add the smallest orthogonal driver, register the capability, update the lifecycle audit, and extend the consistency checks. If agents do not share semantics, keep the feature native instead of forcing it into SessionMan.

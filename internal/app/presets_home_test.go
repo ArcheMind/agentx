@@ -42,7 +42,7 @@ func presetApp(t *testing.T, input string, binaries ...string) (App, *bytes.Buff
 		}
 	}
 	t.Setenv("PATH", bin)
-	t.Setenv("AX_SUBAGENT_HOME", "")
+	t.Setenv("SM_SUBAGENT_HOME", "")
 	t.Chdir(t.TempDir())
 	var stdout bytes.Buffer
 	application := New(false, strings.NewReader(input), &stdout, &bytes.Buffer{})
@@ -294,15 +294,15 @@ func TestChangeNoteTellsUserToReconnectLiveMCP(t *testing.T) {
 	application, stdout, _ := presetApp(t, "")
 	home := application.Hooks.Home
 	application.presetChangeNote(home)
-	if !strings.Contains(stdout.String(), "no running AgentX MCP connection") {
+	if !strings.Contains(stdout.String(), "no running SessionMan MCP connection") {
 		t.Fatal(stdout.String())
 	}
-	dir := filepath.Join(home, ".local", "state", "agentx", "connections")
+	dir := filepath.Join(home, ".local", "state", "sessionman", "connections")
 	os.MkdirAll(dir, 0o700)
 	os.WriteFile(filepath.Join(dir, "live.json"), []byte(fmt.Sprintf(`{"id":"connection-x","pid":%d}`, os.Getpid())), 0o600)
 	stdout.Reset()
 	application.presetChangeNote(home)
-	if !strings.Contains(stdout.String(), "1 running AgentX MCP connection(s) still show the preset list from when they connected") || !strings.Contains(stdout.String(), "reconnect AgentX in Claude (/mcp)") {
+	if !strings.Contains(stdout.String(), "1 running SessionMan MCP connection(s) still show the preset list from when they connected") || !strings.Contains(stdout.String(), "reconnect SessionMan in Claude (/mcp)") {
 		t.Fatal(stdout.String())
 	}
 }

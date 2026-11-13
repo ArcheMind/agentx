@@ -29,7 +29,7 @@ func (r *claudeModelsRunner) ExecuteClaudeControl(ctx context.Context, plan runt
 }
 
 func TestClaudeModelsUseInitializeControlResponse(t *testing.T) {
-	runner := &claudeModelsRunner{response: json.RawMessage(`{"type":"control_response","response":{"request_id":"agentx-models","subtype":"success","response":{"models":[{"value":"claude-opus","displayName":"Claude Opus","description":"Current model","supportedEffortLevels":["low","high"]},{"value":"claude-opus","displayName":"duplicate"},{"value":""}]}}}`)}
+	runner := &claudeModelsRunner{response: json.RawMessage(`{"type":"control_response","response":{"request_id":"sessionman-models","subtype":"success","response":{"models":[{"value":"claude-opus","displayName":"Claude Opus","description":"Current model","supportedEffortLevels":["low","high"]},{"value":"claude-opus","displayName":"duplicate"},{"value":""}]}}}`)}
 	models, err := (ClaudeModels{}).ListModels(context.Background(), runner)
 	if err != nil {
 		t.Fatal(err)
@@ -37,7 +37,7 @@ func TestClaudeModelsUseInitializeControlResponse(t *testing.T) {
 	if len(models) != 1 || models[0].ID != "claude-opus" || models[0].DisplayName != "Claude Opus" || models[0].Description != "Current model" || models[0].Source != "claude initialize" || !reflect.DeepEqual(models[0].Efforts, []string{"low", "high"}) {
 		t.Fatalf("models = %#v", models)
 	}
-	if !runner.deadline || runner.requestID != "agentx-models" || !strings.Contains(string(runner.request), `"subtype":"initialize"`) {
+	if !runner.deadline || runner.requestID != "sessionman-models" || !strings.Contains(string(runner.request), `"subtype":"initialize"`) {
 		t.Fatalf("initialize request/call = %#v", runner)
 	}
 	if runner.plan.Executable != "claude" || !reflect.DeepEqual(runner.plan.UnsetEnv, []string{"CLAUDECODE"}) || !containsArgSequence(runner.plan.Args, "--strict-mcp-config", "--mcp-config", `{"mcpServers":{}}`) || !containsArgSequence(runner.plan.Args, "--settings", `{"disableAllHooks":true}`) {
@@ -51,9 +51,9 @@ func TestClaudeModelsAcceptEmptyCatalogAndRejectBadResponses(t *testing.T) {
 		body string
 		want string
 	}{
-		{name: "empty catalog", body: `{"response":{"request_id":"agentx-models","subtype":"success","response":{"models":[]}}}`},
-		{name: "initialize error", body: `{"response":{"request_id":"agentx-models","subtype":"error","error":"unavailable"}}`, want: "unavailable"},
-		{name: "missing models", body: `{"response":{"request_id":"agentx-models","subtype":"success","response":{}}}`, want: "no models"},
+		{name: "empty catalog", body: `{"response":{"request_id":"sessionman-models","subtype":"success","response":{"models":[]}}}`},
+		{name: "initialize error", body: `{"response":{"request_id":"sessionman-models","subtype":"error","error":"unavailable"}}`, want: "unavailable"},
+		{name: "missing models", body: `{"response":{"request_id":"sessionman-models","subtype":"success","response":{}}}`, want: "no models"},
 		{name: "malformed response", body: `{"response":`, want: "parse Claude"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

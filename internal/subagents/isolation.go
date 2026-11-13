@@ -13,7 +13,7 @@ import (
 
 const IsolationWorktree = "worktree"
 
-// Worktree is the git worktree an ExternalSubagent runs in for its whole lifetime. AgentX never
+// Worktree is the git worktree an ExternalSubagent runs in for its whole lifetime. SessionMan never
 // removes it, because continuation reuses it and its uncommitted work belongs to the user.
 type Worktree struct {
 	Repo, Path, Branch, Base, Original string
@@ -25,7 +25,7 @@ type Worktree struct {
 var worktreeMu sync.Mutex
 
 func WorktreeDir(home, id string) string {
-	return filepath.Join(home, ".local", "state", "agentx", "worktrees", id)
+	return filepath.Join(home, ".local", "state", "sessionman", "worktrees", id)
 }
 
 func (s *Server) git(ctx context.Context, dir string, args ...string) (string, error) {
@@ -82,7 +82,7 @@ func (s *Server) createWorktree(id, cwd string) (*Worktree, string, error) {
 	if _, inside := within(top, path); inside {
 		return nil, "", fmt.Errorf("worktree location %s is inside repository %s; no task started", path, top)
 	}
-	w := &Worktree{Repo: top, Path: path, Branch: "agentx/" + id, Base: base, Original: realCwd}
+	w := &Worktree{Repo: top, Path: path, Branch: "sessionman/" + id, Base: base, Original: realCwd}
 	if _, err := s.git(ctx, top, "worktree", "add", "-b", w.Branch, path, base); err != nil {
 		return nil, "", fmt.Errorf("creating worktree %s failed; no task started: %w", path, err)
 	}
@@ -144,9 +144,9 @@ func (w *Worktree) describe(agentCwd string) string {
 	if remaining == "" {
 		remaining = "not recorded yet"
 	}
-	return text + fmt.Sprintf("Worktree retention: kept after completion, failure and cancellation; AgentX never removes it. State after last task: %s\nRemove when done: git -C %q worktree remove %q (add --force to discard its changes) && git -C %q branch -D %s\n", remaining, w.Repo, w.Path, w.Repo, w.Branch)
+	return text + fmt.Sprintf("Worktree retention: kept after completion, failure and cancellation; SessionMan never removes it. State after last task: %s\nRemove when done: git -C %q worktree remove %q (add --force to discard its changes) && git -C %q branch -D %s\n", remaining, w.Repo, w.Path, w.Repo, w.Branch)
 }
 
 func IsolationLimits() string {
-	return "Isolation: worktree creates a new git worktree at ~/.local/state/agentx/worktrees/<id>; the worktree is kept after completion. "
+	return "Isolation: worktree creates a new git worktree at ~/.local/state/sessionman/worktrees/<id>; the worktree is kept after completion. "
 }

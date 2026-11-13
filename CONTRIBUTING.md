@@ -21,7 +21,7 @@ cd agentx
 make verify
 ```
 
-`make verify` formats the Go source, runs static checks and tests, audits protocol consistency, builds `bin/ax`, and exercises smoke commands. It is the required local check before a pull request.
+`make verify` formats the Go source, runs static checks and tests, audits protocol consistency, builds `bin/sm`, and exercises smoke commands. It is the required local check before a pull request.
 
 ## Design rules
 

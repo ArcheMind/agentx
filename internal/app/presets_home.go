@@ -327,7 +327,7 @@ func (a App) startPreset(ctx context.Context, reader *bufio.Reader, home string,
 		problem = fmt.Sprintf("%s does not support model selection; edit the preset to use another agent.", agent.Name)
 	default:
 		if _, err := exec.LookPath(agent.Binary); err != nil {
-			problem = fmt.Sprintf("%s is not installed. Install it with ax agent install %s, or edit the preset to use another agent.", agent.Name, agent.ID)
+			problem = fmt.Sprintf("%s is not installed. Install it with sm agent install %s, or edit the preset to use another agent.", agent.Name, agent.ID)
 		}
 	}
 	cwd, err := os.Getwd()
@@ -361,7 +361,7 @@ func (a App) startPreset(ctx context.Context, reader *bufio.Reader, home string,
 	fmt.Fprintf(a.Stdout, "Starting a new %s session with preset %s: model %s · effort %s · mode %s · %s\n", presets.AgentName(p.Agent), p.Name, p.Model, presets.EffortLabel(p.Effort), p.EffectiveMode(), cwd)
 	result, err := a.Runner.Execute(ctx, plan, runtime.ExecuteOptions{Interactive: true, Stdin: a.Stdin, Stdout: a.Stdout, Stderr: a.Stderr})
 	if err != nil {
-		fmt.Fprintf(a.Stderr, "ax: %s exited with an error after starting preset %s (model %s, effort %s, mode %s). AgentX did not substitute another agent, model or effort. If the model or effort was rejected, edit the preset (run ax, select it, press m) or log in with ax auth login %s.\n", agent.Name, p.Name, p.Model, presets.EffortLabel(p.Effort), p.EffectiveMode(), agent.ID)
+		fmt.Fprintf(a.Stderr, "sm: %s exited with an error after starting preset %s (model %s, effort %s, mode %s). SessionMan did not substitute another agent, model or effort. If the model or effort was rejected, edit the preset (run sm, select it, press m) or log in with sm auth login %s.\n", agent.Name, p.Name, p.Model, presets.EffortLabel(p.Effort), p.EffectiveMode(), agent.ID)
 		return true, &ExitError{Code: result.ExitCode, Err: err}
 	}
 	return true, nil
@@ -636,7 +636,7 @@ func (a App) askModel(ctx context.Context, reader *bufio.Reader, draft *presetDr
 		fmt.Fprintln(a.Stdout, colorize(a.Color, ansiDim, "A manually entered model is not checked against the list; it is verified only when a session starts."))
 	} else {
 		fmt.Fprintln(a.Stdout, colorize(a.Color, ansiDim, limitation))
-		fmt.Fprintln(a.Stdout, colorize(a.Color, ansiDim, "Enter the exact model ID. AgentX passes it unchanged to --model and does not verify it until a session starts."))
+		fmt.Fprintln(a.Stdout, colorize(a.Color, ansiDim, "Enter the exact model ID. SessionMan passes it unchanged to --model and does not verify it until a session starts."))
 	}
 	for {
 		value, err := a.readLine(reader, "Model ID (empty cancels): ")
@@ -683,7 +683,7 @@ func effortChoices(draft presetDraft) (string, []effortChoice) {
 		}
 		note := fmt.Sprintf("Explicit levels listed by Codex for %s.", draft.preset.Model)
 		if len(skipped) > 0 {
-			note += " Not offered because AgentX does not recognise them: " + strings.Join(skipped, ", ") + "."
+			note += " Not offered because SessionMan does not recognise them: " + strings.Join(skipped, ", ") + "."
 		}
 		return note, choices
 	case draft.preset.Agent == "codex" && draft.listed != nil:
@@ -1036,9 +1036,9 @@ func (a App) presetChangeNote(home string) {
 	var note string
 	switch {
 	case count > 0:
-		note = fmt.Sprintf("MCP: %d running AgentX MCP connection(s) still show the preset list from when they connected. New ExternalSubagent calls already use the saved presets; reconnect AgentX in Claude (/mcp) or restart Claude to refresh the list.", count)
+		note = fmt.Sprintf("MCP: %d running SessionMan MCP connection(s) still show the preset list from when they connected. New ExternalSubagent calls already use the saved presets; reconnect SessionMan in Claude (/mcp) or restart Claude to refresh the list.", count)
 	default:
-		note = "MCP: no running AgentX MCP connection; Claude sees this change when it next connects."
+		note = "MCP: no running SessionMan MCP connection; Claude sees this change when it next connects."
 	}
 	fmt.Fprintln(a.Stdout, note)
 }

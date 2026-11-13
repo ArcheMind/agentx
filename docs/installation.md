@@ -1,6 +1,6 @@
 # Installation
 
-AgentX is a single `ax` executable. It does not install a daemon, create a configuration file, or move native agent data.
+SessionMan is a single `sm` executable. It does not install a daemon, create a configuration file, or move native agent data.
 
 ## Installer for macOS and Linux
 
@@ -8,19 +8,19 @@ AgentX is a single `ax` executable. It does not install a daemon, create a confi
 curl -LsSf https://raw.githubusercontent.com/ArcheMind/agentx/main/install.sh | sh
 ```
 
-The installer selects the current operating system and architecture, downloads the matching GitHub Release archive, verifies it against the published SHA-256 checksum, and installs `ax` to `$HOME/.local/bin`.
+The installer selects the current operating system and architecture, downloads the matching GitHub Release archive, verifies it against the published SHA-256 checksum, and installs `sm` to `$HOME/.local/bin`.
 
 Choose another destination:
 
 ```bash
-AX_INSTALL_DIR=/usr/local/bin \
+SM_INSTALL_DIR=/usr/local/bin \
   sh -c "$(curl -LsSf https://raw.githubusercontent.com/ArcheMind/agentx/main/install.sh)"
 ```
 
 Install a specific version:
 
 ```bash
-AX_VERSION=0.1.0 \
+SM_VERSION=0.1.0 \
   sh -c "$(curl -LsSf https://raw.githubusercontent.com/ArcheMind/agentx/main/install.sh)"
 ```
 
@@ -31,7 +31,7 @@ The installer accepts a version with or without the `v` prefix.
 With Go 1.25 or newer:
 
 ```bash
-go install github.com/ArcheMind/agentx/cmd/ax@latest
+go install github.com/ArcheMind/agentx/cmd/sm@latest
 ```
 
 The binary is written to `GOBIN`, or to `GOPATH/bin` when `GOBIN` is unset.
@@ -58,23 +58,23 @@ On macOS, use `shasum -a 256 <archive>` and compare the result with `checksums.t
 git clone https://github.com/ArcheMind/agentx.git
 cd agentx
 make build
-./bin/ax version
+./bin/sm version
 ```
 
 Use `make verify` when developing or validating a checkout.
 
 ## Native agent requirements
 
-AgentX itself has no Node.js runtime dependency. `ax agent install`, however, delegates to the verified npm package for each supported native agent, so that command requires `npm` on `PATH`.
+SessionMan itself has no Node.js runtime dependency. `sm agent install`, however, delegates to the verified npm package for each supported native agent, so that command requires `npm` on `PATH`.
 
-Already-installed agents continue to work with their own requirements. Run `ax agent list` to see what AgentX can locate.
+Already-installed agents continue to work with their own requirements. Run `sm agent list` to see what SessionMan can locate.
 
 ## Uninstall
 
 Remove the single executable from the directory where it was installed:
 
 ```bash
-rm "$HOME/.local/bin/ax"
+rm "$HOME/.local/bin/sm"
 ```
 
-AgentX creates no configuration, credential, or session store to clean up.
+SessionMan creates no configuration, credential, or session store to clean up.

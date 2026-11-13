@@ -110,7 +110,7 @@ func freshHistoryMessage(historyPath string) sessions.Message {
 // only the recent window, with tool results stubbed and a pointer to the
 // history injected up front.
 func (a App) freshSessionDetail(detail sessions.Session) (sessions.Session, error) {
-	dir := filepath.Join(a.Sessions.HomeDir, ".local", "state", "agentx", "history")
+	dir := filepath.Join(a.Sessions.HomeDir, ".local", "state", "sessionman", "history")
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return sessions.Session{}, fmt.Errorf("create history directory: %w", err)
 	}

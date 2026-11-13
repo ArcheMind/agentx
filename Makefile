@@ -28,43 +28,43 @@ audit:
 
 build:
 	mkdir -p bin
-	go build -trimpath -o bin/ax ./cmd/ax
+	go build -trimpath -o bin/sm ./cmd/sm
 
 install: build
-	install -m 0755 bin/ax "$${AX_INSTALL_DIR:-$$HOME/.local/bin}/ax"
+	install -m 0755 bin/sm "$${SM_INSTALL_DIR:-$$HOME/.local/bin}/sm"
 
 smoke-mcp-jobfile: build
-	node test/smoke/mcp-jobfile.mjs "$(CURDIR)/bin/ax"
+	node test/smoke/mcp-jobfile.mjs "$(CURDIR)/bin/sm"
 
 smoke-mcp-live: build
-	node test/smoke/mcp-live.mjs "$(CURDIR)/bin/ax"
+	node test/smoke/mcp-live.mjs "$(CURDIR)/bin/sm"
 
 smoke-mcp-management: build
-	node test/smoke/mcp-management.mjs "$(CURDIR)/bin/ax"
+	node test/smoke/mcp-management.mjs "$(CURDIR)/bin/sm"
 
 smoke-mcp-contract: build
-	node test/smoke/mcp-contract.mjs "$(CURDIR)/bin/ax"
+	node test/smoke/mcp-contract.mjs "$(CURDIR)/bin/sm"
 
 smoke-mcp-presets: build
-	node test/smoke/mcp-presets.mjs "$(CURDIR)/bin/ax"
+	node test/smoke/mcp-presets.mjs "$(CURDIR)/bin/sm"
 
 smoke-presets: build
-	node test/smoke/presets.mjs "$(CURDIR)/bin/ax"
+	node test/smoke/presets.mjs "$(CURDIR)/bin/sm"
 
 smoke-transcript-fidelity: build
-	node test/smoke/transcript-fidelity.mjs "$(CURDIR)/bin/ax" "$(AGENTX_PROTOCOL_DIR)"
+	node test/smoke/transcript-fidelity.mjs "$(CURDIR)/bin/sm" "$(AGENTX_PROTOCOL_DIR)"
 
 smoke-transcript-cross: build
-	node test/smoke/transcript-cross.mjs "$(CURDIR)/bin/ax"
+	node test/smoke/transcript-cross.mjs "$(CURDIR)/bin/sm"
 
 smoke-continue-live: build
-	node test/smoke/continue-roundtrip-live.mjs "$(CURDIR)/bin/ax"
+	node test/smoke/continue-roundtrip-live.mjs "$(CURDIR)/bin/sm"
 
 smoke-mcp-effort-live: build
-	node test/smoke/mcp-roles-effort-live.mjs "$(CURDIR)/bin/ax"
+	node test/smoke/mcp-roles-effort-live.mjs "$(CURDIR)/bin/sm"
 
 smoke-mcp-isolation-live: build
-	node test/smoke/mcp-isolation-live.mjs "$(CURDIR)/bin/ax"
+	node test/smoke/mcp-isolation-live.mjs "$(CURDIR)/bin/sm"
 
 test-mcp-race:
 	go test -race ./internal/subagents ./internal/app
@@ -74,43 +74,43 @@ test-mcp-syntax:
 	python3 -c 'import ast; from pathlib import Path; ast.parse(Path("test/smoke/pty-host.py").read_text())'
 
 smoke: build
-	./bin/ax version
-	./bin/ax --yaml status >/dev/null
-	./bin/ax --json agent list >/dev/null
-	./bin/ax --yaml agent list >/dev/null
-	./bin/ax --json skill list >/dev/null
-	./bin/ax --json hook list >/dev/null
-	./bin/ax agent install codex --dry-run >/dev/null
-	./bin/ax --yaml auth login codex --dry-run >/dev/null
-	./bin/ax agent run codex --model smoke-test --dry-run >/dev/null
-	echo '{"summary":{"id":"test","provider":"claude","message_count":0},"messages":[]}' | ./bin/ax convert to claude >/dev/null
-	node test/smoke/transcript-fidelity.mjs "$(CURDIR)/bin/ax" "$(AGENTX_PROTOCOL_DIR)" >/dev/null
-	node test/smoke/transcript-cross.mjs "$(CURDIR)/bin/ax" >/dev/null
+	./bin/sm version
+	./bin/sm --yaml status >/dev/null
+	./bin/sm --json agent list >/dev/null
+	./bin/sm --yaml agent list >/dev/null
+	./bin/sm --json skill list >/dev/null
+	./bin/sm --json hook list >/dev/null
+	./bin/sm agent install codex --dry-run >/dev/null
+	./bin/sm --yaml auth login codex --dry-run >/dev/null
+	./bin/sm agent run codex --model smoke-test --dry-run >/dev/null
+	echo '{"summary":{"id":"test","provider":"claude","message_count":0},"messages":[]}' | ./bin/sm convert to claude >/dev/null
+	node test/smoke/transcript-fidelity.mjs "$(CURDIR)/bin/sm" "$(AGENTX_PROTOCOL_DIR)" >/dev/null
+	node test/smoke/transcript-cross.mjs "$(CURDIR)/bin/sm" >/dev/null
 
 smoke-live: build
-	./bin/ax --json agent models codex >/dev/null
-	./bin/ax --json agent models opencode >/dev/null
-	./bin/ax --json agent models pi >/dev/null
-	AX_LOG=debug ./bin/ax --json agent list >/dev/null 2>&1
+	./bin/sm --json agent models codex >/dev/null
+	./bin/sm --json agent models opencode >/dev/null
+	./bin/sm --json agent models pi >/dev/null
+	SM_LOG=debug ./bin/sm --json agent list >/dev/null 2>&1
 
 smoke-clean:
 	docker build --no-cache --target agents-clean -f test/smoke/Dockerfile -t agentx-smoke-clean .
 
 smoke-hooks-live: build
-	sh test/smoke/hooks-live.sh "$(CURDIR)/bin/ax"
+	sh test/smoke/hooks-live.sh "$(CURDIR)/bin/sm"
 
 smoke-skills-clean:
 	docker build --no-cache --target skills-clean -f test/smoke/Dockerfile -t agentx-smoke-skills-clean .
 
 smoke-skills-live: build
-	sh test/smoke/skills-live.sh "$(CURDIR)/bin/ax"
+	sh test/smoke/skills-live.sh "$(CURDIR)/bin/sm"
 
 verify: fmt check test audit smoke
 
 clean:
-	rm -f bin/ax
+	rm -f bin/sm
 
 .PHONY: smoke-claude-models
 smoke-claude-models: build
-	./bin/ax --json agent models claude
-	./bin/ax status
+	./bin/sm --json agent models claude
+	./bin/sm status

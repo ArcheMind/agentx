@@ -24,7 +24,7 @@ func (a Auth) String() string {
 }
 
 // authSource is the native agent's own credential directory: its environment variable when set,
-// otherwise the native default under the user's home. AX_SUBAGENT_HOME never changes it.
+// otherwise the native default under the user's home. SM_SUBAGENT_HOME never changes it.
 func authSource(agent string) (string, string, error) {
 	if agent == "claude" {
 		return "", "", nil

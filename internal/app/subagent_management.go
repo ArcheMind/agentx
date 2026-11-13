@@ -116,7 +116,7 @@ func (a App) presetShow(home string, name string) error {
 }
 
 func (a App) presetHome() string {
-	if override := os.Getenv("AX_SUBAGENT_HOME"); override != "" {
+	if override := os.Getenv("SM_SUBAGENT_HOME"); override != "" {
 		return override
 	}
 	return a.Hooks.Home
@@ -127,10 +127,10 @@ func (a App) injectClaudeAgentX(request *runtime.RunRequest) error {
 	if err != nil {
 		return err
 	}
-	entry, _ := json.Marshal(map[string]any{"mcpServers": map[string]any{"agentx": map[string]any{"type": "stdio", "command": executable, "args": []string{"mcp", "serve"}}}})
+	entry, _ := json.Marshal(map[string]any{"mcpServers": map[string]any{"sessionman": map[string]any{"type": "stdio", "command": executable, "args": []string{"mcp", "serve"}}}})
 	request.PassthroughArgs = append([]string{
 		"--mcp-config", string(entry),
-		"--allowedTools", "mcp__agentx__StartExternalSubagent", "mcp__agentx__SendExternalSubagentMessage", "mcp__agentx__StopExternalSubagent", "mcp__agentx__ListExternalSubagentSessions",
+		"--allowedTools", "mcp__sessionman__StartExternalSubagent", "mcp__sessionman__SendExternalSubagentMessage", "mcp__sessionman__StopExternalSubagent", "mcp__sessionman__ListExternalSubagentSessions",
 	}, request.PassthroughArgs...)
 	return nil
 }
@@ -150,12 +150,12 @@ func injectCodexAgentX(request *runtime.RunRequest) {
 		return
 	}
 	request.PassthroughArgs = append(request.PassthroughArgs,
-		"-c", fmt.Sprintf("mcp_servers.agentx.command=%q", bin),
-		"-c", `mcp_servers.agentx.args=["mcp","serve"]`,
+		"-c", fmt.Sprintf("mcp_servers.sessionman.command=%q", bin),
+		"-c", `mcp_servers.sessionman.args=["mcp","serve"]`,
 	)
-	if subHome := os.Getenv("AX_SUBAGENT_HOME"); subHome != "" {
+	if subHome := os.Getenv("SM_SUBAGENT_HOME"); subHome != "" {
 		request.PassthroughArgs = append(request.PassthroughArgs,
-			"-c", fmt.Sprintf("mcp_servers.agentx.env.AX_SUBAGENT_HOME=%q", subHome),
+			"-c", fmt.Sprintf("mcp_servers.sessionman.env.SM_SUBAGENT_HOME=%q", subHome),
 		)
 	}
 }

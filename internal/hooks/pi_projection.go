@@ -111,7 +111,7 @@ export default function (pi: any) {
       if (pendingContext.length === 0) return;
       const content = pendingContext.join("\n");
       pendingContext = [];
-      return { message: { customType: "agentx-hooks", content, display: true } };
+      return { message: { customType: "sessionman-hooks", content, display: true } };
     });
   }
 

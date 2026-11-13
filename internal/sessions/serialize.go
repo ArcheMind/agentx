@@ -239,8 +239,8 @@ func SerializeCodex(detail Session) []map[string]any {
 		"session_id":  detail.ID,
 		"cwd":         detail.Workspace,
 		"timestamp":   detail.StartedAt,
-		"originator":  "agentx",
-		"cli_version": "agentx",
+		"originator":  "sessionman",
+		"cli_version": "sessionman",
 		"source":      "cli",
 	}
 	if detail.IsSubagent {

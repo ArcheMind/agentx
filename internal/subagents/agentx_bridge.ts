@@ -1,8 +1,8 @@
 import { spawn } from "node:child_process";
 import { Type } from "typebox";
 
-const AX_BINARY = process.env.AX_BINARY ?? "ax";
-const AX_DELEGATION_DEPTH = process.env.AX_DELEGATION_DEPTH ?? "1";
+const SM_BINARY = process.env.SM_BINARY ?? "sm";
+const SM_DELEGATION_DEPTH = process.env.SM_DELEGATION_DEPTH ?? "1";
 
 interface JsonRpcResponse {
   id: number;
@@ -13,7 +13,7 @@ interface JsonRpcResponse {
 function createMcpSession(binary: string) {
   const child = spawn(binary, ["mcp", "serve"], {
     stdio: ["pipe", "pipe", "pipe"],
-    env: { ...process.env, AX_DELEGATION_DEPTH },
+    env: { ...process.env, SM_DELEGATION_DEPTH },
   });
 
   let nextId = 1;
@@ -43,7 +43,7 @@ function createMcpSession(binary: string) {
   });
 
   child.on("close", () => {
-    const err = new Error("ax mcp serve exited");
+    const err = new Error("sm mcp serve exited");
     for (const [, p] of pending) p.reject(err);
     pending.clear();
   });
@@ -87,11 +87,11 @@ export default function (pi: any) {
       await ready;
       return session!;
     }
-    session = createMcpSession(AX_BINARY);
+    session = createMcpSession(SM_BINARY);
     ready = session.request("initialize", {
       protocolVersion: "2024-11-05",
       capabilities: {},
-      clientInfo: { name: "agentx-bridge", version: "1.0.0" },
+      clientInfo: { name: "sessionman-bridge", version: "1.0.0" },
     }).then((resp) => {
       if (resp.error) throw new Error(`initialize failed: ${resp.error.message}`);
       session!.notify("notifications/initialized");
@@ -123,12 +123,12 @@ export default function (pi: any) {
   }
 
   bridgeTool(
-    "delegate", "Delegate to AgentX",
-    "Delegate a task to another AI agent via AgentX. run_in_background (default true) returns immediately with a result file path and wait command; false blocks until completion. Available presets are configured in the user's AgentX preset collection.",
+    "delegate", "Delegate to SessionMan",
+    "Delegate a task to another AI agent via SessionMan. run_in_background (default true) returns immediately with a result file path and wait command; false blocks until completion. Available presets are configured in the user's SessionMan preset collection.",
     Type.Object({
       description: Type.String({ description: "Short task description" }),
       prompt: Type.String({ description: "Full task prompt for the sub-agent" }),
-      model: Type.String({ description: "Preset name from the AgentX preset collection" }),
+      model: Type.String({ description: "Preset name from the SessionMan preset collection" }),
       run_in_background: Type.Optional(Type.Boolean({ description: "Default true; false blocks until completion" })),
       isolation: Type.Optional(Type.String({ description: "worktree: run in a new git worktree; omit for no isolation" })),
       mode: Type.Optional(Type.String({ description: "Override preset mode. normal: agent's own config decides. yolo: bypass permission checks." })),
@@ -139,9 +139,9 @@ export default function (pi: any) {
 
   bridgeTool(
     "delegate_send", "Send to delegated agent",
-    "Send a follow-up message to a running or completed AgentX ExternalSubagent by name or ID. The sub-agent resumes in the same context.",
+    "Send a follow-up message to a running or completed SessionMan ExternalSubagent by name or ID. The sub-agent resumes in the same context.",
     Type.Object({
-      to: Type.String({ description: "AgentX name or ID" }),
+      to: Type.String({ description: "SessionMan name or ID" }),
       message: Type.String({ description: "Text task" }),
       summary: Type.Optional(Type.String({ description: "Optional display summary" })),
     }),
@@ -150,14 +150,14 @@ export default function (pi: any) {
 
   bridgeTool(
     "delegate_stop", "Stop delegated agent",
-    "Cancel a running AgentX ExternalSubagent by name or ID.",
-    Type.Object({ task_id: Type.String({ description: "AgentX name or ID" }) }),
+    "Cancel a running SessionMan ExternalSubagent by name or ID.",
+    Type.Object({ task_id: Type.String({ description: "SessionMan name or ID" }) }),
     "StopExternalSubagent",
   );
 
   bridgeTool(
     "delegate_list", "List delegated agents",
-    "List ExternalSubagent sessions in this AgentX connection, with status and reports.",
+    "List ExternalSubagent sessions in this SessionMan connection, with status and reports.",
     Type.Object({}),
     "ListExternalSubagentSessions",
   );

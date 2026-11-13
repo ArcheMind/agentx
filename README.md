@@ -1,11 +1,11 @@
-# agentx
+# sessionman
 
 [![CI](https://github.com/ArcheMind/agentx/actions/workflows/ci.yml/badge.svg)](https://github.com/ArcheMind/agentx/actions/workflows/ci.yml)
 [![CI platforms](https://img.shields.io/badge/CI%20platforms-Linux%20%7C%20macOS%20%7C%20Windows-2ea44f)](https://github.com/ArcheMind/agentx/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/ArcheMind/agentx?display_name=tag)](https://github.com/ArcheMind/agentx/releases)
 [![License](https://img.shields.io/github/license/ArcheMind/agentx)](LICENSE)
 
-**AgentX maintains reverse-engineered session formats and invocation interfaces of different coding agents. This makes the previously impossible possible.**
+**SessionMan maintains reverse-engineered session formats and invocation interfaces of different coding agents. This makes the previously impossible possible.**
 
 Most common use cases:
 
@@ -16,13 +16,13 @@ Most common use cases:
 Minimal footprint, near-zero dependencies — easy to integrate.
 
 ```console
-$ ax                # every recent session, every agent
-$ ax codex          # start a new Codex session
+$ sm                # every recent session, every agent
+$ sm codex          # start a new Codex session
 ```
 
 ## One list of every agent's work
 
-`ax` with no arguments opens one screen with your presets and the recent sessions of every agent, grouped by project.
+`sm` with no arguments opens one screen with your presets and the recent sessions of every agent, grouped by project.
 
 Start from a preset or resume recent work:
 
@@ -52,9 +52,9 @@ Recent sessions · Global
 Non-interactive and filtered:
 
 ```console
-ax session list --all --limit 20
-ax session list --source codex --all --include-subagents
-ax session show <session-id> --source claude --peek
+sm session list --all --limit 20
+sm session list --source codex --all --include-subagents
+sm session show <session-id> --source claude --peek
 ```
 
 Child Agent sessions stay hidden unless `--include-subagents` is set.
@@ -77,35 +77,35 @@ Choose an agent:
 The same hand-off without the screen:
 
 ```console
-ax session resume codex <claude-session-id> --source claude
+sm session resume codex <claude-session-id> --source claude
 ```
 
-AgentX converts the session into the target agent's native transcript format and starts its native resume (`claude --resume`, `codex resume`, `pi --session`, …). Source sessions are only read, never modified.
+SessionMan converts the session into the target agent's native transcript format and starts its native resume (`claude --resume`, `codex resume`, `pi --session`, …). Source sessions are only read, never modified.
 
 ## Move it to another machine
 
 Press e on a session in the interactive home to export it as a unified transcript file (`<agent>-<title>-<id>.json`), or stream it:
 
 ```console
-ax session export <session-id> --source claude > work.json
-ax session import codex work.json      # write into codex's native store, print the new session id
-ax --resume work.json                  # import and resume interactively in one step
+sm session export <session-id> --source claude > work.json
+sm session import codex work.json      # write into codex's native store, print the new session id
+sm --resume work.json                  # import and resume interactively in one step
 ```
 
 ## Call another agent's preset from inside yours
 
-A preset saves agent, model, effort, and when to use it. The same collection feeds `ax` and the MCP tools, so an agent launched through `ax` (for example `ax claude` or `ax codex`) gets the ExternalSubagent tools automatically and can run your other presets directly:
+A preset saves agent, model, effort, and when to use it. The same collection feeds `sm` and the MCP tools, so an agent launched through `sm` (for example `sm claude` or `sm codex`) gets the ExternalSubagent tools automatically and can run your other presets directly:
 
 ```console
-$ ax preset list
+$ sm preset list
 claude-review        claude     static requirements satisfied; login and model access verified per execution
 pi-review            pi         static requirements satisfied; login and model access verified per execution
 
-$ ax codex
+$ sm codex
 > Ask my claude-review preset to review this change.
 ```
 
-Each call runs the preset's own native agent in its own session. No relay inference call, no per-task registration. AgentX passes no permission flags by default (`mode: "normal"`), so each agent's own configuration decides what it may do; `mode: "yolo"` bypasses the agent's permission checks and sandbox. `isolation: "worktree"` runs the subagent in a fresh git worktree; it only changes where the agent works.
+Each call runs the preset's own native agent in its own session. No relay inference call, no per-task registration. SessionMan passes no permission flags by default (`mode: "normal"`), so each agent's own configuration decides what it may do; `mode: "yolo"` bypasses the agent's permission checks and sandbox. `isolation: "worktree"` runs the subagent in a fresh git worktree; it only changes where the agent works.
 
 ```text
 ExternalSubagent · SendExternalSubagentMessage · StopExternalSubagent · listExternalSubagentSessions
@@ -118,12 +118,12 @@ Exact inputs, limits, and acceptance evidence: [docs/subagents.md](docs/subagent
 ```text
 ~/.agents/skills/<name>/SKILL.md      codex · dsh · gemini · opencode · pi, Claude via .claude/skills
 ~/.agents/hooks.json                  claude · codex · gemini · pi
-~/.agentx/presets/<name>/PRESET.md  ax · the ExternalSubagent tools above
+~/.sessionman/presets/<name>/PRESET.md  sm · the ExternalSubagent tools above
 ```
 
 ```console
-$ ax skill install https://github.com/example/agent-skills.git --path skills/review --scope user
-$ ax hook list
+$ sm skill install https://github.com/example/agent-skills.git --path skills/review --scope user
+$ sm hook list
 SCOPE    EVENT             COMMAND
 user     SessionStart      echo session started
 user     UserPromptSubmit  echo prompt submitted
@@ -142,7 +142,7 @@ effort: low
 Read-only research and code review. Not for large refactors.
 ```
 
-`ax` shows `+ Create preset…` on the home screen and `m` edits the highlighted one. Native config stays native: AgentX never merges into your Claude, Codex, Gemini, or Pi configuration; hook and skill bridges are isolated and visible to the agent's own trust review.
+`sm` shows `+ Create preset…` on the home screen and `m` edits the highlighted one. Native config stays native: SessionMan never merges into your Claude, Codex, Gemini, or Pi configuration; hook and skill bridges are isolated and visible to the agent's own trust review.
 
 ## Install
 
@@ -152,12 +152,12 @@ Read-only research and code review. Not for large refactors.
 curl -LsSf https://raw.githubusercontent.com/ArcheMind/agentx/main/install.sh | sh
 ```
 
-Downloads the release artifact for the current platform, verifies its SHA-256 checksum, and installs `ax` to `$HOME/.local/bin`. Set `AX_INSTALL_DIR` for another directory.
+Downloads the release artifact for the current platform, verifies its SHA-256 checksum, and installs `sm` to `$HOME/.local/bin`. Set `SM_INSTALL_DIR` for another directory.
 
 ### Go
 
 ```bash
-go install github.com/ArcheMind/agentx/cmd/ax@latest
+go install github.com/ArcheMind/agentx/cmd/sm@latest
 ```
 
 Prebuilt archives for macOS, Linux, and Windows are on the [releases page](https://github.com/ArcheMind/agentx/releases). See [installation](docs/installation.md) for version pinning, verification, Windows setup, and source builds.
@@ -173,44 +173,44 @@ Prebuilt archives for macOS, Linux, and Windows are on the [releases page](https
 | OpenCode | yes | yes | yes | — |
 | Pi | yes | yes | yes | yes |
 
-DeepSeek Harness has no verified session source, so it is not a session or resume target. AgentX can still install, authenticate, and launch it. OpenCode and DeepSeek Harness are not part of the actively developed skill and hook integrations. Exact native versions and evidence: [lifecycle and protocol audit](docs/lifecycle-and-protocol-audit.md).
+DeepSeek Harness has no verified session source, so it is not a session or resume target. SessionMan can still install, authenticate, and launch it. OpenCode and DeepSeek Harness are not part of the actively developed skill and hook integrations. Exact native versions and evidence: [lifecycle and protocol audit](docs/lifecycle-and-protocol-audit.md).
 
 ## Command reference
 
 ```text
-ax
-ax --resume <transcript-file>
-ax <agent> [--model <model>] [--cwd <path>] [--dry-run] [-- <native args...>]
-ax [--json|--yaml] status
+sm
+sm --resume <transcript-file>
+sm <agent> [--model <model>] [--cwd <path>] [--dry-run] [-- <native args...>]
+sm [--json|--yaml] status
 
-ax [--json|--yaml] agent <list|show|install|run|exec> [args...]
-ax [--json|--yaml] auth <list|show|login|logout> [args...]
-ax [--json|--yaml] session <list|show|resume|export|import|continue> [args...]
-ax [--json|--yaml] skill <list|show|install> [args...]
-ax [--json|--yaml] hook list
-ax [--json|--yaml] mcp <list|show|serve> [args...]
-ax [--json|--yaml] preset <list|show> [args...]
+sm [--json|--yaml] agent <list|show|install|run|exec> [args...]
+sm [--json|--yaml] auth <list|show|login|logout> [args...]
+sm [--json|--yaml] session <list|show|resume|export|import|continue> [args...]
+sm [--json|--yaml] skill <list|show|install> [args...]
+sm [--json|--yaml] hook list
+sm [--json|--yaml] mcp <list|show|serve> [args...]
+sm [--json|--yaml] preset <list|show> [args...]
 
-ax version
+sm version
 ```
 
-`--json` and `--yaml` apply to AgentX-owned data and dry-run plans; native install, login, launch, and resume keep their own interactive output.
+`--json` and `--yaml` apply to SessionMan-owned data and dry-run plans; native install, login, launch, and resume keep their own interactive output.
 
 ```console
-ax status                            # readiness, account, and available models per agent
-ax agent install codex --dry-run     # then without --dry-run to install
-ax auth login codex                  # native authentication
-ax agent show codex                  # binary path, capabilities, models
-ax skill list                        # skills by filesystem source and reader
-ax mcp list                          # MCP servers by filesystem source and reader
-ax agent exec codex --model <id> < prompt.txt
-ax --json session resume pi <session-id> --source claude --dry-run
-ax --json session continue claude --mode yolo --mcp-config mcp.json < transcript.json
+sm status                            # readiness, account, and available models per agent
+sm agent install codex --dry-run     # then without --dry-run to install
+sm auth login codex                  # native authentication
+sm agent show codex                  # binary path, capabilities, models
+sm skill list                        # skills by filesystem source and reader
+sm mcp list                          # MCP servers by filesystem source and reader
+sm agent exec codex --model <id> < prompt.txt
+sm --json session resume pi <session-id> --source claude --dry-run
+sm --json session continue claude --mode yolo --mcp-config mcp.json < transcript.json
 ```
 
 ## Boundaries
 
-AgentX owns the workflow around agents, not the agents:
+SessionMan owns the workflow around agents, not the agents:
 
 - no universal agent settings file beyond the documented skills, hooks, and presets;
 - no credential storage or proxying;
@@ -225,7 +225,7 @@ Go 1.25.
 
 ```bash
 make verify
-./bin/ax version
+./bin/sm version
 ```
 
 `make verify` is the repository contract: formatting, static checks, tests, protocol audits, build, and smoke checks. Read [CONTRIBUTING.md](CONTRIBUTING.md) before proposing a change. Regenerate the terminal demo with `vhs docs/demo.tape`.
@@ -234,7 +234,7 @@ make verify
 
 Report vulnerabilities privately per [SECURITY.md](SECURITY.md). Usage questions and confirmed bugs go through [SUPPORT.md](SUPPORT.md).
 
-AgentX is an independent open-source project, not affiliated with Anthropic, OpenAI, Google, OpenCode, or Pi's maintainers. Product names belong to their respective owners.
+SessionMan is an independent open-source project, not affiliated with Anthropic, OpenAI, Google, OpenCode, or Pi's maintainers. Product names belong to their respective owners.
 
 ## License
 

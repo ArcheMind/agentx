@@ -20,7 +20,7 @@ type Connection struct {
 }
 
 func (s *Server) recordConnection() (func(), error) {
-	dir := filepath.Join(s.Home, ".local", "state", "agentx", "connections")
+	dir := filepath.Join(s.Home, ".local", "state", "sessionman", "connections")
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return nil, err
 	}
@@ -36,7 +36,7 @@ func (s *Server) recordConnection() (func(), error) {
 
 func Connections(home string) []Connection {
 	result := []Connection{}
-	paths, _ := filepath.Glob(filepath.Join(home, ".local", "state", "agentx", "connections", "*.json"))
+	paths, _ := filepath.Glob(filepath.Join(home, ".local", "state", "sessionman", "connections", "*.json"))
 	for _, path := range paths {
 		data, err := os.ReadFile(path)
 		if err != nil {

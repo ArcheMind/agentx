@@ -101,7 +101,7 @@ func TestWorktreeIsolationRunsInWorktreeAndKeepsOriginalChanges(t *testing.T) {
 	a, _ := s.target("iso")
 	w := a.Worktree
 	s.mu.Unlock()
-	if w == nil || w.Repo != repo || !strings.HasSuffix(w.Path, filepath.Join(".local", "state", "agentx", "worktrees", a.ID)) {
+	if w == nil || w.Repo != repo || !strings.HasSuffix(w.Path, filepath.Join(".local", "state", "sessionman", "worktrees", a.ID)) {
 		t.Fatalf("worktree not recorded: %#v", w)
 	}
 	r.mu.Lock()
@@ -122,12 +122,12 @@ func TestWorktreeIsolationRunsInWorktreeAndKeepsOriginalChanges(t *testing.T) {
 	if data, _ := os.ReadFile(filepath.Join(w.Path, "sub", "tracked.txt")); string(data) != "committed\n" {
 		t.Fatal("worktree not at HEAD")
 	}
-	for _, want := range []string{"Isolation: worktree path=", w.Path, "branch=agentx/" + a.ID, "is not modified", "kept after completion, failure and cancellation", "?? sub/agent.txt", "worktree remove", "Mode: normal"} {
+	for _, want := range []string{"Isolation: worktree path=", w.Path, "branch=sessionman/" + a.ID, "is not modified", "kept after completion, failure and cancellation", "?? sub/agent.txt", "worktree remove", "Mode: normal"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("report missing %q:\n%s", want, text)
 		}
 	}
-	if branch := gitCmd(t, w.Path, "branch", "--show-current"); branch != "agentx/"+a.ID {
+	if branch := gitCmd(t, w.Path, "branch", "--show-current"); branch != "sessionman/"+a.ID {
 		t.Fatal(branch)
 	}
 	r.write = ""
@@ -170,7 +170,7 @@ func TestWorktreeKeptOnFailureAndCancellation(t *testing.T) {
 		t.Fatal(text)
 	}
 	list := gitCmd(t, repo, "worktree", "list")
-	if strings.Count(list, "agentx/ax-") != 2 {
+	if strings.Count(list, "sessionman/ax-") != 2 {
 		t.Fatal("worktrees not retained:", list)
 	}
 }
@@ -193,7 +193,7 @@ func TestWorktreeIsolationRejectsWithoutGitAndUnknownValues(t *testing.T) {
 	if _, err := s.call("ExternalSubagent", []byte(`{"description":"x","prompt":"x","model":"review","isolation":"worktree"}`)); err == nil || !strings.Contains(err.Error(), "not tracked at HEAD") {
 		t.Fatal(err)
 	}
-	if list := gitCmd(t, repo, "worktree", "list"); strings.Contains(list, "agentx/") || strings.Contains(gitCmd(t, repo, "branch"), "agentx/") {
+	if list := gitCmd(t, repo, "worktree", "list"); strings.Contains(list, "sessionman/") || strings.Contains(gitCmd(t, repo, "branch"), "sessionman/") {
 		t.Fatal("rejected call left a worktree:", list)
 	}
 	if len(r.plans) != 0 || len(s.agents) != 0 {
@@ -236,7 +236,7 @@ func TestConcurrentWorktreeCreationInOneRepository(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if n := strings.Count(gitCmd(t, repo, "worktree", "list"), "agentx/ax-"); n != 16 {
+	if n := strings.Count(gitCmd(t, repo, "worktree", "list"), "sessionman/ax-"); n != 16 {
 		t.Fatal("worktrees created:", n)
 	}
 }

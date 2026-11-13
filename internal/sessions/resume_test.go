@@ -9,7 +9,7 @@ import (
 
 func TestWriteSessionFilePiLandsInNativeStore(t *testing.T) {
 	home := t.TempDir()
-	resumeDir := filepath.Join(home, ".local", "state", "agentx", "resume")
+	resumeDir := filepath.Join(home, ".local", "state", "sessionman", "resume")
 	detail := Session{
 		ID:        "imported",
 		Provider:  "pi",

@@ -101,7 +101,7 @@ func (a App) Run(ctx context.Context, args []string) error {
 		if a.Output != OutputText {
 			return writeStructured(a.Stdout, map[string]string{"version": Version}, a.Output)
 		}
-		fmt.Fprintf(a.Stdout, "agentx %s\n", Version)
+		fmt.Fprintf(a.Stdout, "sessionman %s\n", Version)
 		return nil
 	case "status":
 		return a.overview(ctx, args[1:])
@@ -1020,48 +1020,48 @@ func singleLine(value string, max int) string {
 }
 
 func (a App) printHelp() {
-	fmt.Fprint(a.Stdout, `agentx manages native AI coding-agent runtimes.
+	fmt.Fprint(a.Stdout, `sessionman manages native AI coding-agent runtimes.
 
 Usage:
-  ax [--include-subagents]
-  ax --resume <transcript-file>
-  ax <agent> [--model <model>] [--cwd <path>] [--dry-run] [-- <native args...>]
-  ax [--json|--yaml] status
+  sm [--include-subagents]
+  sm --resume <transcript-file>
+  sm <agent> [--model <model>] [--cwd <path>] [--dry-run] [-- <native args...>]
+  sm [--json|--yaml] status
 
-  ax [--json|--yaml] agent <list|show|install|run|exec> [args...]
-  ax [--json|--yaml] auth <list|show|login|logout> [args...]
-  ax [--json|--yaml] session <list|show|resume|export|import|continue> [args...]
-  ax [--json|--yaml] skill <list|show|install> [args...]
-  ax [--json|--yaml] hook list
-  ax [--json|--yaml] mcp <list|show|serve> [args...]
-  ax [--json|--yaml] preset <list|show> [args...]
+  sm [--json|--yaml] agent <list|show|install|run|exec> [args...]
+  sm [--json|--yaml] auth <list|show|login|logout> [args...]
+  sm [--json|--yaml] session <list|show|resume|export|import|continue> [args...]
+  sm [--json|--yaml] skill <list|show|install> [args...]
+  sm [--json|--yaml] hook list
+  sm [--json|--yaml] mcp <list|show|serve> [args...]
+  sm [--json|--yaml] preset <list|show> [args...]
 
-  ax agent exec <codex|pi|gemini> [--model <model>] [--resume <session-id>] [--cwd <path>] [--dry-run] < prompt.txt
-  ax --json session continue <claude|codex|pi> [--model <model>] [--mcp-config <file>] [--mode yolo] < transcript.json
+  sm agent exec <codex|pi|gemini> [--model <model>] [--resume <session-id>] [--cwd <path>] [--dry-run] < prompt.txt
+  sm --json session continue <claude|codex|pi> [--model <model>] [--mcp-config <file>] [--mode yolo] < transcript.json
 
-  ax version
+  sm version
 
 Examples:
   # See every agent's recent work in one place
-  ax
+  sm
 
   # Continue a session in another agent: select it, press Enter, pick the agent
-  ax
+  sm
 
   # From Codex, hand work to a Claude Code subagent (a preset with agent: claude)
-  ax codex
+  sm codex
   > Ask my claude-review preset to review this change.
 
-Running ax without arguments opens the interactive home: start a new session
+Running sm without arguments opens the interactive home: start a new session
 with a preset, create or manage presets (m), continue a recent session, or
-export one as a unified transcript file (e). ax --resume <transcript-file>
+export one as a unified transcript file (e). sm --resume <transcript-file>
 resumes an exported transcript interactively.
-Presets live in ~/.agentx/presets/<name>/PRESET.md and are shared with MCP
-ExternalSubagents. The ax <agent> shortcut launches an installed agent directly.
+Presets live in ~/.sessionman/presets/<name>/PRESET.md and are shared with MCP
+ExternalSubagents. The sm <agent> shortcut launches an installed agent directly.
 
 Agents: claude, codex, dsh, gemini, opencode, pi
 
-Set AX_LOG=debug or pass --verbose before the command to log raw external input,
+Set SM_LOG=debug or pass --verbose before the command to log raw external input,
 output, and errors as JSON on stderr.
 `)
 }

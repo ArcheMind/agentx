@@ -65,15 +65,15 @@ jobs:
           go vet ./...
           go test ./...
           go test ./internal/app ./internal/drivers -run 'Consistency|Capabilities|Grammar|Terminology|Structured'
-      - name: Smoke test ax.exe
+      - name: Smoke test sm.exe
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force bin | Out-Null
-          go build -trimpath -o bin/ax.exe ./cmd/ax
-          & .\bin\ax.exe version
-          & .\bin\ax.exe --json agent list
-          & .\bin\ax.exe --yaml agent list
-          & .\bin\ax.exe agent install codex --dry-run
-          & .\bin\ax.exe --yaml auth login codex --dry-run
-          & .\bin\ax.exe agent run codex --model smoke-test --dry-run
-          & .\bin\ax.exe --json status
+          go build -trimpath -o bin/sm.exe ./cmd/sm
+          & .\bin\sm.exe version
+          & .\bin\sm.exe --json agent list
+          & .\bin\sm.exe --yaml agent list
+          & .\bin\sm.exe agent install codex --dry-run
+          & .\bin\sm.exe --yaml auth login codex --dry-run
+          & .\bin\sm.exe agent run codex --model smoke-test --dry-run
+          & .\bin\sm.exe --json status

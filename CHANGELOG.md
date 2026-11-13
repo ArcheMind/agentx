@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to AgentX are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and releases use [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+All notable changes to SessionMan are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and releases use [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
@@ -15,7 +15,7 @@ All notable changes to AgentX are documented here. The format follows [Keep a Ch
 
 - **Fresh resume offloads history**: selector key `f` (and the >250K-token
   choice on Enter) resumes a session freshly — the full transcript is written
-  to `~/.local/state/agentx/history/<id>.json`, the first two and last three
+  to `~/.local/state/sessionman/history/<id>.json`, the first two and last three
   user turns are kept with tool results stubbed to the history path, and a
   pointer message is injected between them.
 
@@ -25,7 +25,7 @@ All notable changes to AgentX are documented here. The format follows [Keep a Ch
   `session_meta.id` are now deduplicated — only the newest rollout per session
   is kept, eliminating "session ID is ambiguous" errors on load.
 
-- `ax session continue codex` resolves the Codex home directory via auth
+- `sm session continue codex` resolves the Codex home directory via auth
   discovery, fixing resume and import when `CODEX_HOME` is not set.
 
 - Pi session serialization now includes system messages (`SerializePi`).
@@ -38,14 +38,14 @@ All notable changes to AgentX are documented here. The format follows [Keep a Ch
 ### Changed
 
 - Background ExternalSubagent completion is delivered as a result file
-  (`~/.local/state/agentx/connections/<connection-id>/jobs/<task-id>.json`).
+  (`~/.local/state/sessionman/connections/<connection-id>/jobs/<task-id>.json`).
   Background tool responses include the path and a shell wait command, so any
   host (claude, codex, pi) can wait with a background shell instead of polling.
 
 ### Removed
 
 - `notifications/claude/channel` delivery, the `experimental/claude/channel`
-  capability, `AX_CLAUDE_CHANNELS` flag injection, and the
+  capability, `SM_CLAUDE_CHANNELS` flag injection, and the
   `smoke-mcp-channel` / `smoke-mcp-host-live` / `verify-mcp-host-evidence`
   targets (replaced by `smoke-mcp-jobfile`).
 
@@ -53,7 +53,7 @@ All notable changes to AgentX are documented here. The format follows [Keep a Ch
 
 ### Fixed
 
-- Pi model list and `ax auth list` no longer depend on locating Pi's Node SDK
+- Pi model list and `sm auth list` no longer depend on locating Pi's Node SDK
   beside the `pi` executable, which failed under Pi's managed install
   (`curl pi.dev/install.sh`). Both now read `pi --list-models`, which Pi
   already restricts to providers with configured auth, so custom
@@ -64,14 +64,14 @@ All notable changes to AgentX are documented here. The format follows [Keep a Ch
 ### Changed
 
 - Replace runtime fallback with idempotent install-time migration: first run
-  renames `~/.agentx/profiles/` → `presets/` and `PROFILE.md` → `PRESET.md`.
+  renames `~/.sessionman/profiles/` → `presets/` and `PROFILE.md` → `PRESET.md`.
 
 ## [0.9.0] - 2026-11-10
 
 ### Changed
 
-- **Vocabulary rename: profile → preset.** CLI command is now `ax preset <list|show>`;
-  configuration directory is `~/.agentx/presets/<name>/PRESET.md`; MCP catalog
+- **Vocabulary rename: profile → preset.** CLI command is now `sm preset <list|show>`;
+  configuration directory is `~/.sessionman/presets/<name>/PRESET.md`; MCP catalog
   text uses "preset" throughout. Go package `internal/profiles` → `internal/presets`;
   struct `Profile` → `Preset`. Smoke test files and Makefile targets renamed accordingly.
 
@@ -79,14 +79,14 @@ All notable changes to AgentX are documented here. The format follows [Keep a Ch
 
 ### Fixed
 
-- `ax session continue codex` imports history and reads the result from the
+- `sm session continue codex` imports history and reads the result from the
   same Codex home as the native turn.
 
 ## [0.8.4] - 2026-11-05
 
 ### Fixed
 
-- `ax session continue`: unsigned thinking (synthetic or cross-agent, with no
+- `sm session continue`: unsigned thinking (synthetic or cross-agent, with no
   provider signature) is no longer silently dropped from the model's context.
   Codex, Claude and Pi all ignore unsigned thinking in imported history, so it
   now serializes as its own `<think>`-wrapped text block in its original
@@ -99,7 +99,7 @@ All notable changes to AgentX are documented here. The format follows [Keep a Ch
 
 ### Fixed
 
-- `ax session continue` to codex: message ids the OpenAI Responses API rejects
+- `sm session continue` to codex: message ids the OpenAI Responses API rejects
   (not `msg`-prefixed or longer than 64 characters, e.g. namespaced continue
   deltas "<runId>:msg_...") are mapped on import to "msg_" + 60 hex of their
   SHA-256, with parentId mapped the same way so the chain stays intact.
@@ -121,7 +121,7 @@ All notable changes to AgentX are documented here. The format follows [Keep a Ch
 
 ### Fixed
 
-- `ax session continue`: tool ids the native APIs reject — the pre-refactor
+- `sm session continue`: tool ids the native APIs reject — the pre-refactor
   harness's scoped ids ("native-<uuid>:<raw>") and composite ids
   ("call_x|fc_y") — are mapped on import to deterministic API-safe ids
   (charset [A-Za-z0-9_-], at most 64 characters), keeping tool_use/tool_result
@@ -137,13 +137,13 @@ All notable changes to AgentX are documented here. The format follows [Keep a Ch
 
 ### Added
 
-- `ax session continue <claude|codex|pi>`: headless one-turn transcript continuation.
+- `sm session continue <claude|codex|pi>`: headless one-turn transcript continuation.
   The imported history's parent chain is rewritten positionally: Claude and Pi
   reconstruct a session as the newest record's ancestor chain, so the dangling
   parentIds normal in delta-appended transcripts would otherwise orphan the
   history (the second turn silently lost the first turn's context). Export and
   import fidelity are untouched; serializers keep parentId verbatim. Live
-  regression: `make smoke-continue-live` (AX_CONTINUE_AGENTS=claude[,codex,pi]). Reads a unified transcript (file or stdin) ending in a user message, imports the history into the native store, runs one turn with the trailing user message as the prompt, and prints the newly recorded messages as a transcript delta on stdout. Flags: `--model`, `--effort` (codex reasoning effort / claude effort / pi thinking), `--append-system-prompt`, `--mcp-config <file|json>` (unified `mcpServers` map translated to `--mcp-config --strict-mcp-config` for claude and `-c mcp_servers.*` for codex; pi is rejected, it has no MCP mechanism), `--mode <normal|yolo>` (normal passes no permission or sandbox flags; yolo bypasses them, rejected for pi), `--workspace`. Delta message ids are namespaced per call so repeated turns append cleanly to one caller-owned transcript.
+  regression: `make smoke-continue-live` (SM_CONTINUE_AGENTS=claude[,codex,pi]). Reads a unified transcript (file or stdin) ending in a user message, imports the history into the native store, runs one turn with the trailing user message as the prompt, and prints the newly recorded messages as a transcript delta on stdout. Flags: `--model`, `--effort` (codex reasoning effort / claude effort / pi thinking), `--append-system-prompt`, `--mcp-config <file|json>` (unified `mcpServers` map translated to `--mcp-config --strict-mcp-config` for claude and `-c mcp_servers.*` for codex; pi is rejected, it has no MCP mechanism), `--mode <normal|yolo>` (normal passes no permission or sandbox flags; yolo bypasses them, rejected for pi), `--workspace`. Delta message ids are namespaced per call so repeated turns append cleanly to one caller-owned transcript.
 
 ### Changed
 
@@ -152,7 +152,7 @@ All notable changes to AgentX are documented here. The format follows [Keep a Ch
 
 ### Removed
 
-- ExternalSubagent `write` and `writable_roots` parameters, the deprecated native `mode` values (`acceptEdits`, `auto`, `bypassPermissions`, `default`, `dontAsk`, `plan`), and the AgentX-injected Codex `read-only`/`workspace-write` sandbox with its network and tmpdir restrictions. No compatibility aliases.
+- ExternalSubagent `write` and `writable_roots` parameters, the deprecated native `mode` values (`acceptEdits`, `auto`, `bypassPermissions`, `default`, `dontAsk`, `plan`), and the SessionMan-injected Codex `read-only`/`workspace-write` sandbox with its network and tmpdir restrictions. No compatibility aliases.
 - `make smoke-mcp-policy-live`, which tested the removed write scope.
 - Preset `sandbox` field and its `ax` preset editor entry: it only tuned the removed write-mode Codex sandbox. Presets that still set `sandbox` are rejected as having an unknown field; delete the line.
 
@@ -165,7 +165,7 @@ All notable changes to AgentX are documented here. The format follows [Keep a Ch
 - Codex `input_image` ↔ unified `image` block bidirectional mapping.
 - Pi `system` role parsing and serialization (native `sections` → text, text → `content`).
 - Offline transcript fidelity smoke tests and cross-provider diagonal smoke tests (claude↔codex).
-- `ax convert` command for stdin-based transcript format conversion.
+- `sm convert` command for stdin-based transcript format conversion.
 
 ### Changed
 
@@ -176,60 +176,60 @@ All notable changes to AgentX are documented here. The format follows [Keep a Ch
 
 ### Changed
 
-- `ax claude` attaches the AgentX MCP server and ExternalSubagent tools unconditionally, like `ax codex`; `ax help` examples now show interactive hand-off and calling a Claude Code subagent from Codex.
+- `sm claude` attaches the SessionMan MCP server and ExternalSubagent tools unconditionally, like `sm codex`; `sm help` examples now show interactive hand-off and calling a Claude Code subagent from Codex.
 
 ### Removed
 
-- The Claude MCP registration check and the `ax <agent> --subagents` flag.
+- The Claude MCP registration check and the `sm <agent> --subagents` flag.
 
 ## [0.6.1] - 2026-10-25
 
 ### Changed
 
-- `ax help` lists each command once and ends with examples for the three main uses: one list of every agent's work, continuing a session in another agent, and calling other agents' presets from Claude.
+- `sm help` lists each command once and ends with examples for the three main uses: one list of every agent's work, continuing a session in another agent, and calling other agents' presets from Claude.
 
 ## [0.6.0] - 2026-10-25
 
 ### Changed
 
-- `ax preset serve` is now `ax mcp serve`; `ax mcp` gains `serve` beside `list` and `show`.
-- `preset` is now `preset`: `ax preset list|show`, `~/.agentx/presets/<name>/PRESET.md`, and the matching interactive home, MCP instructions, and tool descriptions.
+- `sm preset serve` is now `sm mcp serve`; `sm mcp` gains `serve` beside `list` and `show`.
+- `preset` is now `preset`: `sm preset list|show`, `~/.sessionman/presets/<name>/PRESET.md`, and the matching interactive home, MCP instructions, and tool descriptions.
 - `provider` is now `agent` in `--source <agent>`, the `session list` output and `--sort agent`, the exported filename `<agent>-<title>-<id8>.json`, and the hook `__dispatch --agent` flag.
 - The unified transcript field `provider` is now `agent` (agentx-protocol `go/v0.2.0`, module `github.com/ArcheMind/agentx-protocol/go`); transcripts exported by earlier versions no longer import.
-- `ax list` is now `ax status`.
+- `sm list` is now `sm status`.
 
 ### Removed
 
-- `ax convert`.
+- `sm convert`.
 
 ## [0.5.0] - 2026-10-23
 
 ### Added
 
-- `ax session export <session-id> [--source <provider>]` streams a session as a unified transcript.
-- `ax session import <target-agent> [file]` writes a transcript into the target agent's native store and prints the new session id, without launching the agent.
-- `ax --resume <transcript-file>` imports a transcript and resumes it interactively in one step.
+- `sm session export <session-id> [--source <provider>]` streams a session as a unified transcript.
+- `sm session import <target-agent> [file]` writes a transcript into the target agent's native store and prints the new session id, without launching the agent.
+- `sm --resume <transcript-file>` imports a transcript and resumes it interactively in one step.
 - `e` in the interactive home exports the selected session to `<provider>-<title>-<id8>.json` in the current directory.
 
 ## [0.4.2] - 2026-10-23
 
 ### Added
 
-- Presets for every supported agent, including Claude: `ax claude` and other non-Codex/Pi presets now run as ExternalSubagents through their own native driver.
+- Presets for every supported agent, including Claude: `sm claude` and other non-Codex/Pi presets now run as ExternalSubagents through their own native driver.
 - `sandbox`, `user_config`, and `flags` preset fields, shown and edited in the interactive preset editor. `sandbox` and `user_config` translate to native flags; `flags` appends raw native arguments.
-- AgentX MCP injection for interactive Codex launches and for dispatched Codex ExternalSubagents, so nested delegation works without extra setup.
+- SessionMan MCP injection for interactive Codex launches and for dispatched Codex ExternalSubagents, so nested delegation works without extra setup.
 
 ### Changed
 
-- Security is expressed through preset fields and enforced by the native runtime. AgentX no longer hardcodes per-agent sandbox, approval, or permission reasoning.
-- Preset `Limits` and the tool descriptions describe only AgentX's own parameters: write, isolation, writable_roots, sandbox, user_config, flags, and effort.
+- Security is expressed through preset fields and enforced by the native runtime. SessionMan no longer hardcodes per-agent sandbox, approval, or permission reasoning.
+- Preset `Limits` and the tool descriptions describe only SessionMan's own parameters: write, isolation, writable_roots, sandbox, user_config, flags, and effort.
 - Effort and model evidence mismatches are reported as warnings instead of failing the turn.
-- `ax claude` injects `--allowedTools` with exactly the four AgentX tools and no longer adds `--dangerously-load-development-channels`; background delivery is the host's own opt-in.
+- `sm claude` injects `--allowedTools` with exactly the four SessionMan tools and no longer adds `--dangerously-load-development-channels`; background delivery is the host's own opt-in.
 - Every preset appears in the MCP catalog; the `subagent` gate and the `general-purpose` filter are gone.
 
 ### Removed
 
-- Declared roles: `~/.agentx/roles/`, `ROLE.md`, and the `subagent_type` tool parameter.
+- Declared roles: `~/.sessionman/roles/`, `ROLE.md`, and the `subagent_type` tool parameter.
 
 ## [0.4.1] - 2026-10-21
 
@@ -241,32 +241,32 @@ All notable changes to AgentX are documented here. The format follows [Keep a Ch
 
 ### Added
 
-- ExternalSubagent MCP tools (`ExternalSubagent`, `SendExternalSubagentMessage`, `StopExternalSubagent`, `listExternalSubagentSessions`) served by `ax preset serve`. Codex and Pi execute the subagent natively, with no relay inference call.
-- A single preset collection at `~/.agentx/presets/` shared by the bare `ax` home screen and the MCP catalog, with create, edit, rename, duplicate, and delete flows, plus `ax preset list` and `ax preset show`.
+- ExternalSubagent MCP tools (`ExternalSubagent`, `SendExternalSubagentMessage`, `StopExternalSubagent`, `listExternalSubagentSessions`) served by `sm preset serve`. Codex and Pi execute the subagent natively, with no relay inference call.
+- A single preset collection at `~/.sessionman/presets/` shared by the bare `ax` home screen and the MCP catalog, with create, edit, rename, duplicate, and delete flows, plus `sm preset list` and `sm preset show`.
 - Per-turn effort verification against native evidence for Codex and Pi; a mismatch fails the turn instead of being silently accepted.
 - Call-time write scope: `write` with `writable_roots`, or `isolation: "worktree"` to run the subagent in a new git worktree that is the only writable root.
-- `ax skill list|show` and `ax mcp list|show` inventory by filesystem source, scope, applicable readers, and known projections.
+- `sm skill list|show` and `sm mcp list|show` inventory by filesystem source, scope, applicable readers, and known projections.
 - Resume now converts a session to the target agent's native transcript format and loads it natively instead of sending a text summary.
 - Home screen presets rendered as single-line rows alongside recent sessions.
 
 ### Changed
 
 - MCP tools and reports are named around ExternalSubagent sessions.
-- Registration with Claude is delegated to `claude mcp`; the preset collection is the only AgentX configuration.
+- Registration with Claude is delegated to `claude mcp`; the preset collection is the only SessionMan configuration.
 - The tool metadata index is bounded, and reports state when entries are omitted.
 - Writable roots are resolved by directory identity, symlinks included, and the working directory stays always writable in non-isolated write mode as documented native Codex behavior.
 - Interactive selectors keep a stable layout without redraw drift, with a narrower preset combination column.
 
 ### Removed
 
-- `~/.config/agentx/subagents.json` (its `enabled` switch, `default`/`options`, and `grants`) is no longer read; call-time write scope replaces bounded-write grants and approval had no replacement.
+- `~/.config/sessionman/subagents.json` (its `enabled` switch, `default`/`options`, and `grants`) is no longer read; call-time write scope replaces bounded-write grants and approval had no replacement.
 - The `enable` and `disable` subcommands.
 
 ## [0.3.1] - 2026-09-30
 
 ### Added
 
-- Portable hooks using the Claude/Codex `hooks.json` structure at `~/.agents/hooks.json` and `.agents/hooks.json`, with normalized `SessionStart`, `SessionEnd`, `UserPromptSubmit`, and `Stop` events, `ax hook list`, and per-agent bridge projection.
+- Portable hooks using the Claude/Codex `hooks.json` structure at `~/.agents/hooks.json` and `.agents/hooks.json`, with normalized `SessionStart`, `SessionEnd`, `UserPromptSubmit`, and `Stop` events, `sm hook list`, and per-agent bridge projection.
 - Unified skill discovery and installation across agents.
 - Native hooks and skills smoke coverage.
 
@@ -279,12 +279,12 @@ All notable changes to AgentX are documented here. The format follows [Keep a Ch
 
 ### Added
 
-- `ax convert to|from <provider>`: reverse serializers from the unified transcript to native formats for Claude, Codex, Pi, and Gemini.
+- `sm convert to|from <provider>`: reverse serializers from the unified transcript to native formats for Claude, Codex, Pi, and Gemini.
 - Structured transcript content blocks replacing flat message content.
 
 ### Changed
 
-- The unified transcript format is owned by `agentx-protocol`; AgentX aliases its types and defines no message shapes of its own.
+- The unified transcript format is owned by `agentx-protocol`; SessionMan aliases its types and defines no message shapes of its own.
 - CLI verb patterns aligned across resource branches.
 
 ## [0.2.2] - 2026-09-12
@@ -298,7 +298,7 @@ All notable changes to AgentX are documented here. The format follows [Keep a Ch
 
 ### Added
 
-- `ax list` readiness tree with finite states, terminal colors, authentication-gated available models, and matching JSON/YAML output.
+- `sm list` readiness tree with finite states, terminal colors, authentication-gated available models, and matching JSON/YAML output.
 - Session durations in the interactive recent-session selector.
 - Opt-in discovery of child Agent sessions through `--include-subagents`.
 
@@ -338,7 +338,7 @@ All notable changes to AgentX are documented here. The format follows [Keep a Ch
 - Native discovery, installation, authentication, model selection, and launch workflows for Claude Code, Codex CLI, Gemini CLI, OpenCode, and Pi.
 - Built-in discovery and normalization of native sessions from all five agents.
 - Cross-agent resume with bounded transcript handoff and no mutation of native stores.
-- JSON and YAML output for AgentX-owned data and dry-run plans.
+- JSON and YAML output for SessionMan-owned data and dry-run plans.
 - Structured errors and opt-in raw external-call debug logging.
 - Consistency audit covering CLI grammar, documentation, capabilities, and drivers.
 

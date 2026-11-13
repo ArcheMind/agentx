@@ -161,7 +161,7 @@ func (s Service) Install(ctx context.Context, options InstallOptions) (InstallPl
 	if err := os.MkdirAll(canonicalRoot, 0o755); err != nil {
 		return plan, fmt.Errorf("create canonical skill directory: %w", err)
 	}
-	staging, err := os.MkdirTemp(canonicalRoot, ".agentx-install-")
+	staging, err := os.MkdirTemp(canonicalRoot, ".sessionman-install-")
 	if err != nil {
 		return plan, fmt.Errorf("create skill staging directory: %w", err)
 	}
@@ -230,7 +230,7 @@ func (s Service) resolveSource(ctx context.Context, source, subpath string) (str
 	if s.Runner == nil {
 		return "", "git", func() {}, errors.New("git skill installation is unavailable")
 	}
-	temporary, err := os.MkdirTemp(s.TempParent, "agentx-skill-")
+	temporary, err := os.MkdirTemp(s.TempParent, "sessionman-skill-")
 	if err != nil {
 		return "", "git", func() {}, fmt.Errorf("create git skill staging directory: %w", err)
 	}
@@ -416,7 +416,7 @@ func supportMatrix() []AgentSupport {
 }
 
 func readOrigins(root string) (map[string]originRecord, error) {
-	content, err := os.ReadFile(filepath.Join(root, ".agentx-origins.yaml"))
+	content, err := os.ReadFile(filepath.Join(root, ".sessionman-origins.yaml"))
 	if errors.Is(err, os.ErrNotExist) {
 		return map[string]originRecord{}, nil
 	}
@@ -440,7 +440,7 @@ func writeOrigin(root, name string, record originRecord) error {
 	if err != nil {
 		return fmt.Errorf("encode skill origin: %w", err)
 	}
-	temporary, err := os.CreateTemp(root, ".agentx-origins-")
+	temporary, err := os.CreateTemp(root, ".sessionman-origins-")
 	if err != nil {
 		return fmt.Errorf("create skill origin staging file: %w", err)
 	}
@@ -457,7 +457,7 @@ func writeOrigin(root, name string, record originRecord) error {
 	if err := temporary.Close(); err != nil {
 		return fmt.Errorf("close skill origin: %w", err)
 	}
-	destination := filepath.Join(root, ".agentx-origins.yaml")
+	destination := filepath.Join(root, ".sessionman-origins.yaml")
 	if goruntime.GOOS == "windows" {
 		if err := os.Remove(destination); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return fmt.Errorf("replace skill origin: %w", err)

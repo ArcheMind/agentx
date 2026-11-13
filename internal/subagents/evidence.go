@@ -16,7 +16,7 @@ import (
 var piObserver []byte
 
 const (
-	piObserverEntry = "agentx-provider-request"
+	piObserverEntry = "sessionman-provider-request"
 	// codexTelemetryFilter enables only Codex's trace-safe events, which omit account and email.
 	codexTelemetryFilter = "codex_otel.trace_safe=info"
 )
@@ -129,7 +129,7 @@ func readPiEvidence(session string, offset int64) (piEvidence, error) {
 // preparePiObserver writes the observer extension next to the Pi session.
 func preparePiObserver(a *ExternalSubagentState) ([]string, map[string]string, error) {
 	dir := filepath.Dir(a.Session)
-	observer := filepath.Join(dir, "agentx-observer.js")
+	observer := filepath.Join(dir, "sessionman-observer.js")
 	if err := os.WriteFile(observer, piObserver, 0o600); err != nil {
 		return nil, nil, err
 	}
@@ -147,13 +147,13 @@ func verifyPi(a *ExternalSubagentState, offset int64) (string, error) {
 		return "", fmt.Errorf("Pi session evidence unreadable: %w", err)
 	}
 	if len(evidence.efforts) == 0 {
-		return "WARNING: the AgentX observer recorded no Pi provider request for this turn, so effort could not be verified", nil
+		return "WARNING: the SessionMan observer recorded no Pi provider request for this turn, so effort could not be verified", nil
 	}
 	var warnings []string
 	if a.Option.Effort != "" && evidence.thinking != a.Option.Effort {
 		warnings = append(warnings, fmt.Sprintf("WARNING: preset effort %s, but the Pi session records thinking level %q (Pi clamped it)", a.Option.Effort, evidence.thinking))
 	}
-	summary, err := verifyEffort(a.Option.Effort, evidence.efforts, "Pi provider requests recorded by the AgentX observer")
+	summary, err := verifyEffort(a.Option.Effort, evidence.efforts, "Pi provider requests recorded by the SessionMan observer")
 	if err != nil {
 		return "", err
 	}

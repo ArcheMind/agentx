@@ -18,7 +18,7 @@ func TestClaudeLaunchAttachesAgentXWithoutRegistration(t *testing.T) {
 	app := New(false, strings.NewReader(""), &output, &bytes.Buffer{})
 	app.Hooks.Home = t.TempDir()
 	app.Hooks.Project = t.TempDir()
-	t.Setenv("AX_SUBAGENT_HOME", "")
+	t.Setenv("SM_SUBAGENT_HOME", "")
 	t.Setenv("CLAUDE_CONFIG_DIR", "")
 	if err := app.Run(context.Background(), []string{"--json", "claude", "--cwd", app.Hooks.Project, "--dry-run"}); err != nil {
 		t.Fatal(err)
@@ -27,7 +27,7 @@ func TestClaudeLaunchAttachesAgentXWithoutRegistration(t *testing.T) {
 	if err := json.Unmarshal(output.Bytes(), &plan); err != nil {
 		t.Fatal(err)
 	}
-	if len(plan.Args) != 7 || plan.Args[0] != "--mcp-config" || !strings.Contains(plan.Args[1], `"agentx"`) || plan.Args[2] != "--allowedTools" || plan.Args[3] != "mcp__agentx__StartExternalSubagent" {
+	if len(plan.Args) != 7 || plan.Args[0] != "--mcp-config" || !strings.Contains(plan.Args[1], `"sessionman"`) || plan.Args[2] != "--allowedTools" || plan.Args[3] != "mcp__sessionman__StartExternalSubagent" {
 		t.Fatalf("plan = %#v", plan)
 	}
 	if err := app.Run(context.Background(), []string{"codex", "--subagents", "--dry-run"}); err == nil {
@@ -39,14 +39,14 @@ func TestPresetListIgnoresLegacyConfigAndShowsAllPresets(t *testing.T) {
 	var output bytes.Buffer
 	app := New(false, strings.NewReader(""), &output, &bytes.Buffer{})
 	app.Hooks.Home = t.TempDir()
-	t.Setenv("AX_SUBAGENT_HOME", "")
+	t.Setenv("SM_SUBAGENT_HOME", "")
 	t.Setenv("CLAUDE_CONFIG_DIR", "")
 	for _, p := range []presets.Preset{{Name: "review", Agent: "codex", Model: "m", Description: "d"}, {Name: "daily", Agent: "claude", Model: "opus", Description: "d"}} {
 		if err := presets.Create(app.Hooks.Home, p); err != nil {
 			t.Fatal(err)
 		}
 	}
-	legacy := filepath.Join(app.Hooks.Home, ".config", "agentx", "subagents.json")
+	legacy := filepath.Join(app.Hooks.Home, ".config", "sessionman", "subagents.json")
 	os.MkdirAll(filepath.Dir(legacy), 0o700)
 	os.WriteFile(legacy, []byte(`{"enabled":true,"grants":{"review":{}}}`), 0o600)
 	if err := app.Run(context.Background(), []string{"--json", "preset", "list"}); err != nil {
@@ -99,7 +99,7 @@ func TestPresetShowReportsSinglePresetAndInvalidOnes(t *testing.T) {
 	var output bytes.Buffer
 	app := New(false, strings.NewReader(""), &output, &bytes.Buffer{})
 	app.Hooks.Home = t.TempDir()
-	t.Setenv("AX_SUBAGENT_HOME", "")
+	t.Setenv("SM_SUBAGENT_HOME", "")
 	if err := presets.Create(app.Hooks.Home, presets.Preset{Name: "review", Agent: "codex", Model: "m", Description: "d"}); err != nil {
 		t.Fatal(err)
 	}

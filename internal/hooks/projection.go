@@ -13,7 +13,7 @@ import (
 	"strings"
 )
 
-const ownershipMarker = "agentx hooks projection\n"
+const ownershipMarker = "sessionman hooks projection\n"
 
 type Projection struct {
 	Args      []string  `json:"args" yaml:"args"`
@@ -53,7 +53,7 @@ func (s Service) Prepare(agent, executable string, write bool) (Projection, erro
 		}
 		if write {
 			err = writeOwnedDirectory(root, map[string][]byte{
-				".claude-plugin/plugin.json": []byte("{\n  \"name\": \"agentx-hooks\"\n}\n"),
+				".claude-plugin/plugin.json": []byte("{\n  \"name\": \"sessionman-hooks\"\n}\n"),
 				"hooks/hooks.json":           config,
 			})
 		}
@@ -88,21 +88,21 @@ func (s Service) Prepare(agent, executable string, write bool) (Projection, erro
 		}
 		if write {
 			err = writeOwnedDirectory(root, map[string][]byte{
-				"gemini-extension.json": []byte("{\n  \"name\": \"agentx-hooks\",\n  \"version\": \"1.0.0\",\n  \"description\": \"AgentX portable hook bridge\"\n}\n"),
+				"gemini-extension.json": []byte("{\n  \"name\": \"sessionman-hooks\",\n  \"version\": \"1.0.0\",\n  \"description\": \"SessionMan portable hook bridge\"\n}\n"),
 				"hooks/hooks.json":      config,
 			})
 		}
 		return projection, err
 	case "pi":
 		root := projectionRoot(s.Home, agent)
-		path := filepath.Join(root, "agentx-hooks.ts")
+		path := filepath.Join(root, "sessionman-hooks.ts")
 		projection.Args = []string{"--extension", path}
 		projection.Artifacts = []string{root}
 		if err := validateOwnedDirectory(root); err != nil {
 			return Projection{}, err
 		}
 		if write {
-			err = writeOwnedDirectory(root, map[string][]byte{"agentx-hooks.ts": []byte(piExtension(executable, s.Project, result.Hooks))})
+			err = writeOwnedDirectory(root, map[string][]byte{"sessionman-hooks.ts": []byte(piExtension(executable, s.Project, result.Hooks))})
 		}
 		return projection, err
 	default:
@@ -145,7 +145,7 @@ func jsonHookConfig(agent, executable, project string, events []string, hooks []
 	root := struct {
 		Description string             `json:"description"`
 		Hooks       map[string][]group `json:"hooks"`
-	}{Description: "AgentX portable hook bridge", Hooks: map[string][]group{}}
+	}{Description: "SessionMan portable hook bridge", Hooks: map[string][]group{}}
 	for _, event := range events {
 		native, err := agentEvent(agent, event)
 		if err != nil {
@@ -226,7 +226,7 @@ func writeOwnedDirectory(root string, files map[string][]byte) error {
 	if err := removeOwnedDirectory(root); err != nil {
 		return err
 	}
-	marker := filepath.Join(root, ".agentx-owned")
+	marker := filepath.Join(root, ".sessionman-owned")
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		return fmt.Errorf("create hook artifact %s: %w", root, err)
 	}
@@ -253,9 +253,9 @@ func writeOwnedDirectory(root string, files map[string][]byte) error {
 func projectionRoot(home, agent string) string {
 	switch agent {
 	case "claude", "pi":
-		return filepath.Join(home, ".agents", ".agentx", "hooks", agent)
+		return filepath.Join(home, ".agents", ".sessionman", "hooks", agent)
 	case "gemini":
-		return filepath.Join(home, ".gemini", "extensions", "agentx-hooks")
+		return filepath.Join(home, ".gemini", "extensions", "sessionman-hooks")
 	default:
 		return ""
 	}
@@ -265,7 +265,7 @@ func removeOwnedDirectory(root string) error {
 	if root == "" {
 		return nil
 	}
-	marker := filepath.Join(root, ".agentx-owned")
+	marker := filepath.Join(root, ".sessionman-owned")
 	data, err := os.ReadFile(marker)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil
@@ -283,11 +283,11 @@ func removeOwnedDirectory(root string) error {
 }
 
 func validateOwnedDirectory(root string) error {
-	marker := filepath.Join(root, ".agentx-owned")
+	marker := filepath.Join(root, ".sessionman-owned")
 	if _, err := os.Stat(root); err == nil {
 		data, readErr := os.ReadFile(marker)
 		if readErr != nil || string(data) != ownershipMarker {
-			return fmt.Errorf("refusing to overwrite non-AgentX hook artifact %s", root)
+			return fmt.Errorf("refusing to overwrite non-SessionMan hook artifact %s", root)
 		}
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("inspect hook artifact %s: %w", root, err)

@@ -106,7 +106,7 @@ func TestCodexEffortWithoutTelemetryIsUnverified(t *testing.T) {
 	}
 }
 
-// piRunner appends what Pi plus the AgentX observer would write to the session file.
+// piRunner appends what Pi plus the SessionMan observer would write to the session file.
 type piRunner struct {
 	testRunner
 	thinking string
@@ -157,7 +157,7 @@ func TestPiEffortVerifiedFromObserverRecords(t *testing.T) {
 		t.Fatal(text)
 	}
 	args := strings.Join(r.plans[0].Args, " ")
-	for _, want := range []string{"--thinking high", "--extension ", "agentx-observer.js"} {
+	for _, want := range []string{"--thinking high", "--extension ", "sessionman-observer.js"} {
 		if !strings.Contains(args, want) {
 			t.Fatal(want, args)
 		}

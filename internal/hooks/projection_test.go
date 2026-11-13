@@ -31,7 +31,7 @@ func TestPortableHooksProjectThroughEachNativeLoadingSurface(t *testing.T) {
 			if len(projection.Args) != 2 || projection.Args[0] != "--plugin-dir" {
 				t.Fatalf("args = %#v", projection.Args)
 			}
-			assertFileContains(t, filepath.Join(projection.Args[1], ".claude-plugin", "plugin.json"), `"name": "agentx-hooks"`)
+			assertFileContains(t, filepath.Join(projection.Args[1], ".claude-plugin", "plugin.json"), `"name": "sessionman-hooks"`)
 			content := readFile(t, filepath.Join(projection.Args[1], "hooks", "hooks.json"))
 			assertContains(t, content, `"UserPromptSubmit"`)
 			assertProjectedHandler(t, content, "claude", "UserPromptSubmit", hooks.Handler{Command: "project-before", Timeout: 600, Project: project})
@@ -54,7 +54,7 @@ func TestPortableHooksProjectThroughEachNativeLoadingSurface(t *testing.T) {
 				t.Fatalf("projection = %#v", projection)
 			}
 			root := projection.Artifacts[0]
-			assertFileContains(t, filepath.Join(root, "gemini-extension.json"), `"name": "agentx-hooks"`)
+			assertFileContains(t, filepath.Join(root, "gemini-extension.json"), `"name": "sessionman-hooks"`)
 			content := readFile(t, filepath.Join(root, "hooks", "hooks.json"))
 			assertContains(t, content, `"BeforeAgent"`, `"AfterAgent"`)
 			assertProjectedHandler(t, content, "gemini", "UserPromptSubmit", hooks.Handler{Command: "project-before", Timeout: 600, Project: project})
@@ -70,7 +70,7 @@ func TestPortableHooksProjectThroughEachNativeLoadingSurface(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.agent, func(t *testing.T) {
-			projection, err := service.Prepare(test.agent, "/opt/agentx/bin/ax", true)
+			projection, err := service.Prepare(test.agent, "/opt/sessionman/bin/sm", true)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -84,7 +84,7 @@ func TestProjectedCommandTransportDoesNotExposeShellSyntax(t *testing.T) {
 	project := t.TempDir()
 	command := `echo %PATH% & "quoted" | more`
 	writeConfig(t, filepath.Join(project, ".agents", "hooks.json"), `{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"echo %PATH% & \"quoted\" | more"}]}]}}`)
-	projection, err := (hooks.Service{Home: home, Project: project}).Prepare("codex", `C:\Program Files\AgentX\ax.exe`, false)
+	projection, err := (hooks.Service{Home: home, Project: project}).Prepare("codex", `C:\Program Files\SessionMan\sm.exe`, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -100,7 +100,7 @@ func TestHookProjectionDryRunDoesNotWriteAndOwnedArtifactIsRequired(t *testing.T
 	project := t.TempDir()
 	writeConfig(t, filepath.Join(project, ".agents", "hooks.json"), `{"hooks":{"SessionStart":[{"hooks":[{"type":"command","command":"start"}]}]}}`)
 	service := hooks.Service{Home: home, Project: project}
-	projection, err := service.Prepare("claude", "/opt/agentx/bin/ax", false)
+	projection, err := service.Prepare("claude", "/opt/sessionman/bin/sm", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -108,11 +108,11 @@ func TestHookProjectionDryRunDoesNotWriteAndOwnedArtifactIsRequired(t *testing.T
 		t.Fatalf("dry-run artifact stat error = %v", err)
 	}
 
-	geminiRoot := filepath.Join(home, ".gemini", "extensions", "agentx-hooks")
+	geminiRoot := filepath.Join(home, ".gemini", "extensions", "sessionman-hooks")
 	if err := os.MkdirAll(geminiRoot, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.Prepare("gemini", "/opt/agentx/bin/ax", false); err == nil || !strings.Contains(err.Error(), "non-AgentX") {
+	if _, err := service.Prepare("gemini", "/opt/sessionman/bin/sm", false); err == nil || !strings.Contains(err.Error(), "non-SessionMan") {
 		t.Fatalf("collision error = %v", err)
 	}
 }
@@ -123,28 +123,28 @@ func TestEmptyConfigurationRemovesOnlyOwnedProjection(t *testing.T) {
 	path := filepath.Join(project, ".agents", "hooks.json")
 	writeConfig(t, path, `{"hooks":{"SessionStart":[{"hooks":[{"type":"command","command":"start"}]}]}}`)
 	service := hooks.Service{Home: home, Project: project}
-	projection, err := service.Prepare("gemini", "/opt/agentx/bin/ax", true)
+	projection, err := service.Prepare("gemini", "/opt/sessionman/bin/sm", true)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Remove(path); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.Prepare("gemini", "/opt/agentx/bin/ax", true); err != nil {
+	if _, err := service.Prepare("gemini", "/opt/sessionman/bin/sm", true); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(projection.Artifacts[0]); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("stale artifact stat error = %v", err)
 	}
 
-	userRoot := filepath.Join(home, ".gemini", "extensions", "agentx-hooks")
+	userRoot := filepath.Join(home, ".gemini", "extensions", "sessionman-hooks")
 	if err := os.MkdirAll(userRoot, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(userRoot, "keep"), []byte("user-owned"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.Prepare("gemini", "/opt/agentx/bin/ax", true); err != nil {
+	if _, err := service.Prepare("gemini", "/opt/sessionman/bin/sm", true); err != nil {
 		t.Fatal(err)
 	}
 	assertFileContains(t, filepath.Join(userRoot, "keep"), "user-owned")
@@ -155,7 +155,7 @@ func TestProjectionRefreshRemovesStaleOwnedFiles(t *testing.T) {
 	project := t.TempDir()
 	writeConfig(t, filepath.Join(project, ".agents", "hooks.json"), `{"hooks":{"SessionStart":[{"hooks":[{"type":"command","command":"start"}]}]}}`)
 	service := hooks.Service{Home: home, Project: project}
-	projection, err := service.Prepare("claude", "/opt/agentx/bin/ax", true)
+	projection, err := service.Prepare("claude", "/opt/sessionman/bin/sm", true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -163,7 +163,7 @@ func TestProjectionRefreshRemovesStaleOwnedFiles(t *testing.T) {
 	if err := os.WriteFile(stale, []byte(`{"hooks":{}}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.Prepare("claude", "/opt/agentx/bin/ax", true); err != nil {
+	if _, err := service.Prepare("claude", "/opt/sessionman/bin/sm", true); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(stale); !errors.Is(err, os.ErrNotExist) {
@@ -187,7 +187,7 @@ func TestDispatchPresentsCanonicalCommandIOAcrossAgents(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.agent, func(t *testing.T) {
-			projection, err := (hooks.Service{Home: home, Project: project}).Prepare(test.agent, "/opt/agentx/bin/ax", true)
+			projection, err := (hooks.Service{Home: home, Project: project}).Prepare(test.agent, "/opt/sessionman/bin/sm", true)
 			if err != nil {
 				t.Fatal(err)
 			}

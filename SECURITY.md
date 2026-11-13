@@ -2,7 +2,7 @@
 
 ## Supported versions
 
-Security fixes are provided for the latest released version of AgentX.
+Security fixes are provided for the latest released version of SessionMan.
 
 ## Reporting a vulnerability
 
@@ -14,4 +14,4 @@ Include the affected version, operating system, reproduction steps, impact, and 
 
 ## Security model
 
-AgentX launches native coding-agent CLIs with the current user's permissions. It does not accept or store credentials, but native commands may access their own credential and session stores. `AX_LOG=debug` and `--verbose` intentionally record raw external command input and output; treat those logs as sensitive.
+SessionMan launches native coding-agent CLIs with the current user's permissions. It does not accept or store credentials, but native commands may access their own credential and session stores. `SM_LOG=debug` and `--verbose` intentionally record raw external command input and output; treat those logs as sensitive.

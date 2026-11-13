@@ -105,17 +105,17 @@ var AgentOrder = []string{"claude", "codex", "gemini", "opencode", "pi"}
 var piModel = regexp.MustCompile(`^[A-Za-z0-9_-]+/[^*?:[:space:]]+$`)
 
 func Dir(home string) string {
-	return filepath.Join(home, ".agentx", "presets")
+	return filepath.Join(home, ".sessionman", "presets")
 }
 
 func Path(home, name string) string {
 	return filepath.Join(Dir(home), name, FileName)
 }
 
-// Migrate renames ~/.agentx/profiles → presets and PROFILE.md → PRESET.md inside each entry.
+// Migrate renames ~/.sessionman/profiles → presets and PROFILE.md → PRESET.md inside each entry.
 // Idempotent: no-op when already migrated or nothing to migrate.
 func Migrate(home string) {
-	legacy := filepath.Join(home, ".agentx", "profiles")
+	legacy := filepath.Join(home, ".sessionman", "profiles")
 	target := Dir(home)
 	info, err := os.Stat(legacy)
 	if err != nil || !info.IsDir() {

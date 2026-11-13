@@ -1,11 +1,11 @@
 version: 2
 
-project_name: agentx
+project_name: sessionman
 
 builds:
-  - id: ax
-    main: ./cmd/ax
-    binary: ax
+  - id: sm
+    main: ./cmd/sm
+    binary: sm
     env:
       - CGO_ENABLED=0
     goos:
@@ -20,7 +20,7 @@ builds:
 
 archives:
   - ids:
-      - ax
+      - sm
     name_template: >-
       {{ .ProjectName }}_
       {{- if eq .Os "darwin" }}Darwin

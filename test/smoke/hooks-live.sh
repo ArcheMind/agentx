@@ -1,19 +1,19 @@
 #!/bin/sh
 set -eu
 
-ax=${1:-./bin/ax}
+ax=${1:-./bin/sm}
 root=$(CDPATH= cd -- "$(dirname "$0")/../.." && pwd)
 recorder=$root/test/smoke/record-hook.sh
-workspace=$(mktemp -d "${TMPDIR:-/tmp}/agentx-hooks-smoke.XXXXXX")
+workspace=$(mktemp -d "${TMPDIR:-/tmp}/sessionman-hooks-smoke.XXXXXX")
 workspace=$(CDPATH= cd -- "$workspace" && pwd -P)
 backup=$workspace/backup
 project=$workspace/project
 results=$workspace/results
 mkdir -p "$backup" "$project/.agents" "$results"
 
-owned_paths="$HOME/.agents/.agentx/hooks/claude
-$HOME/.agents/.agentx/hooks/pi
-$HOME/.gemini/extensions/agentx-hooks"
+owned_paths="$HOME/.agents/.sessionman/hooks/claude
+$HOME/.agents/.sessionman/hooks/pi
+$HOME/.gemini/extensions/sessionman-hooks"
 
 cleanup() {
 	printf '%s\n' "$owned_paths" | while IFS= read -r path; do
@@ -23,7 +23,7 @@ cleanup() {
 			rm -rf "$path"
 			mkdir -p "$(dirname "$path")"
 			cp -R "$backup/$key" "$path"
-		elif [ -f "$path/.agentx-owned" ]; then
+		elif [ -f "$path/.sessionman-owned" ]; then
 			rm -rf "$path"
 		fi
 	done
@@ -33,8 +33,8 @@ trap cleanup EXIT HUP INT TERM
 
 printf '%s\n' "$owned_paths" | while IFS= read -r path; do
 	[ -n "$path" ] || continue
-	if [ -e "$path" ] && [ ! -f "$path/.agentx-owned" ]; then
-		printf 'Refusing to touch non-AgentX artifact: %s\n' "$path" >&2
+	if [ -e "$path" ] && [ ! -f "$path/.sessionman-owned" ]; then
+		printf 'Refusing to touch non-SessionMan artifact: %s\n' "$path" >&2
 		exit 1
 	fi
 	if [ -d "$path" ]; then
@@ -85,9 +85,9 @@ run_agent() {
 		return 1
 	fi
 	case "$agent" in
-		claude) artifact=$HOME/.agents/.agentx/hooks/claude ;;
-		gemini) artifact=$HOME/.gemini/extensions/agentx-hooks ;;
-		pi) artifact=$HOME/.agents/.agentx/hooks/pi ;;
+		claude) artifact=$HOME/.agents/.sessionman/hooks/claude ;;
+		gemini) artifact=$HOME/.gemini/extensions/sessionman-hooks ;;
+		pi) artifact=$HOME/.agents/.sessionman/hooks/pi ;;
 		*) artifact= ;;
 	esac
 	if [ -n "$artifact" ] && [ -d "$artifact" ]; then

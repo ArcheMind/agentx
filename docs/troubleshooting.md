@@ -44,11 +44,11 @@ Child Agent sessions are hidden from discovery by default. Pass `--include-subag
 
 ## A native command fails
 
-AgentX preserves the native command's exit behavior. Enable the debug protocol to record the raw external command plan and result:
+SessionMan preserves the native command's exit behavior. Enable the debug protocol to record the raw external command plan and result:
 
 ```bash
-AX_LOG=debug ax agent list
-ax --verbose agent models opencode
+SM_LOG=debug sm agent list
+sm --verbose agent models opencode
 ```
 
 Debug output may contain sensitive native content. Review and redact it before attaching it to an issue.

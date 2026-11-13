@@ -19,14 +19,14 @@ func Equal(name string, actual, expected, context any) error {
 		return nil
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "AgentX internal invariant violated. Copy this whole message to a coding agent on this machine.\n\n")
+	fmt.Fprintf(&b, "SessionMan internal invariant violated. Copy this whole message to a coding agent on this machine.\n\n")
 	fmt.Fprintf(&b, "Invariant: %s\n", name)
 	fmt.Fprintf(&b, "Location:  %s\n", callerLocation())
 	fmt.Fprintf(&b, "Command:   %s\n", strings.Join(os.Args, " "))
 	fmt.Fprintf(&b, "Actual:\n%s\n", render(actual))
 	fmt.Fprintf(&b, "Expected:\n%s\n", render(expected))
 	fmt.Fprintf(&b, "Context:\n%s\n\n", render(context))
-	b.WriteString("Task: run `ax version` to get the installed AgentX version, read the files referenced above on this machine, find the root cause using the AgentX source at the matching tag (https://github.com/ArcheMind/agentx), then file an issue at https://github.com/ArcheMind/agentx/issues with the evidence and root cause.")
+	b.WriteString("Task: run `sm version` to get the installed SessionMan version, read the files referenced above on this machine, find the root cause using the SessionMan source at the matching tag (https://github.com/ArcheMind/agentx), then file an issue at https://github.com/ArcheMind/agentx/issues with the evidence and root cause.")
 	return errors.New(b.String())
 }
 

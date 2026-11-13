@@ -226,7 +226,7 @@ func TestPresetFixesEffortAndStaleSnapshotIsReported(t *testing.T) {
 	native.Name, native.Effort = "native", ""
 	savePreset(t, s.Home, native)
 	text = callTest(t, s, "ExternalSubagent", map[string]any{"description": "x", "prompt": "x", "model": "native", "run_in_background": false})
-	if !strings.Contains(text, "effort=native default") || !strings.Contains(text, "reconnect AgentX MCP to refresh") {
+	if !strings.Contains(text, "effort=native default") || !strings.Contains(text, "reconnect SessionMan MCP to refresh") {
 		t.Fatal(text)
 	}
 	if args := strings.Join(r.plans[1].Args, " "); strings.Contains(args, "model_reasoning_effort") {
@@ -322,8 +322,8 @@ func TestConnectionStatusMatchesCurrentClientAndCleansUp(t *testing.T) {
 	if len(Connections(s.Home)) != 0 {
 		t.Fatal("closed MCP connection remained active")
 	}
-	if _, err := os.Stat(filepath.Join(s.Home, ".config", "agentx")); !os.IsNotExist(err) {
-		t.Fatal("serve created AgentX configuration state")
+	if _, err := os.Stat(filepath.Join(s.Home, ".config", "sessionman")); !os.IsNotExist(err) {
+		t.Fatal("serve created SessionMan configuration state")
 	}
 }
 
@@ -363,7 +363,7 @@ func TestQueuedCancellationWritesResultFileForEveryAcceptedTask(t *testing.T) {
 	callTest(t, s, "SendExternalSubagentMessage", map[string]any{"to": "worker", "message": "second"})
 	callTest(t, s, "StopExternalSubagent", map[string]any{"task_id": "worker"})
 	s.workers.Wait()
-	paths, _ := filepath.Glob(filepath.Join(s.Home, ".local", "state", "agentx", "connections", s.connectionID, "jobs", "*.json"))
+	paths, _ := filepath.Glob(filepath.Join(s.Home, ".local", "state", "sessionman", "connections", s.connectionID, "jobs", "*.json"))
 	if len(paths) != 2 {
 		t.Fatalf("expected two terminal result files, got %v", paths)
 	}
@@ -379,7 +379,7 @@ func TestQueuedCancellationWritesResultFileForEveryAcceptedTask(t *testing.T) {
 		if err := json.Unmarshal(data, &doc); err != nil {
 			t.Fatal(err)
 		}
-		if doc.Meta["status"] != "cancelled" || doc.Meta["report_origin"] != "agentx-subagent" || doc.Content == "" || !strings.HasSuffix(path, doc.Meta["task_id"]+".json") {
+		if doc.Meta["status"] != "cancelled" || doc.Meta["report_origin"] != "sessionman-subagent" || doc.Content == "" || !strings.HasSuffix(path, doc.Meta["task_id"]+".json") {
 			t.Fatal(string(data))
 		}
 		if _, ok := doc.Meta["source"]; ok {
@@ -452,7 +452,7 @@ func TestExternalSubagentToolNamesAndUnchangedContract(t *testing.T) {
 	if len(s.agents) != 0 {
 		t.Fatal("old aliases created work")
 	}
-	if text := callTest(t, s, "listExternalSubagentSessions", map[string]any{}); !strings.Contains(text, "No AgentX ExternalSubagents") {
+	if text := callTest(t, s, "listExternalSubagentSessions", map[string]any{}); !strings.Contains(text, "No SessionMan ExternalSubagents") {
 		t.Fatal(text)
 	}
 	result, err := s.handle("initialize", []byte(`{"clientInfo":{"name":"test","version":"1"}}`))
@@ -460,7 +460,7 @@ func TestExternalSubagentToolNamesAndUnchangedContract(t *testing.T) {
 		t.Fatal(err)
 	}
 	initialized := result.(map[string]any)
-	if initialized["serverInfo"].(map[string]any)["name"] != "AgentX" || initialized["protocolVersion"] != "2024-11-05" {
+	if initialized["serverInfo"].(map[string]any)["name"] != "SessionMan" || initialized["protocolVersion"] != "2024-11-05" {
 		t.Fatal("changed server identity or transport")
 	}
 	instructions := initialized["instructions"].(string)
@@ -523,7 +523,7 @@ func TestPresetCatalogSharedDataAndRefresh(t *testing.T) {
 
 func TestPresetCatalogIgnoresLegacyConfigAndReportsInvalidAndEmpty(t *testing.T) {
 	s := testServer(t, &testRunner{})
-	legacy := filepath.Join(s.Home, ".config", "agentx", "subagents.json")
+	legacy := filepath.Join(s.Home, ".config", "sessionman", "subagents.json")
 	os.MkdirAll(filepath.Dir(legacy), 0700)
 	os.WriteFile(legacy, []byte(`{"enabled":false,"options":[]}`), 0600)
 	text, models := PresetCatalog(s.Home)
@@ -580,18 +580,18 @@ func TestToolMetadataFitsHostLimitInTheWorstCase(t *testing.T) {
 func TestDelegationInjectedIntoCodexPlan(t *testing.T) {
 	r := &testRunner{}
 	s := testServer(t, r)
-	s.axBinary = "/usr/local/bin/ax"
+	s.axBinary = "/usr/local/bin/sm"
 	callTest(t, s, "ExternalSubagent", map[string]any{"description": "x", "prompt": "x", "model": "review", "run_in_background": false})
 	r.mu.Lock()
 	args := strings.Join(r.plans[0].Args, " ")
 	r.mu.Unlock()
-	if !strings.Contains(args, `mcp_servers.agentx.command="/usr/local/bin/ax"`) {
+	if !strings.Contains(args, `mcp_servers.sessionman.command="/usr/local/bin/sm"`) {
 		t.Fatal("delegation not injected", args)
 	}
-	if !strings.Contains(args, `mcp_servers.agentx.args=["mcp","serve"]`) {
+	if !strings.Contains(args, `mcp_servers.sessionman.args=["mcp","serve"]`) {
 		t.Fatal("delegation args missing", args)
 	}
-	if !strings.Contains(args, `mcp_servers.agentx.env.AX_DELEGATION_DEPTH="1"`) {
+	if !strings.Contains(args, `mcp_servers.sessionman.env.SM_DELEGATION_DEPTH="1"`) {
 		t.Fatal("depth not propagated", args)
 	}
 }
@@ -599,13 +599,13 @@ func TestDelegationInjectedIntoCodexPlan(t *testing.T) {
 func TestDelegationStopsAtMaxDepth(t *testing.T) {
 	r := &testRunner{}
 	s := testServer(t, r)
-	s.axBinary = "/usr/local/bin/ax"
+	s.axBinary = "/usr/local/bin/sm"
 	s.delegationDepth = MaxDelegationDepth
 	callTest(t, s, "ExternalSubagent", map[string]any{"description": "x", "prompt": "x", "model": "review", "run_in_background": false})
 	r.mu.Lock()
 	args := strings.Join(r.plans[0].Args, " ")
 	r.mu.Unlock()
-	if strings.Contains(args, "mcp_servers.agentx") {
+	if strings.Contains(args, "mcp_servers.sessionman") {
 		t.Fatal("delegation injected beyond max depth", args)
 	}
 }
@@ -618,7 +618,7 @@ func TestDelegationNotInjectedWithoutBinary(t *testing.T) {
 	r.mu.Lock()
 	args := strings.Join(r.plans[0].Args, " ")
 	r.mu.Unlock()
-	if strings.Contains(args, "mcp_servers.agentx") {
+	if strings.Contains(args, "mcp_servers.sessionman") {
 		t.Fatal("delegation injected without binary", args)
 	}
 }
@@ -665,21 +665,21 @@ func TestNestedInitializationIncludesDepthInfo(t *testing.T) {
 func TestDelegationPropagatesSubagentHome(t *testing.T) {
 	r := &testRunner{}
 	s := testServer(t, r)
-	s.axBinary = "/usr/local/bin/ax"
-	t.Setenv("AX_SUBAGENT_HOME", "/custom/home")
+	s.axBinary = "/usr/local/bin/sm"
+	t.Setenv("SM_SUBAGENT_HOME", "/custom/home")
 	callTest(t, s, "ExternalSubagent", map[string]any{"description": "x", "prompt": "x", "model": "review", "run_in_background": false})
 	r.mu.Lock()
 	args := strings.Join(r.plans[0].Args, " ")
 	r.mu.Unlock()
-	if !strings.Contains(args, `mcp_servers.agentx.env.AX_SUBAGENT_HOME="/custom/home"`) {
-		t.Fatal("AX_SUBAGENT_HOME not propagated", args)
+	if !strings.Contains(args, `mcp_servers.sessionman.env.SM_SUBAGENT_HOME="/custom/home"`) {
+		t.Fatal("SM_SUBAGENT_HOME not propagated", args)
 	}
 }
 
 func TestDelegationNotInjectedForPi(t *testing.T) {
 	r := &testRunner{}
 	s := testServer(t, r)
-	s.axBinary = "/usr/local/bin/ax"
+	s.axBinary = "/usr/local/bin/sm"
 	piPreset := presets.Preset{Name: "pi-test", Agent: "pi", Model: "provider/test-model", Description: "pi test"}
 	savePreset(t, s.Home, piPreset)
 	// Pi execution will fail (mock returns Codex-format output); we only care about the plan args.
@@ -690,7 +690,7 @@ func TestDelegationNotInjectedForPi(t *testing.T) {
 		t.Fatal("no execution plan recorded")
 	}
 	args := strings.Join(r.plans[0].Args, " ")
-	if strings.Contains(args, "mcp_servers.agentx") {
+	if strings.Contains(args, "mcp_servers.sessionman") {
 		t.Fatal("delegation injected into Pi", args)
 	}
 }

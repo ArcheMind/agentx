@@ -28,7 +28,7 @@ func (d PiSDKAuth) Login(ctx context.Context, runner runtime.Runner, options run
 	if err != nil {
 		return runtime.CommandResult{ExitCode: -1}, err
 	}
-	script, err := os.CreateTemp("", "agentx-pi-login-*.mjs")
+	script, err := os.CreateTemp("", "sessionman-pi-login-*.mjs")
 	if err != nil {
 		return runtime.CommandResult{ExitCode: -1}, fmt.Errorf("create Pi SDK login adapter: %w", err)
 	}
@@ -44,7 +44,7 @@ func (d PiSDKAuth) Login(ctx context.Context, runner runtime.Runner, options run
 	return runner.Execute(ctx, runtime.CommandPlan{
 		Executable: "node",
 		Args:       []string{path},
-		Env:        map[string]string{"AX_PI_SDK": sdkPath},
+		Env:        map[string]string{"SM_PI_SDK": sdkPath},
 	}, options)
 }
 

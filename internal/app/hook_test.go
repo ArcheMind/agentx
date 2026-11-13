@@ -85,7 +85,7 @@ func TestAgentRunProjectsHooksIntoNativeLaunchArguments(t *testing.T) {
 	}{
 		{"claude", []string{"--plugin-dir", ".agents"}},
 		{"codex", []string{"-c", "hooks.SessionStart", "--handler"}},
-		{"pi", []string{"--extension", "agentx-hooks.ts"}},
+		{"pi", []string{"--extension", "sessionman-hooks.ts"}},
 	}
 	for _, test := range tests {
 		t.Run(test.agent, func(t *testing.T) {

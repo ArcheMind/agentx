@@ -229,7 +229,7 @@ func (a App) writeResumeSession(detail sessions.Session, agentID string) (string
 		}
 		return sessions.WriteCodexSessionFile(detail, auth.Dir)
 	}
-	stateDir := filepath.Join(a.Sessions.HomeDir, ".local", "state", "agentx", "resume")
+	stateDir := filepath.Join(a.Sessions.HomeDir, ".local", "state", "sessionman", "resume")
 	return sessions.WriteSessionFile(detail, agentID, stateDir, a.Sessions.HomeDir)
 }
 

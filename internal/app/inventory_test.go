@@ -66,7 +66,7 @@ func TestInventoryShowEvidenceF08F09(t *testing.T) {
 }
 
 func TestInventoryTerminalModesF05F06(t *testing.T) {
-	if os.Getenv("AX_INVENTORY_TERMINAL_HELPER") == "1" {
+	if os.Getenv("SM_INVENTORY_TERMINAL_HELPER") == "1" {
 		a := New(false, strings.NewReader(""), os.Stdout, os.Stderr)
 		a.Output = OutputText
 		if err := a.writeInventory(fixtureInventory()); err != nil {
@@ -85,7 +85,7 @@ func TestInventoryTerminalModesF05F06(t *testing.T) {
 import errno, os, pty, subprocess, sys
 binary=sys.argv[1]
 for mode in ['tty','no_color','pipe']:
- env=os.environ.copy(); env['AX_INVENTORY_TERMINAL_HELPER']='1';env['TERM']='xterm';env.pop('NO_COLOR',None)
+ env=os.environ.copy(); env['SM_INVENTORY_TERMINAL_HELPER']='1';env['TERM']='xterm';env.pop('NO_COLOR',None)
  if mode=='no_color': env['NO_COLOR']=''
  if mode=='pipe':
   result=subprocess.run([binary,'-test.run=^TestInventoryTerminalModesF05F06$'],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE,check=True);data=result.stdout

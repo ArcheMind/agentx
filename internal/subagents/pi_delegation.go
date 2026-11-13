@@ -15,11 +15,11 @@ var piDelegationBridge []byte
 
 // WritePiBridge writes the delegation bridge extension to a stable path under home and returns it.
 func WritePiBridge(home string) (string, error) {
-	dir := filepath.Join(home, ".local", "state", "agentx", "extensions")
+	dir := filepath.Join(home, ".local", "state", "sessionman", "extensions")
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return "", fmt.Errorf("creating bridge directory: %w", err)
 	}
-	path := filepath.Join(dir, "agentx-bridge.ts")
+	path := filepath.Join(dir, "sessionman-bridge.ts")
 	if err := os.WriteFile(path, piDelegationBridge, 0o600); err != nil {
 		return "", fmt.Errorf("writing delegation bridge: %w", err)
 	}
@@ -37,7 +37,7 @@ func (s *Server) injectPiDelegation(plan *runtime.CommandPlan, a *ExternalSubage
 		return err
 	}
 	plan.Args = append(plan.Args, "--extension", path)
-	plan.Env["AX_BINARY"] = s.axBinary
-	plan.Env["AX_DELEGATION_DEPTH"] = strconv.Itoa(s.delegationDepth + 1)
+	plan.Env["SM_BINARY"] = s.axBinary
+	plan.Env["SM_DELEGATION_DEPTH"] = strconv.Itoa(s.delegationDepth + 1)
 	return nil
 }
