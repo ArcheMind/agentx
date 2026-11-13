@@ -1,0 +1,66 @@
+package drivers
+
+import (
+	"context"
+	"fmt"
+	"strings"
+
+	"github.com/ArcheMind/agentx/internal/runtime"
+)
+
+func agyAgent() runtime.Agent {
+	return runtime.Agent{
+		ID: "agy", Name: "Antigravity CLI", Binary: "agy",
+		Launch: NativeLaunch{Binary: "agy", ModelFlag: "--model"},
+		Models: AGYModels{},
+		Auth: NativeAuth{
+			Command:           runtime.CommandPlan{Executable: "agy", Args: []string{"acp", "--login"}},
+			Instruction:       "Sign in using Antigravity CLI's native login. Authentication is shared through the OS keyring.",
+			LogoutCommand:     runtime.CommandPlan{Executable: "agy"},
+			LogoutInstruction: "Run /logout in Antigravity CLI. This affects its shared native authentication.",
+		},
+		Install:      AGYInstaller{},
+		Capabilities: []runtime.Capability{runtime.CapabilityLaunch, runtime.CapabilityAuthLogin, runtime.CapabilityAuthLogout, runtime.CapabilityModelList, runtime.CapabilityModelSelect},
+	}
+}
+
+type AGYModels struct{}
+
+func (AGYModels) ListModels(ctx context.Context, runner runtime.Runner) ([]runtime.Model, error) {
+	result, err := runner.Execute(ctx, runtime.CommandPlan{Executable: "agy", Args: []string{"models"}}, runtime.ExecuteOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("read Antigravity account models: %w", err)
+	}
+	models := make([]runtime.Model, 0)
+	seen := make(map[string]bool)
+	for _, line := range strings.Split(result.Stdout, "\n") {
+		line = strings.TrimSpace(stripANSI(line))
+		if line == "" || line == "Fetching available models..." {
+			continue
+		}
+		id, name, ok := strings.Cut(line, "\t")
+		if !ok || id == "" || strings.ContainsAny(id, " \t\r") || strings.TrimSpace(name) == "" {
+			return nil, fmt.Errorf("parse Antigravity models: expected native model ID and display name separated by a tab")
+		}
+		if seen[id] {
+			continue
+		}
+		seen[id] = true
+		models = append(models, runtime.Model{ID: id, DisplayName: strings.TrimSpace(name), Source: "agy models"})
+	}
+	return models, nil
+}
+
+type AGYInstaller struct{}
+
+func (AGYInstaller) PlanInstall(version string) (runtime.CommandPlan, error) {
+	if version != "" {
+		return runtime.CommandPlan{}, fmt.Errorf("Antigravity's official installer does not support selecting a version")
+	}
+	script := `set -eu
+installer=$(mktemp)
+trap 'rm -f "$installer"' EXIT
+curl --fail --silent --show-error --location https://antigravity.google/cli/install.sh --output "$installer"
+sh "$installer"`
+	return runtime.CommandPlan{Executable: "sh", Args: []string{"-c", script}}, nil
+}

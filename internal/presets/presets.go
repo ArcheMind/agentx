@@ -93,6 +93,7 @@ type AgentRule struct {
 }
 
 var Agents = map[string]AgentRule{
+	"agy":      {Name: "Antigravity CLI", Efforts: []string{"low", "medium", "high", "xhigh", "max"}, EffortNote: "Antigravity CLI --effort levels; per-model support is not verified by agy models", Bypassable: true},
 	"claude":   {Name: "Claude", Efforts: []string{"low", "medium", "high", "xhigh", "max"}, EffortNote: "Claude Code --effort levels; per-model support is not verified locally", Bypassable: true},
 	"codex":    {Name: "Codex", Efforts: []string{"none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"}, EffortNote: "Codex reports supported levels per model", Bypassable: true},
 	"gemini":   {Name: "Gemini", EffortNote: "Gemini CLI exposes no verified effort control"},
@@ -100,7 +101,7 @@ var Agents = map[string]AgentRule{
 	"pi":       {Name: "Pi", Efforts: []string{"low", "medium", "high", "xhigh", "max"}, EffortNote: "Pi --thinking levels; ExternalSubagent execution fails unless Pi's provider request carries exactly this level (Pi silently clamps or remaps unsupported levels). off and minimal are not offered: for Codex-backed models Pi sends no effort for off (the server default applies) and sends low for minimal", Bypassable: true},
 }
 
-var AgentOrder = []string{"claude", "codex", "gemini", "opencode", "pi"}
+var AgentOrder = []string{"claude", "codex", "gemini", "opencode", "pi", "agy"}
 
 var piModel = regexp.MustCompile(`^[A-Za-z0-9_-]+/[^*?:[:space:]]+$`)
 
@@ -190,7 +191,7 @@ func (p Preset) LaunchArgs() []string {
 	var args []string
 	if p.EffectiveMode() == ModeYolo {
 		switch p.Agent {
-		case "claude":
+		case "agy", "claude":
 			args = append(args, "--dangerously-skip-permissions")
 		case "codex":
 			args = append(args, "-c", `sandbox_mode="danger-full-access"`)
@@ -200,7 +201,7 @@ func (p Preset) LaunchArgs() []string {
 		switch p.Agent {
 		case "codex":
 			args = append(args, "-c", fmt.Sprintf("model_reasoning_effort=%q", p.Effort))
-		case "claude":
+		case "agy", "claude":
 			args = append(args, "--effort", p.Effort)
 		case "pi":
 			args = append(args, "--thinking", p.Effort)

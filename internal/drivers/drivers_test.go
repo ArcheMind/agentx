@@ -15,7 +15,7 @@ import (
 
 func TestRegistryContainsSupportedAgents(t *testing.T) {
 	registry := NewRegistry()
-	want := []string{"claude", "codex", "dsh", "gemini", "opencode", "pi"}
+	want := []string{"agy", "claude", "codex", "dsh", "gemini", "opencode", "pi"}
 	all := registry.All()
 	got := make([]string, 0, len(all))
 	for _, agent := range all {
@@ -28,6 +28,7 @@ func TestRegistryContainsSupportedAgents(t *testing.T) {
 
 func TestNativeAuthPlansUseAgentOAuthFlows(t *testing.T) {
 	want := map[string]runtime.CommandPlan{
+		"agy":      {Executable: "agy", Args: []string{"acp", "--login"}},
 		"claude":   {Executable: "claude", Args: []string{"auth", "login", "--claudeai"}},
 		"codex":    {Executable: "codex", Args: []string{"login"}},
 		"dsh":      {Executable: "dsh", Args: []string{"web"}},
@@ -52,6 +53,7 @@ func TestNativeAuthPlansUseAgentOAuthFlows(t *testing.T) {
 
 func TestNativeAuthLogoutPlans(t *testing.T) {
 	want := map[string]runtime.CommandPlan{
+		"agy":      {Executable: "agy"},
 		"claude":   {Executable: "claude", Args: []string{"auth", "logout"}},
 		"codex":    {Executable: "codex", Args: []string{"logout"}},
 		"gemini":   {Executable: "gemini"},
@@ -152,7 +154,7 @@ func TestAuthStatusCapabilitiesMatchNativeSupport(t *testing.T) {
 			t.Fatalf("%s should support auth status", id)
 		}
 	}
-	for _, id := range []string{"gemini"} {
+	for _, id := range []string{"agy", "gemini"} {
 		agent, err := registry.Get(id)
 		if err != nil {
 			t.Fatal(err)

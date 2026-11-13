@@ -177,6 +177,7 @@ func TestUpdateKeepsOriginalOnInvalidInput(t *testing.T) {
 
 func TestLaunchArgsNeverInventEffort(t *testing.T) {
 	cases := map[string][]string{
+		"agy":    {"--dangerously-skip-permissions", "--effort", "high"},
 		"codex":  {"-c", `sandbox_mode="danger-full-access"`, "-c", `model_reasoning_effort="high"`},
 		"claude": {"--dangerously-skip-permissions", "--effort", "high"},
 		"pi":     {"--thinking", "high"},
@@ -215,5 +216,40 @@ func TestParsePresetWithNewFields(t *testing.T) {
 	}
 	if len(p.Flags) != 2 || p.Flags[0] != "--custom" || p.Flags[1] != "value" {
 		t.Fatal("flags not parsed", p.Flags)
+	}
+}
+
+func TestAGYPresetKeepsNativeDefaultsAndExactSelection(t *testing.T) {
+	for _, mode := range []string{ModeNormal, ModeYolo, ""} {
+		p := Preset{Name: "agy-native", Description: "Native Antigravity", Agent: "agy", Model: "future-exact-model", Effort: "medium", Mode: mode}
+		if err := p.Validate(); err != nil {
+			t.Fatal(err)
+		}
+		data, err := Encode(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		loaded, err := Parse(p.Name, data)
+		if err != nil || !loaded.Equal(p) {
+			t.Fatalf("preset = %#v, error = %v", loaded, err)
+		}
+		want := "--effort medium"
+		if mode != ModeNormal {
+			want = "--dangerously-skip-permissions " + want
+		}
+		if got := strings.Join(p.LaunchArgs(), " "); got != want {
+			t.Fatalf("mode %q args = %q", mode, got)
+		}
+	}
+	if args := (Preset{Agent: "agy", Mode: ModeNormal}).LaunchArgs(); len(args) != 0 {
+		t.Fatalf("native defaults overridden: %v", args)
+	}
+	for _, effort := range []string{"off", "ultra", "HIGH"} {
+		if err := (Preset{Name: "agy", Description: "x", Agent: "agy", Model: "exact", Effort: effort}).Validate(); err == nil {
+			t.Fatalf("accepted effort %q", effort)
+		}
+	}
+	if err := (Preset{Name: "unknown", Description: "x", Agent: "unknown", Model: "exact"}).Validate(); err == nil {
+		t.Fatal("unknown agent accepted")
 	}
 }

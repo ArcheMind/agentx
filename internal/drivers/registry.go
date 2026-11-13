@@ -14,6 +14,7 @@ type Registry struct {
 func NewRegistry() Registry {
 	piModels := PiModels{Plan: runtime.CommandPlan{Executable: "pi", Args: []string{"--list-models"}}}
 	agents := []runtime.Agent{
+		agyAgent(),
 		nativeAgent("claude", "Claude Code", "claude", "@anthropic-ai/claude-code", ClaudeModels{}, true, NativeAuth{Command: runtime.CommandPlan{Executable: "claude", Args: []string{"auth", "login", "--claudeai"}}, LogoutCommand: runtime.CommandPlan{Executable: "claude", Args: []string{"auth", "logout"}}, StatusCommand: runtime.CommandPlan{Executable: "claude", Args: []string{"auth", "status", "--json"}}, ParseStatus: parseClaudeAuthStatus}),
 		nativeAgent("codex", "Codex CLI", "codex", "@openai/codex", CodexAppServerModels{}, true, NativeAuth{Command: runtime.CommandPlan{Executable: "codex", Args: []string{"login"}}, LogoutCommand: runtime.CommandPlan{Executable: "codex", Args: []string{"logout"}}, StatusCommand: runtime.CommandPlan{Executable: "codex", Args: []string{"login", "status"}}, ParseStatus: parseCodexAuthStatus}),
 		{ID: "dsh", Name: "DeepSeek Harness", Binary: "dsh", Launch: NativeLaunch{Binary: "dsh"}, Models: DSHModels{}, Auth: ProviderAuth{NativeAuth: NativeAuth{Command: runtime.CommandPlan{Executable: "dsh", Args: []string{"web"}}, Instruction: "Open the DSH Models page and configure the provider credential there."}, Providers: DSHAuthProviders{}}, Install: NPMPackage{Package: "@deepseek-ai/dsh"}, Capabilities: []runtime.Capability{runtime.CapabilityLaunch, runtime.CapabilityAuthLogin, runtime.CapabilityAuthStatus, runtime.CapabilityModelList}},
