@@ -4,6 +4,29 @@ All notable changes to SessionMan are documented here. The format follows [Keep 
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-11-13
+
+### Added
+
+- Native Antigravity agent driver with SQLite session conversion, MCP duplex
+  adapter, owned extensions, and product presets.
+- Antigravity auth status derived from the native model catalog.
+- Smoke tests covering native MCP dispatch, duplex events, headless permission
+  denial, signed message fidelity, and subagent coexistence.
+
+### Removed
+
+- Legacy Gemini CLI driver, native sessions, extension discovery, projection,
+  and model-list placeholder. The `gemini` agent entry point is no longer
+  available.
+
+### Fixed
+
+- Antigravity subagent marker preserved when MCP servers coexist.
+- Pi effort mismatch warning clarified.
+- Antigravity raw thinking and signed message boundaries kept readable in
+  session transcripts.
+
 ## [0.13.2] - 2026-11-13
 
 ### Fixed
