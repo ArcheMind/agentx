@@ -145,7 +145,7 @@ func TestNativeAuthStatusParsers(t *testing.T) {
 
 func TestAuthStatusCapabilitiesMatchNativeSupport(t *testing.T) {
 	registry := NewRegistry()
-	for _, id := range []string{"claude", "codex", "dsh", "opencode", "pi"} {
+	for _, id := range []string{"agy", "claude", "codex", "dsh", "opencode", "pi"} {
 		agent, err := registry.Get(id)
 		if err != nil {
 			t.Fatal(err)
@@ -154,7 +154,7 @@ func TestAuthStatusCapabilitiesMatchNativeSupport(t *testing.T) {
 			t.Fatalf("%s should support auth status", id)
 		}
 	}
-	for _, id := range []string{"agy", "gemini"} {
+	for _, id := range []string{"gemini"} {
 		agent, err := registry.Get(id)
 		if err != nil {
 			t.Fatal(err)

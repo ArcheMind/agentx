@@ -14,15 +14,32 @@ func agyAgent() runtime.Agent {
 		ID: "agy", Name: "Antigravity CLI", Binary: "agy",
 		Launch: NativeLaunch{Binary: "agy", ModelFlag: "--model"},
 		Models: AGYModels{},
-		Auth: NativeAuth{
+		Auth: AGYAuth{NativeAuth: NativeAuth{
 			Command:           runtime.CommandPlan{Executable: "agy", Args: []string{"acp", "--login"}},
 			Instruction:       "Sign in using Antigravity CLI's native login. Authentication is shared through the OS keyring.",
 			LogoutCommand:     runtime.CommandPlan{Executable: "agy"},
 			LogoutInstruction: "Run /logout in Antigravity CLI. This affects its shared native authentication.",
-		},
+		}},
 		Install:      AGYInstaller{},
-		Capabilities: []runtime.Capability{runtime.CapabilityLaunch, runtime.CapabilityAuthLogin, runtime.CapabilityAuthLogout, runtime.CapabilityModelList, runtime.CapabilityModelSelect},
+		Capabilities: []runtime.Capability{runtime.CapabilityLaunch, runtime.CapabilityAuthLogin, runtime.CapabilityAuthLogout, runtime.CapabilityAuthStatus, runtime.CapabilityModelList, runtime.CapabilityModelSelect},
 	}
+}
+
+type AGYAuth struct {
+	NativeAuth
+}
+
+func (AGYAuth) SupportsStatus() bool { return true }
+
+func (AGYAuth) Status(ctx context.Context, runner runtime.Runner) (runtime.AuthStatus, error) {
+	models, err := (AGYModels{}).ListModels(ctx, runner)
+	if err != nil {
+		return runtime.AuthStatus{}, err
+	}
+	return runtime.AuthStatus{
+		Supported: true,
+		Providers: authProviders(len(models) > 0, runtime.AuthProvider{ID: "agy"}),
+	}, nil
 }
 
 type AGYModels struct{}

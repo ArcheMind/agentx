@@ -38,9 +38,10 @@ Neither mode inherits the host agent's authorization.
 A successful `thought_level` configuration response establishes acceptance
 of the request, not the effort sent to the provider. The provider request is
 not recorded by this adapter; agy effort remains unverified and reports say
-so. The model catalog comes from `agy models`, not a hardcoded list. No
-native authoritative account-status query is available, so auth status is
-unsupported; login or model availability is not inferred from credentials.
+so. The model catalog comes from `agy models`, not a hardcoded list. Auth status is derived from the account model catalog: a nonempty successful
+`agy models` response establishes a logged-in agy account. An empty catalog
+reports no logged-in account; command or parsing errors leave status unknown.
+No email address or subscription is inferred.
 
 Claude stream-json, Codex app-server and Pi RPC remain native. Migrating
 those adapters to ACP is separate work.

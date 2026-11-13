@@ -78,7 +78,7 @@ func TestAGYLaunchPreservesExactModelAndNativeArguments(t *testing.T) {
 	if plan.Executable != "agy" || plan.Cwd != "/project" || !reflect.DeepEqual(plan.Args, append([]string{"--model", "future-native-model"}, args...)) {
 		t.Fatalf("plan = %#v", plan)
 	}
-	if agent.Auth.SupportsStatus() || !agent.Auth.SupportsLogout() {
+	if !agent.Auth.SupportsStatus() || !agent.Auth.SupportsLogout() {
 		t.Fatal("authentication support does not match native capabilities")
 	}
 }
@@ -109,5 +109,39 @@ func TestAGYInstallUsesPlatformOfficialInstaller(t *testing.T) {
 	want, err := agyInstallPlan("", goruntime.GOOS)
 	if err != nil || !reflect.DeepEqual(got, want) {
 		t.Fatalf("host plan = %#v, want %#v, error = %v", got, want, err)
+	}
+}
+
+func TestAGYAuthStatusUsesNativeModels(t *testing.T) {
+	for _, test := range []struct {
+		name          string
+		output        string
+		err           error
+		wantProviders int
+	}{
+		{name: "available", output: "native-model\tNative Model\n", wantProviders: 1},
+		{name: "empty"},
+		{name: "native error", err: errors.New("native unavailable")},
+		{name: "malformed", output: "not a catalog"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			runner := &agyModelsRunner{result: runtime.CommandResult{Stdout: test.output}, err: test.err}
+			status, err := (AGYAuth{}).Status(context.Background(), runner)
+			if test.err != nil || test.name == "malformed" {
+				if err == nil {
+					t.Fatal("expected status error")
+				}
+				if test.err != nil && !errors.Is(err, test.err) {
+					t.Fatalf("error = %v", err)
+				}
+				return
+			}
+			if err != nil || !status.Supported || len(status.Providers) != test.wantProviders {
+				t.Fatalf("status = %#v, error = %v", status, err)
+			}
+			if test.wantProviders > 0 && status.Providers[0] != (runtime.AuthProvider{ID: "agy"}) {
+				t.Fatalf("account = %#v", status.Providers[0])
+			}
+		})
 	}
 }
