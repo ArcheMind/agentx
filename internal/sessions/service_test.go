@@ -20,8 +20,8 @@ func TestBuiltInAgents(t *testing.T) {
 		},
 	}
 	agents := service.Agents()
-	if len(agents) != 5 {
-		t.Fatalf("agents = %d, want 5", len(agents))
+	if len(agents) != 6 {
+		t.Fatalf("agents = %d, want 6", len(agents))
 	}
 	for _, agent := range agents {
 		if agent.Installed != (agent.ID == "codex") {

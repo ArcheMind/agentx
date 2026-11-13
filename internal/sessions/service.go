@@ -234,6 +234,7 @@ type agentSpec struct {
 }
 
 var agentSpecs = []agentSpec{
+	{id: "agy", name: "Antigravity CLI", binary: "agy", root: agyRoot, load: loadAgy},
 	{id: "claude", name: "Claude Code", binary: "claude", root: func(home string) string { return filepath.Join(home, ".claude", "projects") }},
 	{id: "codex", name: "Codex CLI", binary: "codex", root: func(home string) string { return filepath.Join(home, ".codex", "sessions") }},
 	{id: "gemini", name: "Gemini CLI", binary: "gemini", root: func(home string) string { return filepath.Join(home, ".gemini", "tmp") }, load: loadGemini},

@@ -20,6 +20,8 @@ func WriteSessionFile(detail Session, agentID, dir, homeDir string) (string, err
 	}
 
 	switch agentID {
+	case "agy":
+		return WriteAgySessionFile(detail, homeDir)
 	case "claude":
 		newID := newUUID()
 		cwdEncoded := strings.ReplaceAll(detail.Workspace, "/", "-")
@@ -103,6 +105,8 @@ func WriteCodexSessionFile(detail Session, codexHome, provider string) (string, 
 
 func ResumeArgs(agentID, token string) []string {
 	switch agentID {
+	case "agy":
+		return []string{"--conversation", token}
 	case "codex":
 		return []string{"resume", token}
 	case "claude":

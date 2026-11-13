@@ -12,6 +12,9 @@ import (
 // ParseNativeSessionFile reads one native JSONL session file for a continue
 // turn's prefix/result accounting. Only the JSONL providers are supported.
 func ParseNativeSessionFile(agentID, path string) (Session, error) {
+	if agentID == "agy" {
+		return ParseAgySessionFile(path)
+	}
 	records, err := readJSONL(path)
 	if err != nil {
 		return Session{}, fmt.Errorf("read %s session %s: %w", agentID, path, err)

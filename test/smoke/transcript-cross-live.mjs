@@ -8,9 +8,10 @@ const binary=resolve(process.argv[2]??'bin/sm')
 const root=mkdtempSync(join(tmpdir(),'sm-transcript-cross-live-'))
 const workspace=join(root,'workspace')
 mkdirSync(workspace)
-const agents=['claude','codex','pi']
+const agents=['claude','codex','pi','agy']
 const sources=new Map(),failures=[],matrix={}
 const model={
+  agy:process.env.AX_CROSS_AGY_MODEL??'gemini-3.8-flash-low',
   claude:process.env.AX_CROSS_CLAUDE_MODEL??'haiku',
   codex:process.env.AX_CROSS_CODEX_MODEL??'',
   pi:process.env.AX_CROSS_PI_MODEL??'deepseek/deepseek-flash',

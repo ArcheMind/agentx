@@ -28,6 +28,7 @@ async function findFile(root,suffix){
 
 const ws='/tmp/agentx-fidelity-ws'
 const providers={
+  agy:{id:'d6fc410a-5e5d-4f66-b6eb-c922e61a4dc0',path:id=>`.gemini/antigravity-cli/conversations/${id}.db`},
   claude:{id:'5f0c1e2a-7b3d-4c8e-9a1f-2d3e4f5a6b7c',path:id=>`.claude/projects/${ws.replaceAll('/','-')}/${id}.jsonl`},
   codex:{id:'01a15000-1111-7222-8333-944455556666',path:id=>`.codex/sessions/2026/10/20/rollout-2026-10-20T11-00-00-${id}.jsonl`},
   pi:{id:'01a15000-2222-7333-8444-955566667777',path:id=>`.pi/agent/sessions/--${ws.slice(1).replaceAll('/','-')}--/2026-10-20T12-00-00-000Z_${id}.jsonl`},
@@ -81,6 +82,11 @@ function degrade(dst,messages){
     if(dst==='pi'){
       // pi user content is text blocks only; image blocks in user messages are dropped.
       if(m.content&&m.role==='user')m.content=m.content.filter(b=>!isImage(b))
+    }
+    if(dst==='agy'){
+      delete m.model
+      delete m.stopReason
+      if(m.role==='tool')m.result=textProjection(m.result)
     }
     if(dst==='codex'){
       // Codex table in the spec maps no model/stopReason; a codex message item has neither field (codex PROTOCOL ContentItem/message).
@@ -260,7 +266,7 @@ const diff=(a,b,path='$')=>{
 for(const [provider,spec] of Object.entries(providers)){
   const target=join(home,spec.path(spec.id))
   await mkdir(dirname(target),{recursive:true})
-  await copyFile(join(fixtures,provider+'.jsonl'),target)
+  await copyFile(provider==='agy'?join(dirname(fileURLToPath(import.meta.url)),'../../internal/sessions/testdata/agy/native-v1.5.8.db'):join(fixtures,provider+'.jsonl'),target)
 }
 
 async function runPair(src,dst){
@@ -276,6 +282,9 @@ async function runPair(src,dst){
     // Pi import lands a fresh-UUID session directly in pi's native per-workspace store.
     written=imported.session
     id=basename(written,'.jsonl')
+  }else if(dst==='agy'){
+    id=imported.session
+    written=join(home,providers.agy.path(id))
   }else{
     id=imported.session
     written=await findFile(join(home,dst==='claude'?'.claude/projects':'.codex/sessions'),id+'.jsonl')
@@ -283,8 +292,14 @@ async function runPair(src,dst){
   if(!written?.startsWith(home+'/'))throw new Error('import did not land inside isolated HOME: '+written)
   const u2=JSON.parse(ax('--json','session','export',id,'--source',dst))
   const warnings=[]
-  detail.native={file:written,errors:lint[dst](await jsonl(written),written,warnings),warnings}
+  detail.native={file:written,errors:dst==='agy'?((await readFile(written)).subarray(0,16).toString()==='SQLite format 3\0'?[]:['missing native SQLite header']):lint[dst](await jsonl(written),written,warnings),warnings}
   const n1=normalize(u1),n2=normalize(u2),expected=degrade(dst,n1)
+  if(src==='agy'||dst==='agy'){
+    const squash=messages=>messages.flatMap(m=>m.role==='assistant'&&m.content?.length?m.content.map(b=>({...m,content:[b]})):m)
+    detail.diff=diff(squash(expected),squash(n2))
+    detail.degraded=diff(n1,expected);detail.n1=n1;detail.n2=n2
+    return detail
+  }
   detail.diff=diff(expected,n2)
   detail.degraded=diff(n1,expected)
   detail.n1=n1;detail.n2=n2
@@ -292,7 +307,7 @@ async function runPair(src,dst){
 }
 
 // Ordered (src,dst) pairs under test; adding a pair is one line.
-const pairs=[['claude','codex'],['codex','claude'],['claude','pi'],['pi','claude'],['codex','pi'],['pi','codex']]
+const pairs=[['claude','codex'],['codex','claude'],['claude','pi'],['pi','claude'],['codex','pi'],['pi','codex'],['agy','claude'],['claude','agy'],['agy','codex'],['codex','agy'],['agy','pi'],['pi','agy']]
 const matrix={},failures=[],warnings={}
 const only=process.env.CROSS_PAIR?.split('->')
 for(const [src,dst] of pairs){
