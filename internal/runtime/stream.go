@@ -2,7 +2,6 @@ package runtime
 
 import (
 	"bufio"
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -16,31 +15,16 @@ type Stream struct {
 	cmd    *exec.Cmd
 	stdin  io.WriteCloser
 	lines  chan string
-	stderr *lockedBuffer
+	stderr *os.File
 	debug  bool
 	log    io.Writer
 
 	waitOnce sync.Once
 	waitErr  error
 
-	writeMu sync.Mutex
-}
-
-type lockedBuffer struct {
-	mu  sync.Mutex
-	buf bytes.Buffer
-}
-
-func (b *lockedBuffer) Write(data []byte) (int, error) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.buf.Write(data)
-}
-
-func (b *lockedBuffer) String() string {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.buf.String()
+	writeMu     sync.Mutex
+	stderrMu    sync.Mutex
+	stderrFinal string
 }
 
 // StreamStarter starts a long-lived line-oriented process in its own process group.
@@ -63,9 +47,18 @@ func (r ExecRunner) StartStream(plan CommandPlan) (*Stream, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open external command %s stdout: %w", plan.Executable, err)
 	}
-	stderr := &lockedBuffer{}
+	// A direct file descriptor makes writes visible before later stdout events,
+	// without racing os/exec's asynchronous stderr pipe copier.
+	stderr, err := os.CreateTemp("", "sessionman-stderr-*")
+	if err != nil {
+		_ = stdin.Close()
+		_ = stdout.Close()
+		return nil, fmt.Errorf("create external command %s stderr capture: %w", plan.Executable, err)
+	}
 	cmd.Stderr = stderr
 	if err := cmd.Start(); err != nil {
+		_ = stderr.Close()
+		_ = os.Remove(stderr.Name())
 		return nil, fmt.Errorf("start external command %s: %w", plan.Executable, err)
 	}
 	s := &Stream{cmd: cmd, stdin: stdin, lines: make(chan string, 64), stderr: stderr, debug: r.Debug, log: r.Log}
@@ -113,12 +106,33 @@ func (s *Stream) Kill() { killProcessTree(s.cmd, s.debug, s.log) }
 func (s *Stream) Wait() error {
 	s.waitOnce.Do(func() {
 		s.waitErr = s.cmd.Wait()
+		s.stderrMu.Lock()
+		s.stderrFinal = s.readStderrLocked()
+		_ = s.stderr.Close()
+		_ = os.Remove(s.stderr.Name())
+		s.stderr = nil
+		s.stderrMu.Unlock()
 		if s.debug {
-			data, _ := json.Marshal(map[string]any{"event": "stream_exit", "error_output": RedactSecrets(s.stderr.String()), "error": fmt.Sprint(s.waitErr)})
+			data, _ := json.Marshal(map[string]any{"event": "stream_exit", "error_output": RedactSecrets(s.Stderr()), "error": fmt.Sprint(s.waitErr)})
 			fmt.Fprintln(s.log, string(data))
 		}
 	})
 	return s.waitErr
 }
 
-func (s *Stream) Stderr() string { return s.stderr.String() }
+func (s *Stream) Stderr() string {
+	s.stderrMu.Lock()
+	defer s.stderrMu.Unlock()
+	return s.readStderrLocked()
+}
+
+func (s *Stream) readStderrLocked() string {
+	if s.stderr == nil {
+		return s.stderrFinal
+	}
+	data, err := os.ReadFile(s.stderr.Name())
+	if err != nil && s.debug {
+		fmt.Fprintf(s.log, "read external command stderr: %v\n", err)
+	}
+	return string(data)
+}

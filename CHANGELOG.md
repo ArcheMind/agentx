@@ -11,6 +11,8 @@ All notable changes to SessionMan are documented here. The format follows [Keep 
 - Imported Codex sessions record the target's effective model provider instead
   of leaving it empty and locking the resumed session. CI and release checks
   install Codex for native configuration discovery.
+- Persistent native streams capture stderr synchronously with child writes,
+  so completion reports do not race earlier effort telemetry on another pipe.
 
 - Cross-agent Claude/Codex/Pi imports replay readable thinking as tagged text
   without sending foreign signatures through the target's encrypted channel.
