@@ -40,7 +40,7 @@ for(const c of cases){
       db[offset-2]=0x1a
       writeFileSync(path,db)
     }
-    const listed=run(binary,['--json','session','list','--agent','agy','--all'])
+    const listed=run(binary,['--json','session','list','--source','agy','--all'])
     if(!JSON.stringify(listed).includes(imported.session))throw new Error('new session missing from catalog before inference')
     const reply=run('agy',['--model',model,'--effort','low','--mode','plan','--print-timeout','45s','--conversation',imported.session,'-p',c.query,'--output-format','json'])
     const answer=(reply.response??'').trim()
