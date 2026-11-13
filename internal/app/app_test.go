@@ -13,6 +13,7 @@ import (
 
 	"github.com/ArcheMind/agentx/internal/runtime"
 	"github.com/ArcheMind/agentx/internal/sessions"
+	"github.com/mattn/go-runewidth"
 )
 
 func TestOutputFormatIsGlobal(t *testing.T) {
@@ -637,28 +638,28 @@ func TestSessionRowsUseWorkspaceColumnOnlyForGlobal(t *testing.T) {
 		t.Fatalf("rows = %#v", rows)
 	}
 	currentRow := rows[2].text
-	currentTitle := singleLine(groups[0].Items[0].Title, 57)
+	currentTitle := singleLine(groups[0].Items[0].Title, 60)
 	if strings.Contains(currentRow, groups[0].Items[0].Workspace) || !strings.HasSuffix(currentRow, currentTitle) {
 		t.Fatalf("current row should omit workspace column: %q", currentRow)
 	}
 	if !strings.Contains(currentRow, "Today 15:00 (1h 00m)") {
 		t.Fatalf("current row should include session duration in the time column: %q", currentRow)
 	}
-	if len([]rune(currentRow)) != 94 {
-		t.Fatalf("current row width = %d, want 94 before selection marker: %q", len([]rune(currentRow)), currentRow)
+	if len([]rune(currentRow)) != 97 {
+		t.Fatalf("current row width = %d, want 97 before selection marker: %q", len([]rune(currentRow)), currentRow)
 	}
 
 	globalRow := rows[5].text
 	workspace := displayWorkspace(groups[1].Items[0].Workspace, 20)
-	globalTitle := singleLine(groups[1].Items[0].Title, 35)
+	globalTitle := singleLine(groups[1].Items[0].Title, 60)
 	if !strings.Contains(globalRow, workspace+"  "+globalTitle) {
 		t.Fatalf("global row does not put workspace before title: %q", globalRow)
 	}
 	if !strings.HasPrefix(workspace, "…") || !strings.HasSuffix(workspace, "long-project-name") {
 		t.Fatalf("workspace = %q, want suffix-preserving truncation", workspace)
 	}
-	if len([]rune(globalRow)) != 94 {
-		t.Fatalf("global row width = %d, want 94 before selection marker: %q", len([]rune(globalRow)), globalRow)
+	if len([]rune(globalRow)) != 119 {
+		t.Fatalf("global row width = %d, want 119 before selection marker: %q", len([]rune(globalRow)), globalRow)
 	}
 }
 
@@ -956,5 +957,29 @@ func TestExportChosenSessionWritesMeaningfulFile(t *testing.T) {
 		if !strings.Contains(string(data), expected) {
 			t.Fatalf("exported transcript %q does not contain %q", string(data), expected)
 		}
+	}
+}
+
+func TestSessionRowShowsFirstAndLatestUserMessages(t *testing.T) {
+	groups := []sessionGroup{{Heading: "Current workspace", Items: []sessions.Summary{{
+		Agent: "codex", Title: "Native title", FirstUserMessage: strings.Repeat("首", 70), LatestUserMessage: strings.Repeat("末", 70),
+	}}}}
+	row := buildContentRows(groups, time.Now())[2]
+	want := strings.Repeat("首", 59) + "… → " + strings.Repeat("末", 59) + "…"
+	if row.title != want || strings.ContainsAny(row.text, "\r\n") {
+		t.Fatalf("row = %#v", row)
+	}
+	for _, width := range []int{4, 40, 80, 120, 300} {
+		fitted := fitSessionRow(row, width)
+		line := styledContentRow(fitted, true, false)
+		if runewidth.StringWidth(line) > width || strings.ContainsAny(line, "\r\n") {
+			t.Fatalf("width %d: %q", width, line)
+		}
+		if width >= 80 && !strings.Contains(line, "首") || width >= 80 && !strings.Contains(line, "末") {
+			t.Fatalf("width %d lost a message: %q", width, line)
+		}
+	}
+	if got := sessionMessagePreview("only\nmessage", "only message", 100); got != "only message" {
+		t.Fatalf("single message repeated: %q", got)
 	}
 }

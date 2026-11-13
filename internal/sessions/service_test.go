@@ -39,17 +39,19 @@ func TestNativeSessionReaders(t *testing.T) {
 
 	writeFixture(t, filepath.Join(home, ".claude", "projects", "project", "claude-id.jsonl"), strings.Join([]string{
 		fmt.Sprintf(`{"type":"user","sessionId":"claude-id","cwd":%q,"timestamp":"2026-09-01T10:00:00Z","message":{"role":"user","content":"fix claude"}}`, workspace),
+		`{"type":"user","message":{"content":"latest claude"}}`,
 		`{"type":"assistant","sessionId":"claude-id","timestamp":"2026-09-01T10:01:00Z","message":{"role":"assistant","content":[{"type":"thinking","thinking":"private"},{"type":"text","text":"done"}]}}`,
 	}, "\n"))
 
 	writeFixture(t, filepath.Join(home, ".codex", "sessions", "2026", "09", "01", "rollout.jsonl"), strings.Join([]string{
 		fmt.Sprintf(`{"type":"session_meta","timestamp":"2026-09-01T11:00:00Z","payload":{"id":"codex-id","cwd":%q,"timestamp":"2026-09-01T11:00:00Z"}}`, workspace),
 		`{"type":"response_item","timestamp":"2026-09-01T11:01:00Z","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"fix codex"}]}}`,
+		`{"type":"response_item","payload":{"type":"message","role":"user","content":"latest codex"}}`,
 	}, "\n"))
 
 	projectHash := fmt.Sprintf("%x", sha256.Sum256([]byte(workspace)))
 	writeFixture(t, filepath.Join(home, ".gemini", "tmp", projectHash, "chats", "session-gemini-id.json"),
-		`{"sessionId":"gemini-id","startTime":"2026-09-01T12:00:00Z","lastUpdated":"2026-09-01T12:01:00Z","messages":[{"type":"user","content":"fix gemini","timestamp":"2026-09-01T12:00:00Z"},{"type":"gemini","content":"done","timestamp":"2026-09-01T12:01:00Z"}]}`)
+		`{"sessionId":"gemini-id","startTime":"2026-09-01T12:00:00Z","lastUpdated":"2026-09-01T12:01:00Z","messages":[{"type":"user","content":"fix gemini","timestamp":"2026-09-01T12:00:00Z"},{"type":"user","content":"latest gemini","timestamp":"2026-09-01T12:00:30Z"},{"type":"gemini","content":"done","timestamp":"2026-09-01T12:01:00Z"}]}`)
 
 	openCodeRoot := filepath.Join(home, ".local", "share", "opencode", "project", "project", "storage", "session")
 	writeFixture(t, filepath.Join(openCodeRoot, "info", "opencode-id.json"),
@@ -59,9 +61,15 @@ func TestNativeSessionReaders(t *testing.T) {
 	writeFixture(t, filepath.Join(openCodeRoot, "part", "opencode-id", "message-id", "part-id.json"),
 		`{"id":"part-id","messageID":"message-id","sessionID":"opencode-id","type":"text","text":"fix opencode"}`)
 
+	writeFixture(t, filepath.Join(openCodeRoot, "message", "opencode-id", "latest-message.json"),
+		`{"id":"latest-message","sessionID":"opencode-id","role":"user","time":{"created":1788271230000}}`)
+	writeFixture(t, filepath.Join(openCodeRoot, "part", "opencode-id", "latest-message", "part-id.json"),
+		`{"type":"text","text":"latest opencode"}`)
+
 	writeFixture(t, filepath.Join(home, ".pi", "agent", "sessions", "project", "pi.jsonl"), strings.Join([]string{
 		fmt.Sprintf(`{"type":"session","id":"pi-id","cwd":%q,"timestamp":"2026-09-01T14:00:00Z"}`, workspace),
 		`{"type":"message","message":{"role":"user","timestamp":1788271200000,"content":[{"type":"text","text":"fix pi"}]}}`,
+		`{"type":"message","message":{"role":"user","content":"latest pi"}}`,
 	}, "\n"))
 
 	service := Service{HomeDir: home}
@@ -94,6 +102,21 @@ func TestNativeSessionReaders(t *testing.T) {
 	if len(items) != 5 {
 		t.Fatalf("workspace sessions = %d, want 5: %#v", len(items), items)
 	}
+	for _, item := range items {
+		if item.FirstUserMessage != "fix "+item.Agent || item.LatestUserMessage != "latest "+item.Agent {
+			t.Fatalf("list summary = %#v", item)
+		}
+	}
+	groups, err := service.RecentGroups(workspace, 10, false)
+	if err != nil || len(groups.Current) != 5 {
+		t.Fatalf("groups = %#v, err = %v", groups, err)
+	}
+	for _, item := range groups.Current {
+		if item.FirstUserMessage != "fix "+item.Agent || item.LatestUserMessage != "latest "+item.Agent {
+			t.Fatalf("recent summary = %#v", item)
+		}
+	}
+
 }
 
 func TestSessionIDMustBeUnambiguous(t *testing.T) {
@@ -397,5 +420,38 @@ func writeFixture(t *testing.T, path, content string) {
 	}
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestRecentJSONLSummariesIncludeLatestUserMessage(t *testing.T) {
+	for _, agent := range []string{"claude", "codex", "pi"} {
+		t.Run(agent, func(t *testing.T) {
+			var records []string
+			parse := recentSummaryParser(agent, false)
+			switch agent {
+			case "claude":
+				records = append(records, `{"type":"user","sessionId":"s1","cwd":"/work","message":{"content":"First request"}}`)
+			case "codex":
+				records = append(records, `{"type":"session_meta","payload":{"id":"s1","cwd":"/work"}}`)
+			case "pi":
+				records = append(records, `{"type":"session","id":"s1","cwd":"/work"}`)
+			}
+			for _, text := range []string{"First request", "Latest request", "<environment_context>Injected"} {
+				switch agent {
+				case "claude":
+					records = append(records, fmt.Sprintf(`{"type":"user","message":{"content":%q}}`, text))
+				case "codex":
+					records = append(records, fmt.Sprintf(`{"type":"response_item","payload":{"type":"message","role":"user","content":%q}}`, text))
+				case "pi":
+					records = append(records, fmt.Sprintf(`{"type":"message","message":{"role":"user","content":%q}}`, text))
+				}
+			}
+			path := filepath.Join(t.TempDir(), "session.jsonl")
+			writeFixture(t, path, strings.Join(records, "\n"))
+			item, ok, err := parse(path)
+			if err != nil || !ok || item.FirstUserMessage != "First request" || item.LatestUserMessage != "Latest request" {
+				t.Fatalf("summary = %#v, ok = %v, err = %v", item, ok, err)
+			}
+		})
 	}
 }

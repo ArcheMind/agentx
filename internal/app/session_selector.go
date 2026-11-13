@@ -12,6 +12,7 @@ import (
 
 	"github.com/ArcheMind/agentx/internal/presets"
 	"github.com/ArcheMind/agentx/internal/sessions"
+	"github.com/mattn/go-runewidth"
 	"golang.org/x/term"
 )
 
@@ -34,13 +35,15 @@ func (a App) recentSessionGroups(includeSubagents bool) ([]sessionGroup, error) 
 }
 
 type contentRow struct {
-	text      string
-	itemIndex int // selectable item index; -1 for structural rows
-	kind      contentRowKind
-	agent     string
-	updated   string
-	workspace string
-	title     string
+	text       string
+	itemIndex  int // selectable item index; -1 for structural rows
+	kind       contentRowKind
+	agent      string
+	updated    string
+	workspace  string
+	title      string
+	firstUser  string
+	latestUser string
 }
 
 type contentRowKind int
@@ -70,27 +73,66 @@ func buildContentRows(groups []sessionGroup, now time.Time) []contentRow {
 			if title == "" {
 				title = item.ID
 			}
+			first := item.FirstUserMessage
+			if first == "" {
+				first = title
+			}
+			latest := item.LatestUserMessage
+			title = sessionMessagePreview(first, latest, 0)
 			updated := displaySessionTime(item.UpdatedAt, now)
 			if duration := displaySessionDuration(item.StartedAt, item.UpdatedAt); duration != "" {
 				updated += " " + duration
 			}
 			if group.Heading == "Global" {
-				text := fmt.Sprintf("%-8s  %-25s  %-20s  %s", item.Agent, updated, displayWorkspace(item.Workspace, 20), singleLine(title, 35))
+				text := fmt.Sprintf("%-8s  %-25s  %-20s  %s", item.Agent, updated, displayWorkspace(item.Workspace, 20), title)
 				rows = append(rows, contentRow{
 					text: text, itemIndex: itemIndex, kind: contentRowSession,
-					agent: item.Agent, updated: updated, workspace: displayWorkspace(item.Workspace, 20), title: singleLine(title, 35),
+					agent: item.Agent, updated: updated, workspace: displayWorkspace(item.Workspace, 20), title: title, firstUser: first, latestUser: latest,
 				})
 			} else {
-				text := fmt.Sprintf("%-8s  %-25s  %s", item.Agent, updated, singleLine(title, 57))
+				text := fmt.Sprintf("%-8s  %-25s  %s", item.Agent, updated, title)
 				rows = append(rows, contentRow{
 					text: text, itemIndex: itemIndex, kind: contentRowSession,
-					agent: item.Agent, updated: updated, title: singleLine(title, 57),
+					agent: item.Agent, updated: updated, title: title, firstUser: first, latestUser: latest,
 				})
 			}
 			itemIndex++
 		}
 	}
 	return rows
+}
+
+func sessionMessagePreview(first, latest string, width int) string {
+	first = singleLine(first, 60)
+	latest = singleLine(latest, 60)
+	if latest == "" || latest == first {
+		if width > 0 {
+			return runewidth.Truncate(first, width, "…")
+		}
+		return first
+	}
+	if width <= 0 {
+		return first + " → " + latest
+	}
+	if width < 5 {
+		return runewidth.Truncate(first+" → "+latest, width, "…")
+	}
+	available := width - 3
+	firstWidth := min(runewidth.StringWidth(first), available/2)
+	latestWidth := min(runewidth.StringWidth(latest), available-firstWidth)
+	firstWidth = min(runewidth.StringWidth(first), available-latestWidth)
+	return runewidth.Truncate(first, firstWidth, "…") + " → " + runewidth.Truncate(latest, latestWidth, "…")
+}
+
+func fitSessionRow(row contentRow, width int) contentRow {
+	base := runewidth.StringWidth(styledContentRow(row, false, false)) - runewidth.StringWidth(row.title)
+	if width > base {
+		row.title = sessionMessagePreview(row.firstUser, row.latestUser, width-base)
+	} else {
+		row.text = runewidth.Truncate(styledContentRow(row, false, false), max(0, width), "…")
+		row.kind = contentRowPlain
+	}
+	return row
 }
 
 func selectedRowRange(rows []contentRow, selected int) (int, int) {
@@ -249,6 +291,13 @@ func (a App) runSelector(reader *bufio.Reader, options selector, allRows []conte
 				continuation := visStart+index > 0 && rows[visStart+index-1].itemIndex == row.itemIndex
 				if row.itemIndex == selected && !continuation {
 					marker = options.marker
+				}
+				if row.kind == contentRowSession {
+					if file, ok := a.Stdout.(*os.File); ok {
+						if width, _, err := term.GetSize(int(file.Fd())); err == nil {
+							row = fitSessionRow(row, width-runewidth.StringWidth(marker))
+						}
+					}
 				}
 				fmt.Fprintf(a.Stdout, "%s%s\r\n", styledMarker(marker, row, a.Color), styledContentRow(row, row.itemIndex == selected, a.Color))
 			} else {

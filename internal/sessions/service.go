@@ -32,24 +32,43 @@ type (
 )
 
 type Summary struct {
-	ID           string `json:"id" yaml:"id"`
-	Agent        string `json:"agent" yaml:"agent"`
-	IsSubagent   bool   `json:"isSubagent,omitempty" yaml:"isSubagent,omitempty"`
-	Workspace    string `json:"workspace,omitempty" yaml:"workspace,omitempty"`
-	Title        string `json:"title,omitempty" yaml:"title,omitempty"`
-	StartedAt    string `json:"startedAt,omitempty" yaml:"startedAt,omitempty"`
-	UpdatedAt    string `json:"updatedAt,omitempty" yaml:"updatedAt,omitempty"`
-	MessageCount int    `json:"messageCount" yaml:"messageCount"`
-	Source       string `json:"source" yaml:"source"`
+	ID                string `json:"id" yaml:"id"`
+	Agent             string `json:"agent" yaml:"agent"`
+	IsSubagent        bool   `json:"isSubagent,omitempty" yaml:"isSubagent,omitempty"`
+	Workspace         string `json:"workspace,omitempty" yaml:"workspace,omitempty"`
+	Title             string `json:"title,omitempty" yaml:"title,omitempty"`
+	FirstUserMessage  string `json:"firstUserMessage,omitempty" yaml:"firstUserMessage,omitempty"`
+	LatestUserMessage string `json:"latestUserMessage,omitempty" yaml:"latestUserMessage,omitempty"`
+	StartedAt         string `json:"startedAt,omitempty" yaml:"startedAt,omitempty"`
+	UpdatedAt         string `json:"updatedAt,omitempty" yaml:"updatedAt,omitempty"`
+	MessageCount      int    `json:"messageCount" yaml:"messageCount"`
+	Source            string `json:"source" yaml:"source"`
 }
 
 func SummaryOf(detail Session) Summary {
-	return Summary{
+	item := Summary{
 		ID: detail.ID, Agent: detail.Provider, IsSubagent: detail.IsSubagent,
 		Workspace: detail.Workspace, Title: detail.Title,
 		StartedAt: detail.StartedAt, UpdatedAt: detail.UpdatedAt,
 		MessageCount: detail.MessageCount, Source: detail.Source,
 	}
+	for _, message := range detail.Messages {
+		if message.Role == "user" {
+			item.addUserMessage(textContent(message.Content))
+		}
+	}
+	return item
+}
+
+func (s *Summary) addUserMessage(text string) {
+	if !isSessionTitle(text) {
+		return
+	}
+	text = oneLine(text, 60)
+	if s.FirstUserMessage == "" {
+		s.FirstUserMessage = text
+	}
+	s.LatestUserMessage = text
 }
 
 type ListOptions struct {

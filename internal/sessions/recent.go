@@ -58,24 +58,35 @@ func (s Service) RecentGroups(workspace string, limit int, includeSubagents bool
 			result.Global = append(result.Global, item)
 		}
 	}
+	for _, items := range [][]Summary{result.Current, result.Global} {
+		for i := range items {
+			switch items[i].Agent {
+			case "claude", "codex", "pi":
+				item, _, err := recentSummaryParser(items[i].Agent, false)(items[i].Source)
+				if err != nil {
+					return RecentGroups{}, err
+				}
+				items[i].FirstUserMessage = item.FirstUserMessage
+				items[i].LatestUserMessage = item.LatestUserMessage
+			}
+		}
+	}
 	return result, nil
 }
 
 func recentAgentSummaries(spec agentSpec, home string, includeSubagents bool) ([]Summary, error) {
 	switch spec.id {
 	case "claude":
-		items, err := recentJSONLSummaries(filepath.Join(home, ".claude", "projects", "*", "*.jsonl"), recentClaudeSummary)
+		items, err := recentJSONLSummaries(filepath.Join(home, ".claude", "projects", "*", "*.jsonl"), recentSummaryParser("claude", true))
 		if err != nil || !includeSubagents {
 			return items, err
 		}
-		children, err := recentJSONLSummaries(filepath.Join(home, ".claude", "projects", "*", "*", "subagents", "*.jsonl"), recentClaudeSummary)
+		children, err := recentJSONLSummaries(filepath.Join(home, ".claude", "projects", "*", "*", "subagents", "*.jsonl"), recentSummaryParser("claude", true))
 		return append(items, children...), err
 	case "codex":
-		return recentJSONLSummaries(filepath.Join(home, ".codex", "sessions", "*", "*", "*", "*.jsonl"), recentCodexSummary)
+		return recentJSONLSummaries(filepath.Join(home, ".codex", "sessions", "*", "*", "*", "*.jsonl"), recentSummaryParser("codex", true))
 	case "pi":
-		return recentJSONLSummaries(filepath.Join(home, ".pi", "agent", "sessions", "*", "*.jsonl"), recentPiSummary)
-	case "opencode":
-		return recentOpenCodeSummaries(home)
+		return recentJSONLSummaries(filepath.Join(home, ".pi", "agent", "sessions", "*", "*.jsonl"), recentSummaryParser("pi", true))
 	default:
 		details, err := spec.load(home)
 		if err != nil {
@@ -86,6 +97,19 @@ func recentAgentSummaries(spec agentSpec, home string, includeSubagents bool) ([
 			items[index] = SummaryOf(detail)
 		}
 		return items, nil
+	}
+}
+
+func recentSummaryParser(agent string, firstOnly bool) func(string) (Summary, bool, error) {
+	return func(path string) (Summary, bool, error) {
+		switch agent {
+		case "claude":
+			return recentClaudeSummary(path, firstOnly)
+		case "codex":
+			return recentCodexSummary(path, firstOnly)
+		default:
+			return recentPiSummary(path, firstOnly)
+		}
 	}
 }
 
@@ -107,7 +131,7 @@ func recentJSONLSummaries(pattern string, parse func(string) (Summary, bool, err
 	return items, nil
 }
 
-func recentClaudeSummary(path string) (Summary, bool, error) {
+func recentClaudeSummary(path string, firstOnly bool) (Summary, bool, error) {
 	item := Summary{Agent: "claude", Source: path, UpdatedAt: recentFileTimestamp(path)}
 	err := scanJSONL(path, func(record map[string]any) bool {
 		kind := stringValue(record["type"])
@@ -126,19 +150,20 @@ func recentClaudeSummary(path string) (Summary, bool, error) {
 		if item.Workspace == "" {
 			item.Workspace = stringValue(record["cwd"])
 		}
-		if kind == "user" && item.Title == "" {
+		if kind == "user" {
 			message, _ := record["message"].(map[string]any)
 			content := extractText(message["content"])
-			if isSessionTitle(content) {
+			item.addUserMessage(content)
+			if item.Title == "" && isSessionTitle(content) {
 				item.Title = oneLine(content, 96)
 			}
 		}
-		return item.ID != "" && item.Workspace != "" && item.Title != ""
+		return firstOnly && item.ID != "" && item.Workspace != "" && item.Title != ""
 	})
 	return item, item.ID != "", err
 }
 
-func recentCodexSummary(path string) (Summary, bool, error) {
+func recentCodexSummary(path string, firstOnly bool) (Summary, bool, error) {
 	item := Summary{Agent: "codex", Source: path, UpdatedAt: recentFileTimestamp(path)}
 	err := scanJSONL(path, func(record map[string]any) bool {
 		kind := stringValue(record["type"])
@@ -149,18 +174,19 @@ func recentCodexSummary(path string) (Summary, bool, error) {
 			item.StartedAt = timeValue(payload["timestamp"])
 			item.IsSubagent = codexSubagentSource(payload["source"])
 		}
-		if kind == "response_item" && stringValue(payload["type"]) == "message" && stringValue(payload["role"]) == "user" && item.Title == "" {
+		if kind == "response_item" && stringValue(payload["type"]) == "message" && stringValue(payload["role"]) == "user" {
 			content := extractText(payload["content"])
-			if isSessionTitle(content) {
+			item.addUserMessage(content)
+			if item.Title == "" && isSessionTitle(content) {
 				item.Title = oneLine(content, 96)
 			}
 		}
-		return item.ID != "" && item.Workspace != "" && item.Title != ""
+		return firstOnly && item.ID != "" && item.Workspace != "" && item.Title != ""
 	})
 	return item, item.ID != "", err
 }
 
-func recentPiSummary(path string) (Summary, bool, error) {
+func recentPiSummary(path string, firstOnly bool) (Summary, bool, error) {
 	item := Summary{Agent: "pi", Source: path, UpdatedAt: recentFileTimestamp(path)}
 	err := scanJSONL(path, func(record map[string]any) bool {
 		kind := stringValue(record["type"])
@@ -169,16 +195,17 @@ func recentPiSummary(path string) (Summary, bool, error) {
 			item.Workspace = stringValue(record["cwd"])
 			item.StartedAt = timeValue(record["timestamp"])
 		}
-		if kind == "message" && item.Title == "" {
+		if kind == "message" {
 			message, _ := record["message"].(map[string]any)
 			if stringValue(message["role"]) == "user" {
 				content := extractText(message["content"])
-				if isSessionTitle(content) {
+				item.addUserMessage(content)
+				if item.Title == "" && isSessionTitle(content) {
 					item.Title = oneLine(content, 96)
 				}
 			}
 		}
-		return item.ID != "" && item.Workspace != "" && item.Title != ""
+		return firstOnly && item.ID != "" && item.Workspace != "" && item.Title != ""
 	})
 	return item, item.ID != "", err
 }
@@ -222,52 +249,6 @@ func recentFileTimestamp(path string) string {
 		}
 	}
 	return fallback
-}
-
-func recentOpenCodeSummaries(home string) ([]Summary, error) {
-	pattern := filepath.Join(home, ".local", "share", "opencode", "project", "*", "storage", "session", "info", "*.json")
-	paths, err := filepath.Glob(pattern)
-	if err != nil {
-		return nil, err
-	}
-	items := make([]Summary, 0, len(paths))
-	for _, path := range paths {
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return nil, err
-		}
-		var info map[string]any
-		if json.Unmarshal(data, &info) != nil {
-			continue
-		}
-		item := Summary{ID: stringValue(info["id"]), Agent: "opencode", IsSubagent: stringValue(info["parentID"]) != "", Title: stringValue(info["title"]), Source: path}
-		if times, ok := info["time"].(map[string]any); ok {
-			item.StartedAt = timeValue(times["created"])
-			item.UpdatedAt = timeValue(times["updated"])
-		}
-		sessionRoot := filepath.Dir(filepath.Dir(path))
-		messagePaths, _ := filepath.Glob(filepath.Join(sessionRoot, "message", item.ID, "*.json"))
-		sort.Strings(messagePaths)
-		for _, messagePath := range messagePaths {
-			data, readErr := os.ReadFile(messagePath)
-			if readErr != nil {
-				return nil, readErr
-			}
-			var message map[string]any
-			if json.Unmarshal(data, &message) == nil {
-				if pathInfo, ok := message["path"].(map[string]any); ok {
-					item.Workspace = firstNonEmpty(stringValue(pathInfo["root"]), stringValue(pathInfo["cwd"]))
-				}
-			}
-			if item.Workspace != "" {
-				break
-			}
-		}
-		if item.ID != "" {
-			items = append(items, item)
-		}
-	}
-	return items, nil
 }
 
 func matchesWorkspaceSummary(item Summary, workspace string) bool {
