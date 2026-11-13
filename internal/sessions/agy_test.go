@@ -241,7 +241,7 @@ func TestAgyNativeDescriptorAnchor(t *testing.T) {
 	if err = json.Unmarshal(raw, &fields); err != nil {
 		t.Fatal(err)
 	}
-	for _, item := range [][3]string{{"CortexStepUserInput", "2", "user_response"}, {"CortexStepUserInput", "9", "media"}, {"CortexStepPlannerResponse", "14", "thinking_signature"}, {"CortexStepPlannerResponse", "7", "tool_calls"}, {"GenericStepResult", "7", "full_output_uri"}, {"CortexTrajectoryMetadata", "7", "workspace_uris"}} {
+	for _, item := range [][3]string{{"CortexStepUserInput", "2", "user_response"}, {"CortexStepUserInput", "9", "media"}, {"CortexStepPlannerResponse", "14", "thinking_signature"}, {"CortexStepPlannerResponse", "16", "raw_thinking"}, {"CortexStepPlannerResponse", "7", "tool_calls"}, {"GenericStepResult", "7", "full_output_uri"}, {"CortexTrajectoryMetadata", "7", "workspace_uris"}} {
 		if fields[item[0]][item[1]] != item[2] {
 			t.Fatalf("descriptor changed: %v", item)
 		}
@@ -389,5 +389,50 @@ func TestAgyNativeSignedMessageBoundaries(t *testing.T) {
 	}
 	if !reflect.DeepEqual(output.Messages, source.Messages) {
 		t.Fatalf("native message boundaries changed: got %+v want %+v", output.Messages, source.Messages)
+	}
+}
+
+func TestAgyRawOnlyThinkingRemainsReadable(t *testing.T) {
+	for _, signature := range []string{"", "native-signature"} {
+		t.Run(signature, func(t *testing.T) {
+			text := "Raw-only native readable thinking.\nEXACT_END_MARKER"
+			body := agyJoin(agyText(16, text), agyText(4, signature), agyText(1, "Answer."))
+			step := agyJoin(agyInt(1, 15), agyBytes(20, body))
+			p, err := agyDecode(step)
+			if err != nil {
+				t.Fatal(err)
+			}
+			message, err := parseAgyStep(p, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(message.Content) != 2 || message.Content[0].Type != "thinking" || message.Content[0].Text != text || message.Content[0].Signature != signature {
+				t.Fatalf("raw thinking lost: %+v", message.Content)
+			}
+			foreign := replayMessages(Session{Provider: "agy", Messages: []Message{message}}, "claude")
+			if len(foreign) != 1 || foreign[0].Content[0].Text != text || foreign[0].Content[0].Signature != "" {
+				t.Fatalf("cross-agent raw thinking lost: %+v", foreign)
+			}
+		})
+	}
+}
+
+func TestAgyDualThinkingFields(t *testing.T) {
+	for _, raw := range []string{"same readable text", "different readable text"} {
+		body := agyJoin(agyText(3, "same readable text"), agyText(16, raw), agyText(4, "native-signature"))
+		p, err := agyDecode(agyJoin(agyInt(1, 15), agyBytes(20, body)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		m, err := parseAgyStep(p, 0)
+		if raw != "same readable text" {
+			if err == nil || !strings.Contains(err.Error(), "distinct thinking and raw_thinking") {
+				t.Fatalf("distinct known thinking fields must fail explicitly: %+v %v", m, err)
+			}
+			continue
+		}
+		if err != nil || len(m.Content) != 1 || m.Content[0].Text != raw || m.Content[0].Signature != "native-signature" {
+			t.Fatalf("identical thinking duplicated or altered: %+v %v", m, err)
+		}
 	}
 }

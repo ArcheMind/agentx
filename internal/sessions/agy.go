@@ -372,8 +372,12 @@ func parseAgyStep(p agyProto, idx int) (Message, error) {
 		if raw := a.bytes(14); len(raw) > 0 {
 			sig = "agy:bytes:" + base64.StdEncoding.EncodeToString(raw)
 		}
-		if a.text(3) != "" || sig != "" {
-			m.Content = append(m.Content, ContentBlock{Type: "thinking", Text: a.text(3), Signature: sig})
+		if a.text(3) != "" && a.text(16) != "" && a.text(3) != a.text(16) {
+			return m, fmt.Errorf("unsupported agy planner response with distinct thinking and raw_thinking")
+		}
+		thinking := firstNonEmpty(a.text(3), a.text(16))
+		if thinking != "" || sig != "" {
+			m.Content = append(m.Content, ContentBlock{Type: "thinking", Text: thinking, Signature: sig})
 		}
 		if a.text(1) != "" {
 			m.Content = append(m.Content, ContentBlock{Type: "text", Text: a.text(1)})

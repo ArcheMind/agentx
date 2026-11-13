@@ -168,7 +168,7 @@ const ws='/tmp/agentx-fidelity-ws'
   const exported=ax('--json','session','export',id,'--source',P),transcript=JSON.parse(exported)
   if(validate&&!validate(transcript))fail(P,'export violates unified-transcript schema: '+JSON.stringify(validate.errors))
   same(P,'source provider and ID',[transcript.provider,transcript.id],[P,id])
-  same(P,'source roles',transcript.messages.map(m=>m.role),['user','assistant','tool','assistant'])
+  same(P,'source roles',transcript.messages.map(m=>m.role),['user','assistant','tool','assistant','assistant'])
   same(P,'workspace',transcript.workspace,ws)
   same(P,'created timestamp',transcript.startedAt,'2026-11-13T09:20:00.123456789Z')
   const thinking=transcript.messages.flatMap(m=>m.content??[]).filter(b=>b.type==='thinking')
@@ -176,6 +176,7 @@ const ws='/tmp/agentx-fidelity-ws'
   same(P,'native typed readable thinking and signature bytes',thinking,[
     {type:'thinking',text:'Native readable thought with bytes signature.',signature:'agy:bytes:'+signatureBytes.toString('base64')},
     {type:'thinking',text:'Native readable thought with deprecated string signature.',signature:'native-string-signature+/=='},
+    {type:'thinking',text:'Raw-only readable native thinking.\nRAW_THINKING_END_MARKER',signature:'raw-only-string-signature'},
   ])
   const image=transcript.messages[0].content.find(b=>b.type==='image')
   same(P,'native inline image MIME',image?.source?.media_type,'image/png')
