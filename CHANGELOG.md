@@ -4,6 +4,19 @@ All notable changes to SessionMan are documented here. The format follows [Keep 
 
 ## [Unreleased]
 
+### Fixed
+
+- Cross-agent Claude/Codex/Pi imports replay readable thinking as tagged text
+  without sending foreign signatures through the target's encrypted channel.
+  Opaque-only thinking is omitted and the remaining message chain is repaired;
+  same-agent signature round-trips stay intact.
+
+### Added
+
+- `make smoke-transcript-cross-live`: extends the six conversion directions
+  with real continuation and exact retrieval of source-generated unique tokens.
+  Also included in `make smoke-live`; quota or credential failures fail the check.
+
 ## [0.12.0] - 2026-11-12
 
 ### Added

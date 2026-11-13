@@ -598,14 +598,15 @@ func TestSerializeUnsignedThinkingAsThinkTagText(t *testing.T) {
 		}},
 	}}
 	for name, test := range map[string]struct {
-		records []map[string]any
-		sigKey  string
+		serialize func(Session) []map[string]any
+		sigKey    string
 	}{
-		"claude": {SerializeClaude(detail), "signature"},
-		"pi":     {SerializePi(detail), "thinkingSignature"},
+		"claude": {SerializeClaude, "signature"},
+		"pi":     {SerializePi, "thinkingSignature"},
 	} {
+		detail.Provider = name
 		var content []any
-		for _, rec := range test.records {
+		for _, rec := range test.serialize(detail) {
 			if msg, ok := rec["message"].(map[string]any); ok && msg["role"] == "assistant" {
 				content = msg["content"].([]any)
 			}
@@ -640,6 +641,7 @@ func TestUnsignedThinkingRoundTripsThroughThinkTag(t *testing.T) {
 	for agent, serialize := range map[string]func(Session) []map[string]any{
 		"claude": SerializeClaude, "codex": SerializeCodex, "pi": SerializePi,
 	} {
+		detail.Provider = agent
 		var records []map[string]any
 		for _, line := range strings.Split(marshalJSONL(t, serialize(detail)), "\n") {
 			var rec map[string]any

@@ -66,17 +66,16 @@ const isImage=b=>b.type==='image'
 // Text projection: concatenated text fields of a block array, compact JSON otherwise (spec Tool result materialization rule, as amended; newline separator per that amendment).
 const textProjection=result=>typeof result==='string'?result:Array.isArray(result)?result.filter(b=>b&&typeof b.text==='string').map(b=>b.text).join('\n'):JSON.stringify(result)
 
-// spec gap: the Codex table says only function_call/custom_tool_call are appended to the *preceding* assistant message; a reasoning item is a standalone
-// response_item, so a thinking run followed by a text block (a separate codex message item) comes back as its own assistant message.
-function splitReasoning(m){
-  if(m.role!=='assistant')return [m]
-  const at=m.content.findIndex((b,i)=>b.type==='text'&&i>0&&m.content[i-1].type==='thinking')
-  return at<0?[m]:[{...m,content:m.content.slice(0,at)},{...m,content:m.content.slice(at)}]
-}
-
 function degrade(dst,messages){
   let list=structuredClone(messages)
-  if(dst==='codex')list=list.flatMap(splitReasoning)
+  // Cross-agent signatures cannot be replayed. Only their readable text survives.
+  for(const m of list)if(m.content)m.content=m.content.flatMap(b=>{
+    if(b.type!=='thinking')return [b]
+    if(!b.text)return []
+    delete b.signature
+    return [b]
+  })
+  list=list.filter(m=>m.role!=='assistant'||m.content?.length)
   // Pi now serializes and parses system messages (b945e49).
   return list.map(m=>{
     if(dst==='pi'){
@@ -317,3 +316,4 @@ if(failures.length){
   process.exit(1)
 }
 console.log(JSON.stringify({passed:true,test:'cross-provider diagonal: export(src) -> import(dst) -> export(dst) equals the lawful degradation, and the native file passes the whitelist lint',matrix,warnings,home},null,2))
+if(process.argv.includes('--live'))await import('./transcript-cross-live.mjs')

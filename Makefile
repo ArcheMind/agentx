@@ -57,6 +57,10 @@ smoke-transcript-fidelity: build
 smoke-transcript-cross: build
 	node test/smoke/transcript-cross.mjs "$(CURDIR)/bin/sm"
 
+.PHONY: smoke-transcript-cross-live
+smoke-transcript-cross-live: build
+	node test/smoke/transcript-cross.mjs "$(CURDIR)/bin/sm" --live
+
 smoke-continue-live: build
 	node test/smoke/continue-roundtrip-live.mjs "$(CURDIR)/bin/sm"
 
@@ -92,6 +96,7 @@ smoke-live: build
 	./bin/sm --json agent models opencode >/dev/null
 	./bin/sm --json agent models pi >/dev/null
 	SM_LOG=debug ./bin/sm --json agent list >/dev/null 2>&1
+	node test/smoke/transcript-cross.mjs "$(CURDIR)/bin/sm" --live
 
 smoke-clean:
 	docker build --no-cache --target agents-clean -f test/smoke/Dockerfile -t agentx-smoke-clean .

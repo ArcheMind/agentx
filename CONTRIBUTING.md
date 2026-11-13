@@ -23,6 +23,8 @@ make verify
 
 `make verify` formats the Go source, runs static checks and tests, audits protocol consistency, builds `bin/sm`, and exercises smoke commands. It is the required local check before a pull request.
 
+`make smoke-transcript-cross-live` extends the six Claude/Codex/Pi conversion checks with real model turns. Each source generates a unique token; each destination must retrieve that exact token after conversion without tools or a repeated token in the retrieval prompt. This check also runs under `make smoke-live` and requires all three agents' credentials and available quota. Override models with `AX_CROSS_CLAUDE_MODEL` (default `haiku`), `AX_CROSS_CODEX_MODEL` (Codex default), and `AX_CROSS_PI_MODEL` (default `deepseek/deepseek-flash`). Raw command inputs, outputs, and the result matrix are saved in the reported temporary evidence directory; a failed source or target fails the check.
+
 ## Design rules
 
 - Preserve native configuration, credential, and session stores as facts.

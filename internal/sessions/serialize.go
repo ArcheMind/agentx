@@ -111,6 +111,37 @@ type FileEntry struct {
 	Content map[string]any `json:"content"`
 }
 
+// Signatures only belong to their source agent; readable thinking crosses as text.
+func replayMessages(detail Session, target string) []Message {
+	if detail.Provider == target {
+		return detail.Messages
+	}
+	messages := make([]Message, 0, len(detail.Messages))
+	dropped := false
+	for _, message := range detail.Messages {
+		content := make([]ContentBlock, 0, len(message.Content))
+		for _, block := range message.Content {
+			if block.Type == "thinking" {
+				if block.Text == "" {
+					continue
+				}
+				block.Signature = ""
+			}
+			content = append(content, block)
+		}
+		if message.Role == "assistant" && len(content) == 0 {
+			dropped = true
+			continue
+		}
+		message.Content = content
+		messages = append(messages, message)
+	}
+	if dropped {
+		return RechainMessages(messages)
+	}
+	return messages
+}
+
 // SerializeClaude converts a unified Session back to Claude Code's native JSONL records.
 // See docs/native-rollout-protocols/ for the wire format reference.
 func SerializeClaude(detail Session) []map[string]any {
@@ -124,7 +155,7 @@ func SerializeClaude(detail Session) []map[string]any {
 			"isSidechain": false, "entrypoint": "cli",
 		}
 	}
-	for _, m := range detail.Messages {
+	for _, m := range replayMessages(detail, "claude") {
 		switch m.Role {
 		case "user":
 			rec := claudeEnvelope("user", m.ID, m.ParentID, m.Timestamp)
@@ -154,6 +185,9 @@ func SerializeClaude(detail Session) []map[string]any {
 					}
 					blocks = append(blocks, block)
 				}
+			}
+			if len(blocks) == 0 {
+				continue
 			}
 			msg := map[string]any{"role": "assistant", "content": blocks}
 			if m.Model != "" {
@@ -272,7 +306,7 @@ func SerializeCodex(detail Session) []map[string]any {
 		turnOpen = false
 	}
 
-	for _, m := range detail.Messages {
+	for _, m := range replayMessages(detail, "codex") {
 		switch m.Role {
 		case "user":
 			closeTurn(m.Timestamp)
@@ -519,7 +553,7 @@ func SerializePi(detail Session) []map[string]any {
 			"timestamp": recTS, "message": msg,
 		}
 	}
-	for _, m := range detail.Messages {
+	for _, m := range replayMessages(detail, "pi") {
 		switch m.Role {
 		case "system":
 			records = append(records, envelope(m, map[string]any{"role": "system", "content": textContent(m.Content)}))
@@ -555,8 +589,8 @@ func SerializePi(detail Session) []map[string]any {
 					})
 				}
 			}
-			if content == nil {
-				content = []any{}
+			if len(content) == 0 {
+				continue
 			}
 			msg := map[string]any{
 				"role":    "assistant",
