@@ -1,11 +1,11 @@
-# sessionman
+# SessionMan
 
 [![CI](https://github.com/ArcheMind/sessionMan/actions/workflows/ci.yml/badge.svg)](https://github.com/ArcheMind/sessionMan/actions/workflows/ci.yml)
 [![CI platforms](https://img.shields.io/badge/CI%20platforms-Linux%20%7C%20macOS%20%7C%20Windows-2ea44f)](https://github.com/ArcheMind/sessionMan/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/ArcheMind/sessionMan?display_name=tag)](https://github.com/ArcheMind/sessionMan/releases)
 [![License](https://img.shields.io/github/license/ArcheMind/sessionMan)](LICENSE)
 
-**SessionMan maintains reverse-engineered session formats and invocation interfaces of different coding agents. This makes the previously impossible possible.**
+**SessionMan (`sm`) maintains reverse-engineered session formats and invocation interfaces of different coding agents. This makes the previously impossible possible.**
 
 Most common use cases:
 
@@ -108,7 +108,7 @@ $ sm codex
 Each call runs the preset's own native agent in its own session. No relay inference call, no per-task registration. SessionMan passes no permission flags by default (`mode: "normal"`), so each agent's own configuration decides what it may do; `mode: "yolo"` bypasses the agent's permission checks and sandbox. `isolation: "worktree"` runs the subagent in a fresh git worktree; it only changes where the agent works.
 
 ```text
-ExternalSubagent · SendExternalSubagentMessage · StopExternalSubagent · listExternalSubagentSessions
+StartExternalSubagent · SendExternalSubagentMessage · StopExternalSubagent · ListExternalSubagentSessions
 ```
 
 Exact inputs, limits, and acceptance evidence: [docs/subagents.md](docs/subagents.md).
@@ -159,6 +159,8 @@ Downloads the release artifact for the current platform, verifies its SHA-256 ch
 ```bash
 go install github.com/ArcheMind/agentx/cmd/sm@latest
 ```
+
+The Go module retains the original `agentx` path; the installed executable is `sm`.
 
 Prebuilt archives for macOS, Linux, and Windows are on the [releases page](https://github.com/ArcheMind/sessionMan/releases). See [installation](docs/installation.md) for version pinning, verification, Windows setup, and source builds.
 
@@ -223,7 +225,7 @@ Read [architecture](docs/architecture.md) and [product principles](docs/product-
 
 ## Development
 
-Go 1.25.
+Go 1.26.0 or later.
 
 ```bash
 make verify

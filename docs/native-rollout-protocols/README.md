@@ -2,9 +2,9 @@
 
 Reverse-engineered session rollout formats for each external agent.
 
-agentx writes these formats when resuming a session into a different agent
-(`ax session resume --agent <target>`). The target agent reads its own native
-format; agentx must produce files that satisfy both:
+SessionMan writes these formats when resuming a session into a different agent
+(`sm session resume <target-agent> <session-id> --source <source-agent>`). The target agent reads its own native
+format; SessionMan must produce files that satisfy both:
 
 1. **Model context** — the target agent loads prior conversation for inference.
 2. **TUI display** — the target agent renders scrollable history for the human.
