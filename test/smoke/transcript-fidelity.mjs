@@ -1,10 +1,10 @@
 import {spawnSync} from 'node:child_process'
-import {mkdtemp,mkdir,copyFile,readFile,readdir,writeFile} from 'node:fs/promises'
-import {existsSync} from 'node:fs'
+import {mkdtemp,mkdir,copyFile,readFile,readdir,writeFile,rm} from 'node:fs/promises'
+import {existsSync,writeFileSync} from 'node:fs'
 import {createRequire} from 'node:module'
 import {tmpdir} from 'node:os'
 import {dirname,join,resolve} from 'node:path'
-import {fileURLToPath} from 'node:url'
+import {fileURLToPath,pathToFileURL} from 'node:url'
 import {isDeepStrictEqual} from 'node:util'
 
 const binary=resolve(process.argv[2]??'bin/ax')
@@ -17,7 +17,15 @@ for(const name of ['CLAUDE_CONFIG_DIR','CODEX_HOME','PI_CODING_AGENT_DIR','XDG_S
 
 const log=[]
 function ax(...args){const result=spawnSync(binary,args,{cwd:home,env,encoding:'utf8'});log.push({argv:['ax',...args],status:result.status,stdout:result.stdout,stderr:result.stderr});if(result.status!==0)fail('cli',`ax ${args.join(' ')} exited ${result.status}`);return result.stdout}
-function fail(provider,message){console.error(JSON.stringify({passed:false,provider,failure:message,home,cli:log},null,2));process.exit(1)}
+function axBytes(args,input){
+  const result=spawnSync(binary,args,{cwd:home,env,input,maxBuffer:32*1024*1024})
+  const prefix=join(home,`native-call-${log.length+1}`)
+  writeFileSync(prefix+'-input.bin',Buffer.from(input??''));writeFileSync(prefix+'-stdout.bin',result.stdout??Buffer.alloc(0));writeFileSync(prefix+'-stderr.txt',result.stderr??Buffer.alloc(0))
+  log.push({argv:['ax',...args],status:result.status,evidence:prefix,error:result.error?.message})
+  if(result.error||result.status!==0)fail('agy',`ax ${args.join(' ')} failed: ${result.error?.message??result.status}`)
+  return result.stdout
+}
+function fail(provider,message){writeFileSync(join(home,'cli-log.json'),JSON.stringify(log,null,2));console.error(JSON.stringify({passed:false,provider,failure:message,home,cli:log},null,2));process.exit(1)}
 const check=(provider,item,value,detail='')=>{if(!value)fail(provider,`${item}${detail?': '+detail:''}`)}
 const same=(provider,item,actual,expected)=>check(provider,item,isDeepStrictEqual(actual,expected),`expected ${JSON.stringify(expected)} got ${JSON.stringify(actual)}`)
 const jsonl=async path=>(await readFile(path,'utf8')).split('\n').filter(Boolean).map(line=>JSON.parse(line))
@@ -29,8 +37,8 @@ if(protocolDir){
   try{
     const Ajv2020=require('ajv/dist/2020.js'),addFormats=require('ajv-formats')
     const ajv=new (Ajv2020.default??Ajv2020)({strict:false,allErrors:true});(addFormats.default??addFormats)(ajv)
-    validate=ajv.compile(JSON.parse(await readFile(join(protocolDir,'schema','unified-transcript.schema.json'),'utf8')))
-    schema='validated against '+join(protocolDir,'schema','unified-transcript.schema.json')
+    validate=ajv.compile(JSON.parse(await readFile(join(protocolDir,'spec','schema','unified-transcript.schema.json'),'utf8')))
+    schema='validated against '+join(protocolDir,'spec','schema','unified-transcript.schema.json')
   }catch(error){schema=`skipped: ajv not resolvable from ${protocolDir} (${error.code??error.message})`}
 }
 
@@ -141,4 +149,69 @@ const ws='/tmp/agentx-fidelity-ws'
   results[P]={written,records:output.length}
 }
 
+{
+  const P='agy',id='b8fca045-fc8c-4b4b-aa28-31fef76b46e1'
+  const fixture=join(dirname(fileURLToPath(import.meta.url)),'../../internal/sessions/testdata/agy/native-fidelity-v1.5.8.db')
+  const sourcePath=join(home,'.gemini','antigravity-cli','conversations',id+'.db')
+  await mkdir(dirname(sourcePath),{recursive:true})
+  const source=await readFile(fixture),placeholder=Buffer.from('file:///'+'X'.repeat(232))
+  const uriPrefix=pathToFileURL(join(home,'agy-offload-')).href
+  check(P,'offload fixture URI fits fixed-width field',uriPrefix.length<240)
+  const offloadURI=uriPrefix+'x'.repeat(240-uriPrefix.length)
+  const offloadPath=fileURLToPath(offloadURI)
+  const fullResult='Complete native tool result.\n'+('Untruncated payload with exact bytes.\n'.repeat(120))+'FULL_OUTPUT_END_MARKER\n'
+  await writeFile(offloadPath,fullResult)
+  const markerOffset=source.indexOf(placeholder)
+  check(P,'fixture has one external result reference',markerOffset>=0&&source.indexOf(placeholder,markerOffset+placeholder.length)<0)
+  Buffer.from(offloadURI).copy(source,markerOffset)
+  await writeFile(sourcePath,source)
+  const exported=ax('--json','session','export',id,'--source',P),transcript=JSON.parse(exported)
+  if(validate&&!validate(transcript))fail(P,'export violates unified-transcript schema: '+JSON.stringify(validate.errors))
+  same(P,'source provider and ID',[transcript.provider,transcript.id],[P,id])
+  same(P,'source roles',transcript.messages.map(m=>m.role),['user','assistant','tool','assistant'])
+  same(P,'workspace',transcript.workspace,ws)
+  same(P,'created timestamp',transcript.startedAt,'2026-11-13T09:20:00.123456789Z')
+  const thinking=transcript.messages.flatMap(m=>m.content??[]).filter(b=>b.type==='thinking')
+  const signatureBytes=Buffer.from([0,255,66,128,...Buffer.from('native-bytes')])
+  same(P,'native typed readable thinking and signature bytes',thinking,[
+    {type:'thinking',text:'Native readable thought with bytes signature.',signature:'agy:bytes:'+signatureBytes.toString('base64')},
+    {type:'thinking',text:'Native readable thought with deprecated string signature.',signature:'native-string-signature+/=='},
+  ])
+  const image=transcript.messages[0].content.find(b=>b.type==='image')
+  same(P,'native inline image MIME',image?.source?.media_type,'image/png')
+  check(P,'native image bytes',Buffer.from(image?.source?.data??'','base64').subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10])))
+  const call=transcript.messages[1].content.find(b=>b.type==='tool_use'),tool=transcript.messages[2]
+  same(P,'native tool call',{id:call?.id,name:call?.name,input:call?.input},{id:'agy-fidelity-tool',name:'mcp_removed_tool',input:{query:'full output'}})
+  same(P,'native tool link',[tool.toolUseId,tool.toolName],[call.id,call.name])
+  same(P,'hydrated complete tool result',tool.result,fullResult)
+  const convertedFrom=JSON.parse(axBytes(['--json','convert','from',P],source).toString())
+  same(P,'SQLite bytes input semantics',{...convertedFrom,source:undefined},{...transcript,source:undefined})
+  const nativeBytes=axBytes(['convert','to',P],Buffer.from(exported))
+  check(P,'convert emits SQLite bytes',nativeBytes.subarray(0,16).equals(Buffer.from('SQLite format 3\0')))
+  check(P,'native output retains raw signature bytes',nativeBytes.includes(signatureBytes))
+  check(P,'native output retains deprecated signature string',nativeBytes.includes(Buffer.from('native-string-signature+/==')))
+  check(P,'native output removes source URI reference',!nativeBytes.includes(Buffer.from(offloadURI)))
+  const file=join(home,'agy-transcript.json');await writeFile(file,exported)
+  const imported=JSON.parse(ax('--json','session','import',P,file))
+  check(P,'fresh native session identity',imported.agent===P&&imported.session!==id&&!imported.session.includes('/'),JSON.stringify(imported))
+  const written=join(dirname(sourcePath),imported.session+'.db')
+  const importedBytes=await readFile(written)
+  check(P,'import writes native SQLite',importedBytes.subarray(0,16).equals(Buffer.from('SQLite format 3\0')))
+  check(P,'import has no external result dependency',!importedBytes.includes(Buffer.from(offloadURI)))
+  check(P,'import has no source session identity dependency',!importedBytes.includes(Buffer.from(id)))
+  same(P,'source database read-only',await readFile(sourcePath),source)
+  same(P,'source external result read-only',await readFile(offloadPath,'utf8'),fullResult)
+  await rm(sourcePath);await rm(offloadPath)
+  const output=JSON.parse(ax('--json','session','export',imported.session,'--source',P))
+  const projected=JSON.parse(axBytes(['--json','convert','from',P],nativeBytes).toString())
+  same(P,'same-agent message shapes, typed blocks, tool links, complete results and timestamps after source removal',output.messages,transcript.messages)
+  same(P,'native SQLite byte conversion preserves same-agent message semantics',projected.messages,transcript.messages)
+  same(P,'session time bounds',[output.startedAt,output.updatedAt],[transcript.startedAt,transcript.updatedAt])
+  same(P,'workspace roundtrip',output.workspace,transcript.workspace)
+  check(P,'native thinking stays typed, with signatures',output.messages.flatMap(m=>m.content??[]).filter(b=>b.type==='thinking').every(b=>b.signature&&!b.text.includes('<think>')))
+  same(P,'import ID survives source removal',output.id,imported.session)
+  results[P]={written,records:output.messages.length,nativeBytes:nativeBytes.length,sourceIndependent:true,rawSignatures:true,inlineImage:true,completeToolResult:true}
+}
+
+await writeFile(join(home,'cli-log.json'),JSON.stringify(log,null,2))
 console.log(JSON.stringify({passed:true,test:'transcript round-trip fidelity: native fixture -> ax session export -> ax session import -> native file keeps fidelity-critical content',schema,home,results},null,2))

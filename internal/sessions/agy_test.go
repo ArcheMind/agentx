@@ -373,3 +373,21 @@ func TestAgyWindowsFileURIs(t *testing.T) {
 		t.Fatal(u.String())
 	}
 }
+
+func TestAgyNativeSignedMessageBoundaries(t *testing.T) {
+	source, err := ParseAgySessionFile("testdata/agy/native-v1.5.8.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "roundtrip.db")
+	if err := WriteAgyDatabaseFile(source, path); err != nil {
+		t.Fatal(err)
+	}
+	output, err := ParseAgySessionFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(output.Messages, source.Messages) {
+		t.Fatalf("native message boundaries changed: got %+v want %+v", output.Messages, source.Messages)
+	}
+}

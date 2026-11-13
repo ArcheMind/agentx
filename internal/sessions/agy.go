@@ -530,19 +530,22 @@ func SerializeAgy(detail Session) ([][]byte, error) {
 		case "assistant":
 			// Separate steps preserve tagged thought boundaries when foreign thinking becomes readable text.
 			var pending []byte
+			pendingHasText, pendingHasCalls := false, false
 			flush := func() {
 				if len(pending) > 0 {
 					steps = append(steps, agyJoin(agyInt(1, 15), agyInt(4, 3), agyBytes(5, meta), agyBytes(20, pending)))
 					pending = nil
+					pendingHasText, pendingHasCalls = false, false
 				}
 			}
 			for _, b := range m.Content {
 				switch b.Type {
 				case "text":
-					if len(pending) > 0 {
+					if pendingHasText || pendingHasCalls {
 						flush()
 					}
-					pending = agyText(1, b.Text)
+					pending = append(pending, agyText(1, b.Text)...)
+					pendingHasText = true
 				case "thinking":
 					flush()
 					if b.Signature == "" {
@@ -562,13 +565,13 @@ func SerializeAgy(detail Session) ([][]byte, error) {
 					} else {
 						pending = append(pending, agyText(4, b.Signature)...)
 					}
-					flush()
 				case "tool_use":
 					args, err := json.Marshal(b.Input)
 					if err != nil {
 						return nil, err
 					}
 					pending = append(pending, agyBytes(7, agyJoin(agyText(1, b.ID), agyText(2, b.Name), agyText(3, string(args))))...)
+					pendingHasCalls = true
 				}
 			}
 			flush()
