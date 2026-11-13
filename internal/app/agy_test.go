@@ -3,7 +3,10 @@ package app
 import (
 	"bytes"
 	"context"
+	"encoding/json"
+	"fmt"
 	"github.com/ArcheMind/agentx/internal/runtime"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -91,5 +94,74 @@ func TestAgyCatalogPartialWarningKeepsUsableList(t *testing.T) {
 	}
 	if !strings.Contains(stdout.String(), id) || !strings.Contains(stderr.String(), "partial session catalog") || !strings.Contains(stderr.String(), "broken.db") {
 		t.Fatalf("stdout=%s stderr=%s", stdout.String(), stderr.String())
+	}
+}
+
+type agyContinueRunner struct {
+	home   string
+	prompt string
+	plan   runtime.CommandPlan
+}
+
+func (r *agyContinueRunner) Execute(_ context.Context, plan runtime.CommandPlan, opts runtime.ExecuteOptions) (runtime.CommandResult, error) {
+	r.plan = plan
+	data, err := io.ReadAll(opts.Stdin)
+	if err != nil {
+		return runtime.CommandResult{}, err
+	}
+	var event struct {
+		Event   string `json:"event"`
+		Message struct {
+			Content string `json:"content"`
+		} `json:"message"`
+	}
+	if err := json.Unmarshal(data, &event); err != nil {
+		return runtime.CommandResult{}, err
+	}
+	if event.Event != "user" {
+		return runtime.CommandResult{}, fmt.Errorf("unexpected input event %s", event.Event)
+	}
+	r.prompt = event.Message.Content
+	token := flagValue(plan.Args, "--conversation")
+	path := filepath.Join(r.home, ".gemini", "antigravity-cli", "conversations", token+".db")
+	detail, err := sessions.ParseAgySessionFile(path)
+	if err != nil {
+		return runtime.CommandResult{}, err
+	}
+	detail.Messages = append(detail.Messages, sessions.Message{ID: "echo", Role: "user", Content: []sessions.ContentBlock{{Type: "text", Text: r.prompt}}}, sessions.Message{ID: "answer", Role: "assistant", Content: []sessions.ContentBlock{{Type: "text", Text: "new answer"}}})
+	if err := os.Remove(path); err != nil {
+		return runtime.CommandResult{}, err
+	}
+	if err := sessions.WriteAgyDatabaseFile(detail, path); err != nil {
+		return runtime.CommandResult{}, err
+	}
+	return runtime.CommandResult{Stdout: fmt.Sprintf("{\"event\":\"init\",\"conversation_id\":%q}\n{\"event\":\"result\",\"result\":{\"conversation_id\":%q,\"status\":\"SUCCESS\"}}\n", token, token)}, nil
+}
+
+func TestAgyContinueReparsesProjectedHistoryPrefix(t *testing.T) {
+	home, workspace := t.TempDir(), testWorkspace(t)
+	source := sessions.Session{ID: "source", Provider: "claude", Workspace: workspace, Messages: []sessions.Message{
+		{ID: "history", Role: "assistant", Content: []sessions.ContentBlock{{Type: "thinking", Text: "foreign reasoning", Signature: "foreign-signature"}, {Type: "text", Text: "historical answer"}}},
+		{ID: "prompt", Role: "user", Content: []sessions.ContentBlock{{Type: "text", Text: "new prompt\nwith special \"quotes\""}}},
+	}}
+	input, err := json.Marshal(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr bytes.Buffer
+	app := New(false, bytes.NewReader(input), &stdout, &stderr)
+	app.Sessions = sessions.Service{HomeDir: home}
+	app.Hooks.Home = home
+	runner := &agyContinueRunner{home: home}
+	app.Runner = runner
+	if err := app.Run(context.Background(), []string{"session", "continue", "agy", "--model", "native-future-model"}); err != nil {
+		t.Fatal(err)
+	}
+	var delta sessions.Session
+	if err := json.Unmarshal(stdout.Bytes(), &delta); err != nil {
+		t.Fatal(err)
+	}
+	if len(delta.Messages) != 1 || sessions.MessageText(delta.Messages[0]) != "new answer" || runner.prompt != "new prompt\nwith special \"quotes\"" || runner.plan.Env["SM_MCP_CWD"] != workspace {
+		t.Fatalf("delta=%+v prompt=%q plan=%+v", delta, runner.prompt, runner.plan)
 	}
 }

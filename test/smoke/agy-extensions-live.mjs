@@ -22,23 +22,31 @@ mkdirSync(join(root, '.agents'), {recursive:true})
 const command = `${JSON.stringify(process.execPath)} ${JSON.stringify(recorder)}`
 writeFileSync(join(root, '.agents', 'hooks.json'), JSON.stringify({hooks:Object.fromEntries(['SessionStart','Stop','SessionEnd','UserPromptSubmit'].map(event=>[event,[{hooks:[{type:'command',command}]}]]))}))
 const env = {...process.env, SM_SUBAGENT_HOME:join(root,'subagent-home')}
-let result
-try {
-  const prompt = 'Call the sessionman MCP ListExternalSubagentSessions tool exactly once. Do not use any other tools. Report the result and the AGY_HOOK code injected at session start.'
-  const args = ['agy','--cwd',root,'--model',process.env.AX_CROSS_AGY_MODEL ?? 'gemini-3.8-flash-low','--','--output-format','stream-json','--dangerously-skip-permissions',`--print=${prompt}`]
-  result = spawnSync(binary,args,{cwd:root,env,input:prompt,encoding:'utf8',timeout:120_000,maxBuffer:16*1024*1024})
-  writeFileSync(join(root,'native.json'),JSON.stringify({args,input:prompt,status:result.status,stdout:result.stdout,stderr:result.stderr,error:result.error?.message},null,2))
+const model = process.env.AX_CROSS_AGY_MODEL ?? 'gemini-3.8-flash-low'
+function runCase(name, args, input) {
+  const result = spawnSync(binary,args,{cwd:root,env,input,encoding:'utf8',timeout:120_000,maxBuffer:16*1024*1024})
+  writeFileSync(join(root,`${name}.json`),JSON.stringify({args,input,status:result.status,stdout:result.stdout,stderr:result.stderr,error:result.error?.message},null,2))
   if(result.error || result.status!==0) throw new Error(result.error?.message ?? result.stderr)
-  const payloads = readFileSync(events,'utf8').trim().split('\n').map(JSON.parse)
-  for(const event of ['SessionStart','Stop']) if(payloads.filter(p=>p.hook_event_name===event && p.cwd===root).length!==1) throw new Error(`${event} not dispatched in actual workspace`)
-  for(const event of ['SessionEnd','UserPromptSubmit']) if(payloads.some(p=>p.hook_event_name===event)) throw new Error(`${event} was incorrectly projected`)
   if(!result.stderr.includes('does not support portable SessionEnd') || !result.stderr.includes('does not support portable UserPromptSubmit')) throw new Error('Unsupported portable event warnings missing')
-  if(!result.stdout.includes(token)) throw new Error('SessionStart context was not natively injected')
+  if(!result.stdout.includes(token)) throw new Error(`${name}: SessionStart context was not natively injected`)
+  return result
+}
+try {
+  const execResult = runCase('exec',['agent','exec','agy','--cwd',root,'--model',model], 'Do not use tools. Report only the AGY_HOOK code injected at session start.')
+  const stream = execResult.stdout.trim().split('\n').map(JSON.parse)
+  if(!stream.some(e=>e.event==='result' && e.result?.status==='SUCCESS')) throw new Error('Native exec did not complete')
+  const input = JSON.stringify({id:'extension-continue',provider:'smoke',workspace:root,messages:[{id:'prompt',role:'user',content:[{type:'text',text:'Call the sessionman MCP ListExternalSubagentSessions tool exactly once. Do not use any other tools. Report the result and the AGY_HOOK code injected at session start.'}]}]})
+  const continued = runCase('continue',['session','continue','agy','--model',model,'--mode','yolo'],input)
+  const delta = JSON.parse(continued.stdout)
+  if(!delta.messages.some(m=>m.role==='tool' && JSON.stringify(m.result).includes('SessionMan MCP connection'))) throw new Error('Native continue did not record a successful SessionMan MCP tool result')
+  const payloads = readFileSync(events,'utf8').trim().split('\n').map(JSON.parse)
+  const sessions = new Set(payloads.map(p=>p.session_id))
+  if(sessions.size!==2) throw new Error(`Expected two distinct native sessions, got ${sessions.size}`)
+  for(const id of sessions) for(const event of ['SessionStart','Stop']) if(payloads.filter(p=>p.session_id===id && p.hook_event_name===event && p.cwd===root).length!==1) throw new Error(`${event} was not dispatched exactly once in actual workspace`)
+  for(const event of ['SessionEnd','UserPromptSubmit']) if(payloads.some(p=>p.hook_event_name===event)) throw new Error(`${event} was incorrectly projected`)
   const connections = readFileSync(join(root,'mcp-connections.jsonl'),'utf8').trim().split('\n').map(JSON.parse)
   if(!connections.some(c=>c.cwd===root && c.status==='active MCP connection: host sent notifications/initialized')) throw new Error('Native MCP did not use the launch workspace')
-  const stream = result.stdout.trim().split('\n').map(JSON.parse)
-  if(!stream.some(e=>e.step_update?.state==='DONE' && e.step_update?.tool_info?.parameters?.ToolName==='ListExternalSubagentSessions' && e.step_update?.tool_info?.output?.includes('SessionMan MCP connection'))) throw new Error('Native stream did not record successful SessionMan MCP tool use')
-  console.log(JSON.stringify({passed:true,checks:['owned-native-plugin','native-MCP-tool','runtime-workspace-hooks','SessionStart-injectSteps','unsupported-event-warnings'],evidence:root},null,2))
+  console.log(JSON.stringify({passed:true,checks:['product-exec-NDJSON','product-continue-native-MCP','owned-native-plugin','runtime-workspace-MCP','portable-hooks-once','SessionStart-injectSteps','unsupported-event-warnings'],evidence:root},null,2))
 } finally {
   if(existed) {
     for(const name of ['plugin.json','hooks.json','mcp_config.json','.sessionman-owned']) {
