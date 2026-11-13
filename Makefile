@@ -147,3 +147,19 @@ smoke-agy-duplex-live: build
 
 smoke-agy-extensions-live: build
 	node test/smoke/agy-extensions-live.mjs "$(CURDIR)/bin/sm"
+
+.PHONY: test-remove-gemini-core test-remove-gemini-extensions test-remove-gemini-product demo demo-build
+test-remove-gemini-core:
+	go test ./internal/drivers ./internal/presets ./internal/sessions
+
+test-remove-gemini-extensions:
+	go test ./internal/hooks ./internal/skills ./internal/mcp ./internal/inventory
+
+test-remove-gemini-product:
+	go test ./internal/app
+
+demo-build:
+	go build -o /tmp/sm-vhs-demo ./docs/demo
+
+demo:
+	vhs docs/demo.tape
