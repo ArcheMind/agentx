@@ -12,9 +12,12 @@ import (
 func (a App) mcp(ctx context.Context, args []string) error {
 	if len(args) > 0 && args[0] == "serve" {
 		if len(args) != 1 {
-			return fmt.Errorf("usage: ax mcp serve")
+			return fmt.Errorf("usage: sm mcp serve")
 		}
 		return a.mcpServe(ctx)
+	}
+	if len(args) > 0 && args[0] == "__daemon" {
+		return a.mcpDaemon(ctx, args[1:])
 	}
 	return a.inventoryCommand("mcp", args, (mcp.Service{Home: a.Skills.Home, Project: a.Skills.Project}).List())
 }
@@ -65,7 +68,7 @@ func (a App) inventoryCommand(kind string, args []string, result inventory.Resul
 		}
 		return nil
 	}
-	return fmt.Errorf("usage: ax [--json|--yaml] %s <list|show <name> [--scope project|user] [--source <path>] [--path <resource-path>]>", kind)
+	return fmt.Errorf("usage: sm [--json|--yaml] %s <list|show <name> [--scope project|user] [--source <path>] [--path <resource-path>]>", kind)
 }
 func (a App) inventoryAgents(agents []string) string {
 	values := []string{}

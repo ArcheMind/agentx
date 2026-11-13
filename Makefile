@@ -1,5 +1,5 @@
 .PHONY: fmt check test test-subagents smoke-subagents smoke-subagents-live audit build install smoke smoke-live smoke-clean smoke-hooks-live smoke-skills-clean smoke-skills-live verify clean
-.PHONY: smoke-mcp-management smoke-mcp-live smoke-mcp-jobfile test-mcp-race test-mcp-syntax
+.PHONY: smoke-mcp-management smoke-mcp-live smoke-mcp-duplex test-mcp-race test-mcp-syntax
 .PHONY: smoke-mcp-contract smoke-transcript-fidelity smoke-transcript-cross smoke-continue-live
 .PHONY: smoke-mcp-presets smoke-presets smoke-mcp-effort-live smoke-mcp-isolation-live
 
@@ -19,9 +19,9 @@ test:
 test-subagents:
 	go test ./internal/subagents ./internal/app
 
-smoke-subagents: smoke-mcp-jobfile
+smoke-subagents: smoke-mcp-duplex
 
-smoke-subagents-live: smoke-mcp-live smoke-mcp-jobfile
+smoke-subagents-live: smoke-mcp-live smoke-mcp-duplex
 
 audit:
 	go test ./internal/app ./internal/drivers -run 'Consistency|Capabilities|Grammar|Terminology|Structured'
@@ -33,8 +33,8 @@ build:
 install: build
 	install -m 0755 bin/sm "$${SM_INSTALL_DIR:-$$HOME/.local/bin}/sm"
 
-smoke-mcp-jobfile: build
-	node test/smoke/mcp-jobfile.mjs "$(CURDIR)/bin/sm"
+smoke-mcp-duplex: build
+	node test/smoke/mcp-duplex.mjs "$(CURDIR)/bin/sm"
 
 smoke-mcp-live: build
 	node test/smoke/mcp-live.mjs "$(CURDIR)/bin/sm"

@@ -132,7 +132,7 @@ func TestWorktreeIsolationRunsInWorktreeAndKeepsOriginalChanges(t *testing.T) {
 	}
 	r.write = ""
 	callTest(t, s, "SendExternalSubagentMessage", map[string]any{"to": "iso", "message": "again"})
-	waitAgent(t, s, "iso")
+	waitReports(t, s, "iso", 2)
 	r.mu.Lock()
 	if r.plans[1].Cwd != plan.Cwd {
 		t.Fatal("continuation rebound workspace", r.plans[1])
@@ -140,12 +140,12 @@ func TestWorktreeIsolationRunsInWorktreeAndKeepsOriginalChanges(t *testing.T) {
 	r.mu.Unlock()
 	gitCmd(t, repo, "worktree", "remove", "--force", w.Path)
 	callTest(t, s, "SendExternalSubagentMessage", map[string]any{"to": "iso", "message": "gone"})
-	waitAgent(t, s, "iso")
-	s.mu.Lock()
-	failure := a.Jobs[len(a.Jobs)-1].Failure
-	s.mu.Unlock()
-	if !strings.Contains(failure, "unavailable; no replacement created") || len(r.plans) != 2 {
-		t.Fatal("missing worktree did not fail explicitly:", failure)
+	report := waitReports(t, s, "iso", 3)
+	r.mu.Lock()
+	plans := len(r.plans)
+	r.mu.Unlock()
+	if !strings.Contains(report.Failure, "unavailable; no replacement created") || plans != 2 {
+		t.Fatal("missing worktree did not fail explicitly:", report.Failure)
 	}
 }
 

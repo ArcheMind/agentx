@@ -210,30 +210,24 @@ fresh `tools/list` reads the current collection.
 Restart or reconnect the host for tool discovery. `sm claude`
 adds the MCP connection and allows exactly the four SessionMan tools for that session
 with `--allowedTools`; Claude's persistent `settings.json` is not modified.
-Background delivery is file based and host agnostic. When a task ends
-(completed, failed or cancelled, including queued work cancelled before it
-started), SessionMan atomically writes one JSON document to:
-
-```text
-~/.local/state/sessionman/connections/<connection-id>/jobs/<task-id>.json
-```
-
-The document is `{"content": <rendered report>, "meta": {"report_origin":
-"sessionman-subagent", "agent_id", "task_id", "status"}}`. The immediate response of
-`ExternalSubagent` (background) and `SendExternalSubagentMessage` includes the
-absolute path and a wait command:
+Background delivery is event based and host agnostic. Each ExternalSubagent
+has one append-only event stream under
+`~/.local/state/sessionman/agents/<agent-id>/events/<seq>.json` with two kinds:
+`report` (a run settled: completed, failed or cancelled) and `message` (text the
+subagent sent mid-run via its MessageHost tool). Every tool response includes
+the per-agent wait command:
 
 ```sh
-until [ -f "<abs-path>" ]; do sleep 1; done; cat "<abs-path>"
+sm wait <agent-id> --after <seq>
 ```
 
-Run it in the background (Claude Code: `Bash` with `run_in_background: true`) so
-the host is woken once with the report. Every follow-up message has its own task
-ID and result file. Each tool response and report includes a connection ID. Match
+Run it in the background (Claude Code: `Bash` with `run_in_background: true`);
+it prints the next event and exits, and the host re-arms it with the printed
+seq. Each tool response and report includes a connection ID. Match
 it to `status.connections` to identify the current host, its client name/version
 and whether it sent `notifications/initialized`. Foreground calls
-(`run_in_background:false`) wait and return the terminal result directly.
-Set `SM_LOG=debug` to log each result file path and write error to stderr.
+(`run_in_background:false`) wait and return the first report directly.
+Set `SM_LOG=debug` to log daemon and native stream traffic to stderr.
 
 ## Tool contract
 
@@ -262,13 +256,15 @@ Deprecated `team_name` is accepted and ignored. Unknown properties (including
 the removed `write` and `writable_roots`), nulls, wrong types, and unsupported
 values are rejected.
 
-Omitted/true `run_in_background` returns a task identity immediately and pushes
-its terminal result. False waits for a terminal result; failure/cancellation is
-a tool error, not successful submission. `SendExternalSubagentMessage` accepts text and returns
-queued acknowledgement, never a claim of completion. Busy ExternalSubagents process
-messages in order using the same native context. Every accepted message has its
-own task ID and terminal notification, including cancellation or prior-turn
-failure. Completed ExternalSubagents resume via their exact native session.
+Omitted/true `run_in_background` returns the agent identity immediately;
+settles arrive as report events on the per-agent wait channel. False waits for
+the first report; failure/cancellation is a tool error, not successful
+submission. `SendExternalSubagentMessage` accepts text plus an optional
+`delivery` (`steer`, the default, or `queued`) and reports the actual
+disposition — `steered` (read inside the running turn at the next safe point),
+`queued` (held until the current run settles, then a new round) or `started`
+(agent was idle; new round began, warm or cold resume) — never a claim of
+completion. Completed ExternalSubagents resume via their exact native session.
 
 Every ExternalSubagent call creates an independent object. Reusing a name makes that name
 refer to the newest object; previous objects remain addressable by ID. Cancel
@@ -367,7 +363,7 @@ the ability to delegate subtasks to other agents without user configuration.
   injects depth 1; a depth-1 server injects depth 2; a depth-2 server does
   not inject further. The initialization instructions report the current depth
   and whether further delegation is available.
-- **Foreground only.** Nested hosts (Codex exec) do not wait on result files, so
+- **Foreground only.** Nested hosts (Codex exec) do not arm event waits, so
   `run_in_background` is forced to false regardless of the caller's request.
   The dispatched agent waits for each sub-agent to complete before continuing.
 - **Independent mode.** Each nested ExternalSubagent call picks its own
@@ -453,7 +449,7 @@ make smoke-mcp-management
 make smoke-mcp-contract
 make smoke-presets
 make smoke-mcp-live
-make smoke-mcp-jobfile
+make smoke-mcp-duplex
 make smoke-mcp-effort-live
 make smoke-mcp-isolation-live
 ```
@@ -462,8 +458,8 @@ The live backend suite uses existing native logins, isolated SessionMan configur
 and Codex `gpt-5.6-luna` / Pi `openai-codex/gpt-5.6-luna`. Override
 `SM_MCP_CODEX_MODEL` / `SM_MCP_PI_MODEL` with exact accessible models. It verifies
 native inference, independent memory continuation and actual cancellation. The
-job-file smoke starts a background task against a deterministic fixture over MCP
-stdio and asserts the result file appears with the expected fields.
+duplex smoke drives a deterministic fake streaming claude over MCP stdio and
+asserts steer, MessageHost wakes, report events, re-armed waits and stop.
 
 Live smokes that read Codex rollouts (`$CODEX_HOME/sessions/**/rollout-*-<thread>.jsonl`)
 do so because Codex code mode keeps nested shell and patch calls out of

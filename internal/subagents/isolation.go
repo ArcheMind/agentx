@@ -28,13 +28,17 @@ func WorktreeDir(home, id string) string {
 	return filepath.Join(home, ".local", "state", "sessionman", "worktrees", id)
 }
 
-func (s *Server) git(ctx context.Context, dir string, args ...string) (string, error) {
+func gitRun(runner runtime.Runner, dir string, args ...string) (string, error) {
 	plan := runtime.CommandPlan{Executable: "git", Args: append([]string{"-C", dir}, args...)}
-	result, err := s.Runner.Execute(ctx, plan, runtime.ExecuteOptions{})
+	result, err := runner.Execute(context.Background(), plan, runtime.ExecuteOptions{})
 	if err != nil {
 		return "", fmt.Errorf("git %s: %v; stderr: %s", strings.Join(args, " "), err, strings.TrimSpace(result.Stderr))
 	}
 	return strings.TrimSpace(result.Stdout), nil
+}
+
+func (s *Server) git(_ context.Context, dir string, args ...string) (string, error) {
+	return gitRun(s.Runner, dir, args...)
 }
 
 func within(base, path string) (string, bool) {
@@ -102,7 +106,7 @@ func (s *Server) createWorktree(id, cwd string) (*Worktree, string, error) {
 	return w, agentCwd, nil
 }
 
-func (s *Server) checkWorktree(a *ExternalSubagentState) error {
+func checkWorktree(a *ExternalSubagentState) error {
 	if a.Worktree == nil {
 		return nil
 	}
@@ -112,15 +116,15 @@ func (s *Server) checkWorktree(a *ExternalSubagentState) error {
 	return nil
 }
 
-func (s *Server) worktreeRemaining(w *Worktree) string {
+func worktreeRemaining(runner runtime.Runner, w *Worktree) string {
 	if _, err := os.Stat(w.Path); err != nil {
 		return "worktree directory missing: " + err.Error()
 	}
-	status, err := s.git(context.Background(), w.Path, "status", "--porcelain", "--untracked-files=all")
+	status, err := gitRun(runner, w.Path, "status", "--porcelain", "--untracked-files=all")
 	if err != nil {
 		return "unknown: " + err.Error()
 	}
-	head, err := s.git(context.Background(), w.Path, "rev-parse", "HEAD")
+	head, err := gitRun(runner, w.Path, "rev-parse", "HEAD")
 	if err != nil {
 		return "unknown: " + err.Error()
 	}

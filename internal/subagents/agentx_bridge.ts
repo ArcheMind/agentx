@@ -124,7 +124,7 @@ export default function (pi: any) {
 
   bridgeTool(
     "delegate", "Delegate to SessionMan",
-    "Delegate a task to another AI agent via SessionMan. run_in_background (default true) returns immediately with a result file path and wait command; false blocks until completion. Available presets are configured in the user's SessionMan preset collection.",
+    "Delegate a task to another AI agent via SessionMan. run_in_background (default true) returns immediately with a per-agent `sm wait` command for the next report or message event; false blocks until the first report. Available presets are configured in the user's SessionMan preset collection.",
     Type.Object({
       description: Type.String({ description: "Short task description" }),
       prompt: Type.String({ description: "Full task prompt for the sub-agent" }),

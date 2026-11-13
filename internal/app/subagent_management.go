@@ -19,12 +19,12 @@ func (a App) preset(ctx context.Context, args []string) error {
 	switch args[0] {
 	case "list":
 		if len(args) != 1 {
-			return fmt.Errorf("usage: ax [--json|--yaml] preset list")
+			return fmt.Errorf("usage: sm [--json|--yaml] preset list")
 		}
 		return a.presetList(home)
 	case "show":
 		if len(args) != 2 {
-			return fmt.Errorf("usage: ax [--json|--yaml] preset show <name>")
+			return fmt.Errorf("usage: sm [--json|--yaml] preset show <name>")
 		}
 		return a.presetShow(home, args[1])
 	default:
@@ -44,8 +44,31 @@ func (a App) mcpServe(ctx context.Context) error {
 	return server.Serve(ctx, a.Stdin, a.Stdout)
 }
 
+// mcpDaemon is the hidden per-agent daemon entry spawned by the MCP thin shell.
+func (a App) mcpDaemon(ctx context.Context, args []string) error {
+	var home, agent string
+	for i := 0; i+1 < len(args); i += 2 {
+		switch args[i] {
+		case "--home":
+			home = args[i+1]
+		case "--agent":
+			agent = args[i+1]
+		default:
+			return fmt.Errorf("usage: sm mcp __daemon --home <home> --agent <id>")
+		}
+	}
+	if home == "" || agent == "" {
+		return fmt.Errorf("usage: sm mcp __daemon --home <home> --agent <id>")
+	}
+	daemon := &subagents.Daemon{Home: home, Dir: subagents.AgentDir(home, agent), Runner: a.Runner}
+	if r, ok := a.Runner.(runtime.ExecRunner); ok && r.Debug {
+		daemon.Log = a.Stderr
+	}
+	return subagents.RunDaemon(daemon)
+}
+
 func presetUsageError() error {
-	return fmt.Errorf("usage: ax [--json|--yaml] preset <list|show> [args...]")
+	return fmt.Errorf("usage: sm [--json|--yaml] preset <list|show> [args...]")
 }
 
 func presetEntry(o presets.Preset) map[string]any {

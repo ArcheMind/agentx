@@ -149,7 +149,7 @@ func TestMissingAgentFailsWithoutSubstitution(t *testing.T) {
 	if len(runner.plans) != 0 {
 		t.Fatalf("started %#v", runner.plans)
 	}
-	for _, want := range []string{"Start · deep-review", "Error: Codex CLI is not installed. Install it with ax agent install codex, or edit the preset", "no other agent, model or effort was substituted", "Edit preset", "Back to presets"} {
+	for _, want := range []string{"Start · deep-review", "Error: Codex CLI is not installed. Install it with sm agent install codex, or edit the preset", "no other agent, model or effort was substituted", "Edit preset", "Back to presets"} {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("missing %q in %q", want, stdout.String())
 		}

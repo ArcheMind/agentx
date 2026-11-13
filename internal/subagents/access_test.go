@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ArcheMind/agentx/internal/drivers"
 	"github.com/ArcheMind/agentx/internal/presets"
 	"github.com/ArcheMind/agentx/internal/runtime"
 )
@@ -44,16 +45,19 @@ func TestInvalidModesRejectedBeforeAnyWork(t *testing.T) {
 func TestNormalModePassesNoPermissionFlags(t *testing.T) {
 	r := &testRunner{}
 	s := testServer(t, r)
-	savePreset(t, s.Home, presets.Preset{Name: "claude-review", Agent: "claude", Model: "opus", Description: "d"})
 	text := callTest(t, s, "ExternalSubagent", map[string]any{"description": "read", "prompt": "review", "model": "review", "mode": "normal", "run_in_background": false})
-	s.call("ExternalSubagent", []byte(`{"description":"x","prompt":"x","model":"claude-review","mode":"normal","run_in_background":false}`))
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	codex, claude := strings.Join(r.plans[0].Args, " "), strings.Join(r.plans[1].Args, " ")
+	codex := strings.Join(r.plans[0].Args, " ")
 	if strings.Contains(codex, "sandbox") || !strings.Contains(codex, `approval_policy="never"`) || !strings.Contains(text, "Mode: normal\n") || !strings.Contains(text, `Auth source for this turn: CODEX_HOME="`+os.Getenv("CODEX_HOME")+`"`+"\n") {
 		t.Fatal(codex, text)
 	}
-	if strings.Contains(claude, "permission") || strings.Contains(claude, "dangerously") {
+	plan, err := drivers.ClaudePolicyExecPlan("/cwd", "opus", "", false, "", "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	claude := strings.Join(plan.Args, " ")
+	if strings.Contains(claude, "permission") || strings.Contains(claude, "dangerously") || !strings.Contains(claude, "--input-format stream-json") {
 		t.Fatal(claude)
 	}
 	if r.plans[0].Env["CODEX_HOME"] != os.Getenv("CODEX_HOME") || len(r.plans[0].UnsetEnv) != 0 {
@@ -64,17 +68,19 @@ func TestNormalModePassesNoPermissionFlags(t *testing.T) {
 func TestYoloModeBypassesNativePermissions(t *testing.T) {
 	r := &testRunner{}
 	s := testServer(t, r)
-	savePreset(t, s.Home, presets.Preset{Name: "claude-review", Agent: "claude", Model: "opus", Description: "d"})
 	text := callTest(t, s, "ExternalSubagent", map[string]any{"description": "x", "prompt": "x", "model": "review", "mode": "yolo", "run_in_background": false})
-	s.call("ExternalSubagent", []byte(`{"description":"x","prompt":"x","model":"claude-review","mode":"yolo","run_in_background":false}`))
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	codex, claude := strings.Join(r.plans[0].Args, " "), strings.Join(r.plans[1].Args, " ")
+	codex := strings.Join(r.plans[0].Args, " ")
 	if !strings.Contains(codex, `-c sandbox_mode="danger-full-access" -c approval_policy="never"`) || !strings.Contains(text, "Mode: yolo\n") {
 		t.Fatal(codex, text)
 	}
-	if !strings.Contains(claude, "--dangerously-skip-permissions") {
-		t.Fatal(claude)
+	plan, err := drivers.ClaudePolicyExecPlan("/cwd", "opus", "", true, "", "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(strings.Join(plan.Args, " "), "--dangerously-skip-permissions") {
+		t.Fatal(plan.Args)
 	}
 }
 
@@ -85,7 +91,7 @@ func TestModeIsFixedForContinuation(t *testing.T) {
 	callTest(t, s, "ExternalSubagent", map[string]any{"description": "x", "prompt": "x", "model": "review", "name": "n", "mode": "normal", "run_in_background": false})
 	for _, name := range []string{"y", "n"} {
 		callTest(t, s, "SendExternalSubagentMessage", map[string]any{"to": name, "message": "again"})
-		waitAgent(t, s, name)
+		waitReports(t, s, name, 2)
 	}
 	if _, err := s.call("SendExternalSubagentMessage", []byte(`{"to":"n","message":"x","mode":"yolo"}`)); err == nil {
 		t.Fatal("continuation accepted a mode change")

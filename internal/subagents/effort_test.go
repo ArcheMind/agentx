@@ -167,11 +167,7 @@ func TestPiEffortVerifiedFromObserverRecords(t *testing.T) {
 	}
 	r.thinking = ""
 	callTest(t, s, "SendExternalSubagentMessage", map[string]any{"to": "pi", "message": "again"})
-	waitAgent(t, s, "pi")
-	s.mu.Lock()
-	a, _ := s.target("pi")
-	last := a.Jobs[len(a.Jobs)-1]
-	s.mu.Unlock()
+	last := waitReports(t, s, "pi", 2)
 	if last.Status != "completed" || !strings.Contains(last.Evidence, "1 model request(s)") {
 		t.Fatal("continuation evidence must count only the new turn", last.Status, last.Failure, last.Evidence)
 	}

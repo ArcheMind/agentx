@@ -113,6 +113,8 @@ func (a App) Run(ctx context.Context, args []string) error {
 		return a.sessions(ctx, args[1:])
 	case "mcp":
 		return a.mcp(ctx, args[1:])
+	case "wait":
+		return a.wait(ctx, args[1:])
 	case "skill":
 		return a.skill(ctx, args[1:])
 	case "hook":
@@ -1035,6 +1037,7 @@ Usage:
   sm [--json|--yaml] hook list
   sm [--json|--yaml] mcp <list|show|serve> [args...]
   sm [--json|--yaml] preset <list|show> [args...]
+  sm wait <agent-id> --after <seq>
 
   sm agent exec <codex|pi|gemini> [--model <model>] [--resume <session-id>] [--cwd <path>] [--dry-run] < prompt.txt
   sm --json session continue <claude|codex|pi> [--model <model>] [--mcp-config <file>] [--mode yolo] < transcript.json

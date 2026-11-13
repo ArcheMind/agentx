@@ -12,7 +12,7 @@ The current tools are `ExternalSubagent`, `SendExternalSubagentMessage`,
 `StopExternalSubagent`, and `listExternalSubagentSessions`. They replace the
 earlier `Agent`, `SendMessage`, `TaskStop`, and `ListAgents` MCP names without
 aliases. Parameter keys, configured combination names, permissions and lifecycle
-semantics remain unchanged. The server identity remains AgentX and `agentx`; native Claude tools are not renamed.
+semantics remain unchanged. The server identity remains SessionMan and `agentx`; native Claude tools are not renamed.
 
 The live observations and quoted tool names below are historical pre-rename
 records. They establish lifecycle behavior before this naming change, not a new
@@ -47,7 +47,7 @@ The call-time write scope (`write`, `writable_roots`) and the deprecated native
 | M06 | Pending (live) | A default call runs real Codex and Claude; a Claude `yolo` call runs a command that `normal` refuses; `make smoke-mcp-isolation-live` passes with the rebuilt binary. |
 
 The write-scope evidence in the next two sections is historical: it describes
-the removed `write`/`writable_roots` surface and the sandbox AgentX used to
+the removed `write`/`writable_roots` surface and the sandbox SessionMan used to
 inject. It no longer describes current behavior.
 
 ## Execution policy, approval and authentication (backlog 004 G01–G03)
@@ -56,13 +56,13 @@ Historical (superseded by backlog 015, see Permission mode above).
 
 Recorded 2026-10-21 with Codex CLI 0.163.0 (`gpt-5.6-luna`, `low`) and Pi CLI
 0.84.4 (`openai-codex/gpt-5.6-luna`). The runs are real native execution
-through the built AgentX stdio MCP server, not through a Claude host. Each Codex
+through the built SessionMan stdio MCP server, not through a Claude host. Each Codex
 probe is one command in its own ExternalSubagent, so success does not depend on a
 model copying several commands correctly. Agent reports are not evidence.
 
 Codex 0.163 code mode runs shell commands and `apply_patch` inside its `exec`
 tool. Those nested calls do not appear in the `codex exec --json` event stream.
-For each probe, the smoke reads the native thread ID from the AgentX debug log
+For each probe, the smoke reads the native thread ID from the SessionMan debug log
 (`thread.started`). It then opens `$CODEX_HOME/sessions/**/rollout-*-<thread>.jsonl`
 and asserts two things from `custom_tool_call` and `custom_tool_call_output`:
 the exact command or patch on the target path was actually attempted, and the
@@ -81,11 +81,11 @@ results. It is superseded.
 | --- | --- | --- |
 | A01 | Historical (superseded by 015): Pass (Codex); Pi write gap open | Codex `bounded-write` (roots `root`, `extra`): rollouts show both `printf` writes executed with exit 0, and `root/in.txt` / `extra/extra.txt` contain the requested content. Codex `read-only` in the same directory: the rollout shows the write executed and failing with `operation not permitted`, and `root/ro.txt` is absent. Pi `read-only` left `root/pi.txt` absent; Pi reported no write tool. Every report carried its actual `Grant:` line. Pi `bounded-write` is rejected at configuration time. |
 | A02 | Historical (superseded by 015): Pass (Codex) | Shell writes, OS layer: in each rollout the write was executed and failed with `operation not permitted`. Targets: new `outside/out.txt` (absent afterwards), overwrite of `outside/existing.txt` (still `original`), the `/tmp` probe (absent), and the explicitly denied target `root/.git/agentx-denied.txt` (Codex-protected inside a writable root; absent). Patch, application layer: `apply_patch` adding `outside/patched.txt` was rejected by Codex's patch approval check (`patch rejected: writing outside of the project; rejected by user approval settings`) before any write; the file is absent. This rejection is not the OS sandbox. User-configurable deny subpaths are not offered because no runtime enforcement was established. |
-| A03 | Historical (superseded by 015): Partial | Covered: the no-approver scenario (`approval:"never"`), observed above with the denial returned to the agent in both layers. Out-of-scope shell writes fail in the OS sandbox (`operation not permitted`). Out-of-scope `apply_patch` is rejected by Codex's application-level patch approval with no one asked (`rejected by user approval settings`). Pending: approve and deny scenarios. Non-interactive Codex/Pi execution has no approval route to a human, and AgentX does not forward runtime approval requests to Claude. Non-`never` values are rejected rather than claimed. Pi's boundary is described everywhere as a tool allowlist, not an OS sandbox. |
-| A04 | Pass | Configured sources: `CODEX_HOME=~/.codex` (chatgpt) and `PI_CODING_AGENT_DIR=~/.pi/agent` (oauth), visible in reports, catalog and `status`. An empty `CODEX_HOME` failed with `Not logged in; no fallback identity`. A method mismatch (configured `api-key`, actual ChatGPT) failed. An empty Pi dir failed with `credentials_not_configured; no fallback identity`. None of these started native execution (debug log). Twelve inherited credential-like variables were removed. Seven credential values (from `OPENAI_API_KEY` and both `auth.json` files) appeared in neither debug logs nor reports. Direct check: `PI_CODING_AGENT_DIR=<empty> pi auth check --model openai/gpt-5` is `ready` via the inherited `OPENAI_API_KEY`, and `not_ready` once it is removed. This is the implicit fallback AgentX now blocks. Identity here means source directory plus login method; the account inside a source is not verified, so switching accounts within the same `CODEX_HOME` is not detected. |
+| A03 | Historical (superseded by 015): Partial | Covered: the no-approver scenario (`approval:"never"`), observed above with the denial returned to the agent in both layers. Out-of-scope shell writes fail in the OS sandbox (`operation not permitted`). Out-of-scope `apply_patch` is rejected by Codex's application-level patch approval with no one asked (`rejected by user approval settings`). Pending: approve and deny scenarios. Non-interactive Codex/Pi execution has no approval route to a human, and SessionMan does not forward runtime approval requests to Claude. Non-`never` values are rejected rather than claimed. Pi's boundary is described everywhere as a tool allowlist, not an OS sandbox. |
+| A04 | Pass | Configured sources: `CODEX_HOME=~/.codex` (chatgpt) and `PI_CODING_AGENT_DIR=~/.pi/agent` (oauth), visible in reports, catalog and `status`. An empty `CODEX_HOME` failed with `Not logged in; no fallback identity`. A method mismatch (configured `api-key`, actual ChatGPT) failed. An empty Pi dir failed with `credentials_not_configured; no fallback identity`. None of these started native execution (debug log). Twelve inherited credential-like variables were removed. Seven credential values (from `OPENAI_API_KEY` and both `auth.json` files) appeared in neither debug logs nor reports. Direct check: `PI_CODING_AGENT_DIR=<empty> pi auth check --model openai/gpt-5` is `ready` via the inherited `OPENAI_API_KEY`, and `not_ready` once it is removed. This is the implicit fallback SessionMan now blocks. Identity here means source directory plus login method; the account inside a source is not verified, so switching accounts within the same `CODEX_HOME` is not detected. |
 
 Historical (backlog 004 write-scope model, superseded by backlog 015): what
-each runtime enforced under AgentX's former sandbox injection. Current
+each runtime enforced under SessionMan's former sandbox injection. Current
 behavior: see [Permission mode](#permission-mode-backlog-015); in `normal` mode
 Codex writes, network and patch rules come from the user's own Codex
 configuration, and in `yolo` mode they are not restricted.
@@ -149,14 +149,14 @@ final behavior, not a pending gap. G07 is closed: in headless Claude a task is
 a foreground call (`run_in_background:false`), the same semantics as a native
 headless subagent; the A08 rows for interactive background delivery remain the
 historical record of what was delivered. The `enable`/`disable` subcommands
-were removed; `ax claude` and `ax codex` attach AgentX themselves, and the
+were removed; `ax claude` and `ax codex` attach SessionMan themselves, and the
 MCP catalog lists only MCP-callable presets.
 
 ## Roles and effort (backlog 004 G04, G09)
 
 IDs in this section are backlog 004 acceptance IDs (A05, A12, A13), not the
 001 scenario IDs in the matrix below. Recorded 2026-10-21 with Codex CLI 0.163.0
-and Pi CLI 0.84.4 through the built AgentX stdio MCP server (not a Claude host),
+and Pi CLI 0.84.4 through the built SessionMan stdio MCP server (not a Claude host),
 using the real `~/.codex` (chatgpt) and `~/.pi/agent` (oauth) logins. Command:
 `make smoke-mcp-roles-effort-live`. Evidence directory (with `evidence.json`
 and `server-debug.log`):
@@ -221,7 +221,7 @@ Historical for writes (superseded by backlog 015): isolation no longer binds a
 sandbox to the worktree; it only sets the working directory.
 
 Recorded 2026-10-21 with Codex CLI 0.163.0 (`gpt-5.6-luna`, `low`), Pi CLI
-0.84.4 (`openai-codex/gpt-5.6-luna`) and git 2.39.5, through the built AgentX
+0.84.4 (`openai-codex/gpt-5.6-luna`) and git 2.39.5, through the built SessionMan
 stdio MCP server (`make smoke-mcp-isolation-live`), not through a Claude host.
 The original checkout started dirty: a modified tracked file (`sub/tracked.txt`)
 and an untracked file (`draft.txt`). The smoke snapshots `git status
@@ -298,7 +298,7 @@ Current behavior under `isolation:"worktree"` (backlog 015):
 | Aspect | Codex | Claude | Pi |
 | --- | --- | --- | --- |
 | Working directory | Worktree path of the original working directory | Same | Same |
-| Writes, reads, commits | `normal`: whatever the user's Codex configuration allows (AgentX adds only `approval_policy="never"`); `yolo`: unrestricted (`danger-full-access`) | `normal`: Claude's own settings; `yolo`: unrestricted (`--dangerously-skip-permissions`) | Read-only tool allowlist; `yolo` rejected |
+| Writes, reads, commits | `normal`: whatever the user's Codex configuration allows (SessionMan adds only `approval_policy="never"`); `yolo`: unrestricted (`danger-full-access`) | `normal`: Claude's own settings; `yolo`: unrestricted (`--dangerously-skip-permissions`) | Read-only tool allowlist; `yolo` rejected |
 
 Historical (superseded by backlog 015): under the write-scope model the
 worktree was the only writable OS-sandbox root for `bounded-write`, a run
@@ -374,7 +374,7 @@ below are not relabeled as current discovery.
 task received a distinct public fictional fruit label. Subsequent SendMessage
 recalled it without the caller repeating it:
 
-| Backend | AgentX object | First-turn-only label returned after native resume |
+| Backend | SessionMan object | First-turn-only label returned after native resume |
 | --- | --- | --- |
 | Codex | `ax-bf742411ae2e3a7cca5b203b52bdd897` | `bb2f4fce-0cc4-44b4-8445-9a4331489d9f` |
 | Pi | `ax-ef216c867c92b6c0418cc5428112d907` | `76e84bd6-6640-4f75-ac8a-a16a21012aea` |
@@ -400,7 +400,7 @@ Debug logs contain native plans, stdin, stdout, stderr and errors.
 `make smoke-mcp-management` passed using the real Claude MCP configuration CLI
 under isolated HOME. It preserved an unrelated server, enabled twice, disabled
 and re-enabled without losing options, and rejected a conflicting user-owned
-AgentX entry without mutation. Evidence:
+SessionMan entry without mutation. Evidence:
 `/var/folders/34/yf5zv4k133l7nrksmz2flmw00000gn/T/agentx-mcp-management-aswCF4/`.
 This management test did not install a live entry in normal user settings.
 Native Claude startup may update its own ordinary caches.
@@ -428,9 +428,9 @@ checks are not a sandbox penetration test.
 | A02 Single call | Actual Claude creates each real backend object in one Agent call. Separate live foreground calls return terminal native reports, identities and hints. |
 | A03 Defaults | Historical (pre-002): configured-default execution. Since 002 there is no default preset; an omitted `model` is rejected (deterministic server test). |
 | A04 Constraints | Unknown/disabled choices and unsupported role/effort/isolation reject; capabilities/limits visible in generated tool description. |
-| A05 Fore/background | Live both engines false waits; real Claude true returns queued then the result file is written when the task ends. Deterministic omitted background returns queued immediately. |
+| A05 Fore/background | Live both engines false waits; real Claude true returns immediately and the report arrives as an event on the per-agent `sm wait` channel. Deterministic omitted background returns immediately. |
 | A06 Memory | Live distinct first-turn labels recalled via both native sessions, no caller history replay. |
-| A07 Busy message | Actual Claude's exact SendMessage results report each matching real worker running and message accepted/queued; both later recall their own context through result files. |
+| A07 Busy message | Actual Claude's exact SendMessage results report each matching real worker running and the message's delivery disposition; both later recall their own context through report events. |
 | A08 Parallel/addressing | Live different engines parallel with distinct contexts; deterministic same-combination fresh sessions, name reassignment and old-ID access. |
 | A09 Cancellation | Real ListAgents shows Pi survivor and Codex target running together; cancelling Codex terminates it while Pi later completes. Deterministic per-queued-task notifications and unknown/already-ended cases supplement this. |
 | A10 Disable/re-enable | Live isolated management preserves the presets collection (`make smoke-mcp-management`); deterministic new-work rejection and completion of accepted queue while disabled. |
@@ -448,7 +448,7 @@ see [Roles and effort](#roles-and-effort-backlog-004-g04-g09).
 
 | Requirements | Implementation / checks |
 | --- | --- |
-| U01–U05 | Persistent strict user configuration; management and exact-entry MCP registration; connection IDs/clientInfo/initialized status identify current host; completion is delivered as a result file. Live management/discovery. |
+| U01–U05 | Persistent strict user configuration; management and exact-entry MCP registration; connection IDs/clientInfo/initialized status identify current host; completion is delivered as a report event. Live management/discovery. |
 | U06 | Explicit default or model-required error; default/no-default regression. |
 | U07–U08 | Gate read on every new Agent/SendMessage; accepted queue may finish; TaskStop works disabled. |
 | U09 | Original option/model/native session pinned; configuration/session mismatch rejected. |
@@ -464,10 +464,10 @@ see [Roles and effort](#roles-and-effort-backlog-004-g04-g09).
 
 ## Explicit limits
 
-- Background delivery is a result file written once when the task ends; any
-  host can wait on it with a shell. No host UI gate or opt-in is involved.
+- Background delivery is a per-agent event stream consumed with `sm wait`; any
+  host can run it in a background shell. No host UI gate or opt-in is involved.
 - MCP has no delivery acknowledgement. Status identifies live initialized
-  connections; the result file's existence is the completion evidence.
+  connections; the report event's existence is the completion evidence.
 - General-purpose and declared roles (Codex and Pi), local native execution
   under each grant, worktree isolation, and explicit effort verified per turn
   (Codex levels; Pi `low`..`max`) are supported. Pi `off`/`minimal`, any effort
@@ -483,5 +483,5 @@ see [Roles and effort](#roles-and-effort-backlog-004-g04-g09).
 
 Reproduce deterministic/management checks with
 `make verify test-mcp-race smoke-mcp-management`. Paid native/host checks use
-`make smoke-mcp-live smoke-mcp-jobfile smoke-mcp-isolation-live`
+`make smoke-mcp-live smoke-mcp-duplex smoke-mcp-isolation-live`
 and the logins selected by each grant's auth source.

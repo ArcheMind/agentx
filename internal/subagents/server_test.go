@@ -77,18 +77,21 @@ func testServer(t *testing.T, r runtime.Runner) *Server {
 	t.Setenv("PI_CODING_AGENT_DIR", t.TempDir())
 	savePreset(t, home, reviewPreset)
 	s := &Server{Home: home, Cwd: t.TempDir(), Runner: r, ctx: context.Background(), out: io.Discard, agents: map[string]*ExternalSubagentState{}, names: map[string]string{}}
-	t.Cleanup(func() {
-		s.mu.Lock()
-		for _, a := range s.agents {
-			if a.Cancel != nil {
-				a.Cancel()
-			}
-		}
-		s.mu.Unlock()
-		s.workers.Wait()
-	})
+	s.SpawnDaemon = inProcessDaemon(s)
+	t.Cleanup(s.disposeAgents)
 	return s
 }
+
+// inProcessDaemon runs the per-agent daemon inside the test process over the real socket and
+// event files, so unit tests exercise the full duplex path without the ax binary.
+func inProcessDaemon(s *Server) func(dir string) error {
+	return func(dir string) error {
+		d := &Daemon{Home: s.Home, Dir: dir, Runner: s.Runner, Linger: 60 * time.Second}
+		go RunDaemon(d)
+		return nil
+	}
+}
+
 func callTest(t *testing.T, s *Server, name string, input any) string {
 	t.Helper()
 	data, _ := json.Marshal(input)
@@ -98,30 +101,58 @@ func callTest(t *testing.T, s *Server, name string, input any) string {
 	}
 	return text
 }
-func waitAgent(t *testing.T, s *Server, id string) {
+
+func allReports(dir string) []*Event {
+	var reports []*Event
+	after := 0
+	for {
+		event, err := NextEvent(dir, after)
+		if err != nil || event == nil {
+			return reports
+		}
+		if event.Kind == "report" {
+			reports = append(reports, event)
+		}
+		after = event.Seq
+	}
+}
+
+func countReports(dir string) int { return len(allReports(dir)) }
+
+// waitReports blocks until the agent has settled n times and returns the nth report event.
+func waitReports(t *testing.T, s *Server, id string, n int) *Event {
 	t.Helper()
 	s.mu.Lock()
-	a, _ := s.target(id)
-	j := a.Jobs[len(a.Jobs)-1]
+	a, err := s.target(id)
 	s.mu.Unlock()
-	select {
-	case <-j.Done:
-	case <-time.After(3 * time.Second):
-		t.Fatal("task timeout")
+	if err != nil {
+		t.Fatal(err)
 	}
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if reports := allReports(a.Dir); len(reports) >= n {
+			return reports[n-1]
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("agent %s did not reach %d reports", id, n)
+	return nil
 }
 
 func TestLifecycleQueueNamesResumeAndDisable(t *testing.T) {
 	r := &testRunner{started: make(chan int, 8), release: make(chan struct{})}
 	s := testServer(t, r)
 	text := callTest(t, s, "ExternalSubagent", map[string]any{"description": "remember", "prompt": "secret-token", "name": "reviewer", "model": "review"})
-	if !strings.Contains(text, "queued") {
+	if !strings.Contains(text, "running") || !strings.Contains(text, "sm wait") {
 		t.Fatal(text)
 	}
 	<-r.started
-	callTest(t, s, "SendExternalSubagentMessage", map[string]any{"to": "reviewer", "message": "recall"})
+	accepted := callTest(t, s, "SendExternalSubagentMessage", map[string]any{"to": "reviewer", "message": "recall"})
+	if !strings.Contains(accepted, "disposition: queued") {
+		t.Fatal(accepted)
+	}
 	close(r.release)
-	waitAgent(t, s, "reviewer")
+	waitReports(t, s, "reviewer", 2)
 	r.mu.Lock()
 	if len(r.plans) != 2 || !strings.Contains(strings.Join(r.plans[1].Args, " "), "resume") || r.prompts[1] != "recall" {
 		t.Fatalf("no native continuation: %#v", r.plans)
@@ -165,18 +196,48 @@ func TestCancelTargetsOnlyOneNativeExecution(t *testing.T) {
 	}
 	s.mu.Lock()
 	two, _ := s.target("two")
-	status := two.Status
 	s.mu.Unlock()
-	if status != "running" {
-		t.Fatal(status)
+	if state := s.runState(two); state != "running" {
+		t.Fatal(state)
 	}
 	close(r.release)
-	waitAgent(t, s, "two")
+	waitReports(t, s, "two", 1)
 	if _, err := s.call("StopExternalSubagent", []byte(`{"task_id":"missing"}`)); err == nil {
 		t.Fatal("unknown target accepted")
 	}
 	if text := callTest(t, s, "StopExternalSubagent", map[string]any{"task_id": "two"}); !strings.Contains(text, "already ended") {
 		t.Fatal(text)
+	}
+	r.mu.Lock()
+	if len(r.plans) != 2 {
+		t.Fatalf("cancelled queue reached the backend: %d plans", len(r.plans))
+	}
+	r.mu.Unlock()
+}
+
+func TestStopCancelsQueuedWorkWithOneCancelledReport(t *testing.T) {
+	r := &testRunner{started: make(chan int, 4), release: make(chan struct{})}
+	s := testServer(t, r)
+	callTest(t, s, "ExternalSubagent", map[string]any{"description": "first", "prompt": "first", "name": "worker", "model": "review"})
+	<-r.started
+	callTest(t, s, "SendExternalSubagentMessage", map[string]any{"to": "worker", "message": "second"})
+	text := callTest(t, s, "StopExternalSubagent", map[string]any{"task_id": "worker"})
+	if !strings.Contains(text, "Report status: cancelled.") {
+		t.Fatal(text)
+	}
+	s.mu.Lock()
+	a, _ := s.target("worker")
+	s.mu.Unlock()
+	if countReports(a.Dir) != 1 {
+		t.Fatal("expected exactly one cancelled report")
+	}
+	r.mu.Lock()
+	if len(r.plans) != 1 {
+		t.Fatal("queued message reached the backend after stop")
+	}
+	r.mu.Unlock()
+	if state := s.runState(a); state != "cancelled" {
+		t.Fatal(state)
 	}
 }
 
@@ -207,6 +268,27 @@ func TestAgentContractRejectsUnsupportedAndUnknownInputs(t *testing.T) {
 	if _, err := s.call("ExternalSubagent", []byte(`{"description":"x","prompt":"x","model":"review"}`)); err == nil || !strings.Contains(err.Error(), "reconnect") {
 		t.Fatal("deleted preset accepted", err)
 	}
+}
+
+func TestSendDeliveryValuesAreValidated(t *testing.T) {
+	r := &testRunner{started: make(chan int, 4), release: make(chan struct{})}
+	s := testServer(t, r)
+	callTest(t, s, "ExternalSubagent", map[string]any{"description": "x", "prompt": "x", "name": "d", "model": "review"})
+	<-r.started
+	if _, err := s.call("SendExternalSubagentMessage", []byte(`{"to":"d","message":"x","delivery":"later"}`)); err == nil || !strings.Contains(err.Error(), "delivery") {
+		t.Fatal(err)
+	}
+	queued := callTest(t, s, "SendExternalSubagentMessage", map[string]any{"to": "d", "message": "x", "delivery": "queued"})
+	if !strings.Contains(queued, "disposition: queued") {
+		t.Fatal(queued)
+	}
+	close(r.release)
+	waitReports(t, s, "d", 2)
+	started := callTest(t, s, "SendExternalSubagentMessage", map[string]any{"to": "d", "message": "warm", "delivery": "steer"})
+	if !strings.Contains(started, "disposition: started") {
+		t.Fatal(started)
+	}
+	waitReports(t, s, "d", 3)
 }
 
 func TestPresetFixesEffortAndStaleSnapshotIsReported(t *testing.T) {
@@ -267,8 +349,8 @@ func TestExternalFailureIsToolErrorAndCannotResume(t *testing.T) {
 	if !strings.Contains(string(data), `"isError":true`) || !strings.Contains(string(data), "model unavailable") {
 		t.Fatal(string(data))
 	}
-	if _, err := s.call("SendExternalSubagentMessage", []byte(`{"to":"broken","message":"retry"}`)); err == nil {
-		t.Fatal("failed session restarted")
+	if _, err := s.call("SendExternalSubagentMessage", []byte(`{"to":"broken","message":"retry"}`)); err == nil || !strings.Contains(err.Error(), "cannot resume after failed") {
+		t.Fatal("failed session restarted", err)
 	}
 }
 
@@ -276,7 +358,8 @@ func TestMissingPiSessionAndNativeIdentityChangeFail(t *testing.T) {
 	s := testServer(t, &testRunner{})
 	a := &ExternalSubagentState{ID: "pi", Session: filepath.Join(t.TempDir(), "missing.jsonl"), Option: presets.Preset{Name: "review", Agent: "pi", Model: "provider/model", Description: "test"}}
 	savePreset(t, s.Home, a.Option)
-	if _, _, err := s.execute(context.Background(), a, "continue"); err == nil || !strings.Contains(err.Error(), "original Pi session unavailable") {
+	d := &Daemon{Home: s.Home, Dir: t.TempDir(), Runner: s.Runner}
+	if _, _, err := d.executeRound(context.Background(), a, "continue"); err == nil || !strings.Contains(err.Error(), "original Pi session unavailable") {
 		t.Fatal(err)
 	}
 	a.NativeID = "original"
@@ -327,6 +410,23 @@ func TestConnectionStatusMatchesCurrentClientAndCleansUp(t *testing.T) {
 	}
 }
 
+func TestConnectionEOFStopsDaemonsAndDisposesAgentDirs(t *testing.T) {
+	r := &testRunner{started: make(chan int, 4), release: make(chan struct{})}
+	s := testServer(t, r)
+	callTest(t, s, "ExternalSubagent", map[string]any{"description": "x", "prompt": "x", "name": "doomed", "model": "review"})
+	<-r.started
+	s.mu.Lock()
+	a, _ := s.target("doomed")
+	s.mu.Unlock()
+	s.disposeAgents()
+	if _, err := os.Stat(a.Dir); !os.IsNotExist(err) {
+		t.Fatal("agent dir not disposed")
+	}
+	if _, err := controlCall(a.Socket, controlRequest{Op: "status"}); err == nil {
+		t.Fatal("daemon survived disposal")
+	}
+}
+
 func TestStrictConfigRejectsSilentDowngradesAndWrongFieldCase(t *testing.T) {
 	s := testServer(t, &testRunner{})
 	for _, raw := range []string{`{"Description":"x","prompt":"x","model":"review"}`, `{"description":"x","prompt":"x","name":"","model":"review"}`, `{"description":"x","prompt":"x","effort":"","model":"review"}`, `{"description":"x","prompt":"x","isolation":"worktree","model":"review"}`} {
@@ -337,53 +437,6 @@ func TestStrictConfigRejectsSilentDowngradesAndWrongFieldCase(t *testing.T) {
 	for _, o := range []presets.Preset{{Name: "a", Agent: "pi", Model: "provider/model", Description: "test", Effort: "minimal"}, {Name: "b", Agent: "pi", Model: "fuzzy-model", Description: "test"}, {Name: "c", Agent: "codex", Model: "model", Description: "test", Effort: "turbo"}} {
 		if err := o.Validate(); err == nil {
 			t.Fatal(o)
-		}
-	}
-}
-
-type lockedOutput struct {
-	mu sync.Mutex
-	bytes.Buffer
-}
-
-func (w *lockedOutput) Write(data []byte) (int, error) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	return w.Buffer.Write(data)
-}
-func (w *lockedOutput) text() string { w.mu.Lock(); defer w.mu.Unlock(); return w.Buffer.String() }
-
-func TestQueuedCancellationWritesResultFileForEveryAcceptedTask(t *testing.T) {
-	r := &testRunner{started: make(chan int, 4), release: make(chan struct{})}
-	s := testServer(t, r)
-	out := &lockedOutput{}
-	s.out = out
-	callTest(t, s, "ExternalSubagent", map[string]any{"description": "first", "prompt": "first", "name": "worker", "model": "review"})
-	<-r.started
-	callTest(t, s, "SendExternalSubagentMessage", map[string]any{"to": "worker", "message": "second"})
-	callTest(t, s, "StopExternalSubagent", map[string]any{"task_id": "worker"})
-	s.workers.Wait()
-	paths, _ := filepath.Glob(filepath.Join(s.Home, ".local", "state", "sessionman", "connections", s.connectionID, "jobs", "*.json"))
-	if len(paths) != 2 {
-		t.Fatalf("expected two terminal result files, got %v", paths)
-	}
-	for _, path := range paths {
-		data, err := os.ReadFile(path)
-		if err != nil {
-			t.Fatal(err)
-		}
-		var doc struct {
-			Content string            `json:"content"`
-			Meta    map[string]string `json:"meta"`
-		}
-		if err := json.Unmarshal(data, &doc); err != nil {
-			t.Fatal(err)
-		}
-		if doc.Meta["status"] != "cancelled" || doc.Meta["report_origin"] != "sessionman-subagent" || doc.Content == "" || !strings.HasSuffix(path, doc.Meta["task_id"]+".json") {
-			t.Fatal(string(data))
-		}
-		if _, ok := doc.Meta["source"]; ok {
-			t.Fatal("collides with host source attribute")
 		}
 	}
 }
@@ -407,10 +460,9 @@ func TestUnconfirmedCancellationDoesNotBecomeCancelled(t *testing.T) {
 	}
 	s.mu.Lock()
 	a, _ := s.target("ignores-cancel")
-	status := a.Status
 	s.mu.Unlock()
-	if status != "completed" {
-		t.Fatal(status)
+	if report := LastReport(a.Dir); report == nil || report.Status != "completed" {
+		t.Fatal(report)
 	}
 }
 
@@ -444,9 +496,17 @@ func TestExternalSubagentToolNamesAndUnchangedContract(t *testing.T) {
 	if len(props) != 8 || props["effort"] != nil || props["subagent_type"] != nil || !presets.Contains(props["model"].(map[string]any)["enum"].([]string), "review") {
 		t.Fatal("changed model selection contract")
 	}
-	for _, old := range []string{"Agent", "SendMessage", "TaskStop", "ListAgents"} {
+	send := tools[1].(map[string]any)
+	sendProps := send["inputSchema"].(map[string]any)["properties"].(map[string]any)
+	if sendProps["delivery"] == nil || !slices.Equal(sendProps["delivery"].(map[string]any)["enum"].([]string), []string{"steer", "queued"}) {
+		t.Fatal("delivery parameter missing", sendProps)
+	}
+	if desc := send["description"].(string); !strings.Contains(desc, "steered") || !strings.Contains(desc, "queued") || !strings.Contains(desc, "started") {
+		t.Fatal("send description lost dispositions", desc)
+	}
+	for _, old := range []string{"Agent", "SendMessage", "TaskStop", "ListAgents", "MessageHost"} {
 		if _, err := s.call(old, []byte(`{}`)); err == nil || !strings.Contains(err.Error(), "unknown tool") {
-			t.Fatalf("old name %s still accepted: %v", old, err)
+			t.Fatalf("name %s accepted without host context: %v", old, err)
 		}
 	}
 	if len(s.agents) != 0 {
@@ -464,8 +524,40 @@ func TestExternalSubagentToolNamesAndUnchangedContract(t *testing.T) {
 		t.Fatal("changed server identity or transport")
 	}
 	instructions := initialized["instructions"].(string)
-	if !strings.Contains(instructions, "ExternalSubagent") || strings.Contains(instructions, "Option ") || strings.Contains(instructions, "When asked") {
+	if !strings.Contains(instructions, "ExternalSubagent") || !strings.Contains(instructions, "sm wait") || strings.Contains(instructions, "Option ") || strings.Contains(instructions, "When asked") {
 		t.Fatal("inconsistent concept or answer coaching", instructions)
+	}
+}
+
+func TestMessageHostToolOnlyWithHostContext(t *testing.T) {
+	r := &testRunner{started: make(chan int, 4), release: make(chan struct{})}
+	s := testServer(t, r)
+	callTest(t, s, "ExternalSubagent", map[string]any{"description": "x", "prompt": "x", "name": "host", "model": "review"})
+	<-r.started
+	s.mu.Lock()
+	a, _ := s.target("host")
+	s.mu.Unlock()
+	child := testServer(t, &testRunner{})
+	child.hostAgentDir = a.Dir
+	tools := child.tools().(map[string]any)["tools"].([]any)
+	if len(tools) != 5 || tools[4].(map[string]any)["name"] != "MessageHost" {
+		t.Fatal("MessageHost not exposed to dispatched agent")
+	}
+	text := callTest(t, child, "MessageHost", map[string]any{"message": "early finding"})
+	if !strings.Contains(text, "event seq 1") {
+		t.Fatal(text)
+	}
+	event, err := NextEvent(a.Dir, 0)
+	if err != nil || event == nil || event.Kind != "message" || event.Message != "early finding" {
+		t.Fatalf("message event missing: %#v %v", event, err)
+	}
+	if state := s.runState(a); state != "running" {
+		t.Fatal("message event interrupted the run", state)
+	}
+	close(r.release)
+	waitReports(t, s, "host", 1)
+	if _, err := child.call("MessageHost", []byte(`{"message":""}`)); err == nil {
+		t.Fatal("empty message accepted")
 	}
 }
 
@@ -580,12 +672,12 @@ func TestToolMetadataFitsHostLimitInTheWorstCase(t *testing.T) {
 func TestDelegationInjectedIntoCodexPlan(t *testing.T) {
 	r := &testRunner{}
 	s := testServer(t, r)
-	s.axBinary = "/usr/local/bin/sm"
+	s.axBinary = "/usr/local/bin/ax"
 	callTest(t, s, "ExternalSubagent", map[string]any{"description": "x", "prompt": "x", "model": "review", "run_in_background": false})
 	r.mu.Lock()
 	args := strings.Join(r.plans[0].Args, " ")
 	r.mu.Unlock()
-	if !strings.Contains(args, `mcp_servers.sessionman.command="/usr/local/bin/sm"`) {
+	if !strings.Contains(args, `mcp_servers.sessionman.command="/usr/local/bin/ax"`) {
 		t.Fatal("delegation not injected", args)
 	}
 	if !strings.Contains(args, `mcp_servers.sessionman.args=["mcp","serve"]`) {
@@ -594,12 +686,15 @@ func TestDelegationInjectedIntoCodexPlan(t *testing.T) {
 	if !strings.Contains(args, `mcp_servers.sessionman.env.SM_DELEGATION_DEPTH="1"`) {
 		t.Fatal("depth not propagated", args)
 	}
+	if !strings.Contains(args, "mcp_servers.sessionman.env.SM_HOST_AGENT_DIR=") {
+		t.Fatal("host agent dir for MessageHost not propagated", args)
+	}
 }
 
 func TestDelegationStopsAtMaxDepth(t *testing.T) {
 	r := &testRunner{}
 	s := testServer(t, r)
-	s.axBinary = "/usr/local/bin/sm"
+	s.axBinary = "/usr/local/bin/ax"
 	s.delegationDepth = MaxDelegationDepth
 	callTest(t, s, "ExternalSubagent", map[string]any{"description": "x", "prompt": "x", "model": "review", "run_in_background": false})
 	r.mu.Lock()
@@ -665,7 +760,7 @@ func TestNestedInitializationIncludesDepthInfo(t *testing.T) {
 func TestDelegationPropagatesSubagentHome(t *testing.T) {
 	r := &testRunner{}
 	s := testServer(t, r)
-	s.axBinary = "/usr/local/bin/sm"
+	s.axBinary = "/usr/local/bin/ax"
 	t.Setenv("SM_SUBAGENT_HOME", "/custom/home")
 	callTest(t, s, "ExternalSubagent", map[string]any{"description": "x", "prompt": "x", "model": "review", "run_in_background": false})
 	r.mu.Lock()
@@ -679,7 +774,7 @@ func TestDelegationPropagatesSubagentHome(t *testing.T) {
 func TestDelegationNotInjectedForPi(t *testing.T) {
 	r := &testRunner{}
 	s := testServer(t, r)
-	s.axBinary = "/usr/local/bin/sm"
+	s.axBinary = "/usr/local/bin/ax"
 	piPreset := presets.Preset{Name: "pi-test", Agent: "pi", Model: "provider/test-model", Description: "pi test"}
 	savePreset(t, s.Home, piPreset)
 	// Pi execution will fail (mock returns Codex-format output); we only care about the plan args.
@@ -738,5 +833,38 @@ func TestPiStreamSystemMessageAndSettlement(t *testing.T) {
 	a.NativeID = ""
 	if _, _, err := parseOutput(a, head); err == nil {
 		t.Fatal("agent_end without agent_settled accepted")
+	}
+}
+
+func TestEventStreamSeqOrderingAndWaitHelpers(t *testing.T) {
+	dir := t.TempDir()
+	if LastEventSeq(dir) != 0 {
+		t.Fatal("empty dir has events")
+	}
+	if event, err := NextEvent(dir, 0); err != nil || event != nil {
+		t.Fatal(event, err)
+	}
+	if seq, err := AppendEvent(dir, Event{Kind: "message", Message: "one"}); err != nil || seq != 1 {
+		t.Fatal(seq, err)
+	}
+	if seq, err := AppendEvent(dir, Event{Kind: "report", Status: "completed", Report: "done"}); err != nil || seq != 2 {
+		t.Fatal(seq, err)
+	}
+	first, err := NextEvent(dir, 0)
+	if err != nil || first.Seq != 1 || first.Kind != "message" {
+		t.Fatal(first, err)
+	}
+	second, err := NextEvent(dir, 1)
+	if err != nil || second.Seq != 2 || second.Kind != "report" || second.Status != "completed" {
+		t.Fatal(second, err)
+	}
+	if report := LastReport(dir); report == nil || report.Seq != 2 {
+		t.Fatal(report)
+	}
+	if rendered := RenderEvent(first); !strings.Contains(rendered, "Untrusted ExternalSubagent message") {
+		t.Fatal(rendered)
+	}
+	if rendered := RenderEvent(second); !strings.Contains(rendered, "Report status: completed.") || !strings.Contains(rendered, "Untrusted ExternalSubagent report") {
+		t.Fatal(rendered)
 	}
 }

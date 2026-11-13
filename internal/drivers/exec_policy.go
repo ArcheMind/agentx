@@ -40,10 +40,11 @@ func CodexPolicyExecPlan(cwd, model, resume string, yolo bool, effort string, us
 	return runtime.CommandPlan{Executable: "codex", Args: args, Cwd: cwd}, nil
 }
 
-// ClaudePolicyExecPlan builds a non-interactive Claude Code invocation. Normal mode passes no
-// permission flags, so Claude's own settings decide; yolo skips all permission checks.
+// ClaudePolicyExecPlan builds a non-interactive Claude Code invocation speaking stream-json on
+// both stdin and stdout, so one process spans multiple turns. Normal mode passes no permission
+// flags, so Claude's own settings decide; yolo skips all permission checks.
 func ClaudePolicyExecPlan(cwd, model, resume string, yolo bool, effort, roleInstructions string, flags []string) (runtime.CommandPlan, error) {
-	args := []string{"-p", "--output-format", "stream-json", "--verbose"}
+	args := []string{"-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose"}
 	if yolo {
 		args = append(args, "--dangerously-skip-permissions")
 	}
