@@ -2,6 +2,7 @@
 .PHONY: smoke-mcp-management smoke-mcp-live smoke-mcp-duplex test-mcp-race test-mcp-syntax
 .PHONY: smoke-mcp-contract smoke-transcript-fidelity smoke-transcript-cross smoke-continue-live
 .PHONY: smoke-mcp-presets smoke-presets smoke-mcp-effort-live smoke-mcp-isolation-live
+.PHONY: check-update-platforms
 
 # Schema validation reuses the protocol module's ajv; empty when the module dir is unresolvable, and the smoke reports it skipped.
 AGENTX_PROTOCOL_DIR ?= $(shell go list -m -f '{{.Dir}}' github.com/ArcheMind/agentx-protocol 2>/dev/null)
@@ -15,6 +16,15 @@ check:
 
 test:
 	go test ./...
+
+check-update-platforms:
+	@task_dir=$$(mktemp -d); trap 'rm -rf "$$task_dir"' EXIT; \
+	for task_os in darwin linux windows; do \
+	  for task_arch in amd64 arm64; do \
+	    GOOS=$$task_os GOARCH=$$task_arch go test -c -o "$$task_dir/update-$$task_os-$$task_arch" ./internal/update || exit 1; \
+	    GOOS=$$task_os GOARCH=$$task_arch go build -trimpath -o "$$task_dir/sm-$$task_os-$$task_arch" ./cmd/sm || exit 1; \
+	  done; \
+	done
 
 test-subagents:
 	go test ./internal/subagents ./internal/app

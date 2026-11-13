@@ -149,7 +149,7 @@ Read-only research and code review. Not for large refactors.
 ### macOS and Linux
 
 ```bash
-curl -LsSf https://raw.githubusercontent.com/ArcheMind/sessionMan/main/install.sh | sh
+curl -fsSL https://sessionman.dev/install | sh
 ```
 
 Downloads the release artifact for the current platform, verifies its SHA-256 checksum, and installs `sm` to `$HOME/.local/bin`. Set `SM_INSTALL_DIR` for another directory.
@@ -161,6 +161,8 @@ go install github.com/ArcheMind/agentx/cmd/sm@latest
 ```
 
 Prebuilt archives for macOS, Linux, and Windows are on the [releases page](https://github.com/ArcheMind/sessionMan/releases). See [installation](docs/installation.md) for version pinning, verification, Windows setup, and source builds.
+
+Interactive bare `sm` checks for a stable update at most once a day and asks before installing it. A successful update exits without starting a session. Set `SM_NO_UPDATE_CHECK=1` to disable the check and prompt. Agent commands, MCP, and non-interactive invocations never check for updates.
 
 ## Supported agents
 
