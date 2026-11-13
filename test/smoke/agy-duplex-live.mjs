@@ -1,5 +1,5 @@
 import {spawn, execFileSync} from 'node:child_process'
-import {mkdtemp, mkdir, writeFile, readFile, appendFile, readdir, access, copyFile} from 'node:fs/promises'
+import {mkdtemp, mkdir, writeFile, readFile, appendFile, readdir, access, copyFile, realpath} from 'node:fs/promises'
 import {tmpdir} from 'node:os'
 import {randomUUID} from 'node:crypto'
 import {join, resolve} from 'node:path'
@@ -11,7 +11,7 @@ await mkdir(evidenceDir,{recursive:true})
 const log=async(name,data)=>appendFile(join(evidenceDir,name),(typeof data==='string'?data:JSON.stringify(data,null,2))+'\n')
 const binary=resolve(process.argv[2])
 const home=await mkdtemp(join(tmpdir(),'agentx-live-duplex-'))
-const work=await mkdtemp(join(tmpdir(),'agentx-live-cwd-'))
+const work=await realpath(await mkdtemp(join(tmpdir(),'agentx-live-cwd-')))
 const dir=join(home,'.sessionman','presets','duplex-live');await mkdir(dir,{recursive:true})
 await writeFile(join(dir,'PRESET.md'),`---\nagent: ${agent}\nmodel: ${process.env.SM_AGY_MODEL || 'gemini-3.8-flash-low'}\n---\n\nDuplex live acceptance. Follow instructions exactly; keep replies to one short line.\n`)
 const normalDir=join(home,'.sessionman','presets','duplex-normal');await mkdir(normalDir,{recursive:true})
