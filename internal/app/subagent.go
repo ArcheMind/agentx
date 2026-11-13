@@ -16,7 +16,7 @@ import (
 
 func (a App) execAgent(ctx context.Context, args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: ax agent exec <agy|codex|pi|gemini> [--model <model>] [--resume <session-id>] [--cwd <path>] [--dry-run] < prompt.txt")
+		return fmt.Errorf("usage: ax agent exec <agy|codex|pi> [--model <model>] [--resume <session-id>] [--cwd <path>] [--dry-run] < prompt.txt")
 	}
 	model, resume, cwd := "", "", ""
 	dryRun := false

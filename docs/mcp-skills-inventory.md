@@ -5,7 +5,7 @@
 ```
 Project
 
-/project/.agents/skills  codex · dsh · gemini · opencode · pi
+/project/.agents/skills  codex · dsh · opencode · pi
   alpha
 
 /project/.claude/skills  claude · opencode
@@ -30,12 +30,11 @@ Discovery only supplies configuration evidence. It does not probe servers or obs
 | agy | Project `.agents/skills`; User `.gemini/skills`, `.gemini/antigravity-cli/skills`, `.gemini/config/skills`; Project `.agents/plugins/*/skills` and User `.gemini/config/plugins/*/skills` | Project `.agents/mcp_config.json` and `.agents/plugins/*/mcp_config.json`; User `.gemini/config/mcp_config.json` and `.gemini/config/plugins/*/mcp_config.json` |
 | Claude | User/Project `.claude/skills` | User `.claude.json` (`mcpServers` and only current project's `projects[path].mcpServers`), Project `.mcp.json` |
 | Codex | User `CODEX_HOME/skills` and `.system`, User `.agents/skills`; Project `.codex/skills`, ancestor `.agents/skills`/`.codex/skills` through nearest repository boundary | User `CODEX_HOME/config.toml`, Project `.codex/config.toml`, cwd `config.toml`, ancestor `.codex/config.toml` through nearest repository boundary |
-| Gemini | User/Project `.gemini/skills` and `.agents/skills` | User/Project `.gemini/settings.json` (`mcpServers`) |
 | DSH | User `.dsh/skills` and `.agents/skills`; Project repository-root `.dsh/skills` and `.agents/skills`; direct skill bundles and flat Markdown | Discovery unsupported; this does not assert the host lacks MCP |
 | OpenCode | User `.config/opencode/skill(s)`, Project/ancestor `.opencode/skill(s)`, `.claude/skills`, `.agents/skills` | User `.config/opencode/opencode.json(c)`, Project/ancestor `opencode.json(c)` and `.opencode/opencode.json(c)` (`mcp`) |
 | Pi | User `.pi/agent/skills`, User `.agents/skills`, Project `.pi/skills`, ancestor `.agents/skills`; flat Markdown in Pi roots | Discovery unsupported; installed Pi documents no native MCP |
 
-User roots respect `CODEX_HOME`, `CLAUDE_CONFIG_DIR` (Skills root; MCP uses `<override>/.claude.json`), `DSH_HOME`, `DSH_AGENTS_HOME`, `PI_CODING_AGENT_DIR`, `XDG_CONFIG_HOME`, and `GEMINI_CLI_HOME`. Gemini's override replaces HOME for both `.gemini` and `.agents`. Project ancestors follow only the current chain and stop at the nearest `.git`; siblings are not scanned. Missing conventional roots are absent, readable empty roots are explicit, broken links and invalid skill bundle metadata are errors.
+User roots respect `CODEX_HOME`, `CLAUDE_CONFIG_DIR` (Skills root; MCP uses `<override>/.claude.json`), `DSH_HOME`, `DSH_AGENTS_HOME`, `PI_CODING_AGENT_DIR`, and `XDG_CONFIG_HOME`. Project ancestors follow only the current chain and stop at the nearest `.git`; siblings are not scanned. Missing conventional roots are absent, readable empty roots are explicit, broken links and invalid skill bundle metadata are errors.
 
 Custom settings skill paths, plugin/package/bundled runtime sources outside listed roots, managed policies, URLs, temporary CLI inputs, host trust/enable filtering, and running-session state are not comprehensively discovered. Each affected Agent has an explicit unsupported-discovery entry. These entries are capability boundaries, not empty resources. AX has no existing MCP common-store contract; no fictitious store or special emphasis is introduced. The Skill installation support matrix remains a separate installation contract.
 
@@ -43,7 +42,6 @@ Custom settings skill paths, plugin/package/bundled runtime sources outside list
 
 Read-only local source/document inspection on 2026-10-20 established the paths; it does not establish that a particular session loaded anything:
 
-- Gemini installed bundle `docs/cli/skills.md:35–55`, `docs/cli/settings.md:11–12`, `docs/tools/mcp-server.md:92–137`; `bundle/chunk-DHQ53XVO.js:243246,244301–244342` establishes HOME override semantics.
 - Pi installed `docs/skills.md:24–39`, `docs/environment-variables.md:81`, README no-MCP statement; running bundle's `collectAncestorAgentsSkillDirs` and `userAgentsSkillsDir` establish shared roots and project trust boundaries.
 - DSH installed `node_modules/@deepseek-ai/dsh-skill-filesystem/lib/index.js:78,155–177,556–582,799–808` establishes roots, direct bundle/flat shapes and repository boundary. Its MCP plugin discovery is not implemented here.
 - Codex local source `/Users/agent/work/codex/codex-rs/core-skills/src/loader.rs:310–415` and `config/src/loader/mod.rs:97–104`, `config_toml.rs:264–265` establish roots and MCP table format. Source evidence is not a claim about installed-version equivalence.

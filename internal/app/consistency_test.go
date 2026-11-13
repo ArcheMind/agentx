@@ -42,7 +42,7 @@ func TestCrossLayerConsistency(t *testing.T) {
 
 	for _, agent := range drivers.NewRegistry().All() {
 		assertCapability(t, agent, runtime.CapabilityLaunch, agent.Launch != nil)
-		assertCapability(t, agent, runtime.CapabilityModelList, agent.Models != nil && !isUnsupportedModels(agent.Models))
+		assertCapability(t, agent, runtime.CapabilityModelList, agent.Models != nil)
 		assertCapability(t, agent, runtime.CapabilityAuthLogin, agent.Auth != nil)
 		assertCapability(t, agent, runtime.CapabilityAuthStatus, agent.Auth != nil && agent.Auth.SupportsStatus())
 		assertCapability(t, agent, runtime.CapabilityAuthLogout, agent.Auth != nil && agent.Auth.SupportsLogout())
@@ -64,9 +64,4 @@ func assertCapability(t *testing.T, agent runtime.Agent, capability runtime.Capa
 	if found != supported {
 		t.Errorf("%s capability %s = %t, driver support = %t", agent.ID, capability, found, supported)
 	}
-}
-
-func isUnsupportedModels(driver runtime.ModelDriver) bool {
-	_, unsupported := driver.(drivers.UnsupportedModels)
-	return unsupported
 }

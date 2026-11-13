@@ -23,11 +23,7 @@ Use `ax agent install <agent> --dry-run` to inspect the native package installat
 
 ## A model list is unsupported
 
-Model selection and model discovery are separate capabilities. Claude Code and Gemini CLI accept model selection but do not expose a verified local catalog in the audited versions. AgentX reports that boundary instead of returning a static list that can become false.
-
-## Authentication status is unsupported
-
-Gemini CLI provides interactive authentication but no reliable agent-wide status source in the audited version. Use its native `/auth` flow.
+Model selection and model discovery are separate capabilities. Claude Code accepts model selection but does not expose a verified local catalog in the audited versions. AgentX reports that boundary instead of returning a static list that can become false.
 
 ## No sessions are listed
 

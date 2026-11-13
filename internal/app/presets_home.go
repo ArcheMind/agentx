@@ -13,7 +13,6 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/ArcheMind/agentx/internal/drivers"
 	"github.com/ArcheMind/agentx/internal/invariant"
 	"github.com/ArcheMind/agentx/internal/presets"
 	"github.com/ArcheMind/agentx/internal/runtime"
@@ -567,7 +566,7 @@ func (a App) askAgent(reader *bufio.Reader, draft *presetDraft) error {
 
 // listModels returns the agent's reliable model list, or a limitation sentence when there is none.
 func (a App) listModels(ctx context.Context, agent runtime.Agent) ([]runtime.Model, string) {
-	if _, unsupported := agent.Models.(drivers.UnsupportedModels); unsupported || !hasCapability(agent.Capabilities, runtime.CapabilityModelList) {
+	if !hasCapability(agent.Capabilities, runtime.CapabilityModelList) {
 		return nil, fmt.Sprintf("%s has no reliable local model list.", agent.Name)
 	}
 	if _, err := exec.LookPath(agent.Binary); err != nil {

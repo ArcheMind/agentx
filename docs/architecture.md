@@ -14,7 +14,6 @@ CLI grammar and output protocol
              +-- native session readers
              |     +-- Claude Code
              |     +-- Codex CLI
-             |     +-- Gemini CLI
              |     +-- OpenCode
              |     +-- Pi
              |
@@ -44,7 +43,7 @@ Resume never writes a source agent's database. SessionMan builds a bounded trans
 
 ## Agent Skills
 
-`internal/skills` discovers and validates standard `SKILL.md` directories. The canonical stores are `~/.agents/skills` for user scope and `.agents/skills` for project scope. Codex, Gemini, and Pi consume those directories directly. Claude receives a relative symbolic-link projection under the equivalent `.claude/skills` directory, preserving one physical source of truth. DeepSeek Harness is reported as unsupported; OpenCode remains outside this actively developed integration.
+`internal/skills` discovers and validates standard `SKILL.md` directories. The canonical stores are `~/.agents/skills` for user scope and `.agents/skills` for project scope. Codex and Pi consume those directories directly. Claude receives a relative symbolic-link projection under the equivalent `.claude/skills` directory, preserving one physical source of truth. DeepSeek Harness is reported as unsupported; OpenCode remains outside this actively developed integration.
 
 Installation accepts a local directory or a Git repository plus subpath, validates frontmatter and resource safety before writing, rejects conflicts, and stages the canonical copy before publishing it. Source provenance is stored outside the skill in the canonical store's `.sessionman-origins.yaml`; the skill itself remains the standard Agent Skills format.
 

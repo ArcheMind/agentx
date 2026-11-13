@@ -100,7 +100,7 @@ func TestOverviewTreeOutput(t *testing.T) {
 			Accounts: []runtime.AuthProvider{{ID: "codex", Method: "ChatGPT"}},
 			Models:   &modelsOverview{Status: modelsAvailable, Items: []overviewModel{{ID: "gpt-5.4", DisplayName: "GPT-5.4"}}},
 		},
-		{ID: "gemini", Name: "Gemini CLI", Status: overviewUnknown},
+		{ID: "opencode", Name: "OpenCode", Status: overviewUnknown},
 		{ID: "pi", Name: "Pi Coding Agent", Status: overviewNotInstalled},
 	}}
 	var stdout bytes.Buffer
@@ -112,7 +112,7 @@ func TestOverviewTreeOutput(t *testing.T) {
 		"│   ├── account: codex (ChatGPT)",
 		"│   └── models",
 		"│       └── gpt-5.4 — GPT-5.4",
-		"├── gemini (status unknown)",
+		"├── opencode (status unknown)",
 		"└── pi (not installed)",
 	} {
 		if !strings.Contains(stdout.String(), expected) {
@@ -154,7 +154,7 @@ func TestOverviewTreeColorIsOptional(t *testing.T) {
 			Models:   &modelsOverview{Status: modelsAvailable, Items: []overviewModel{{ID: "opus"}}},
 		},
 		{ID: "codex", Status: overviewNotLoggedIn},
-		{ID: "gemini", Status: overviewUnknown},
+		{ID: "opencode", Status: overviewUnknown},
 		{ID: "pi", Status: overviewNotInstalled},
 	}}
 	var colored bytes.Buffer
@@ -275,7 +275,7 @@ func TestOptionSelectorSupportsVimKeys(t *testing.T) {
 }
 
 func TestInteractiveSelectorUsesAgentThemeColors(t *testing.T) {
-	for _, provider := range []string{"claude", "codex", "dsh", "gemini", "opencode", "pi"} {
+	for _, provider := range []string{"agy", "claude", "codex", "dsh", "opencode", "pi"} {
 		t.Run(provider, func(t *testing.T) {
 			row := contentRow{
 				text: provider + " row", itemIndex: 0, kind: contentRowSession,

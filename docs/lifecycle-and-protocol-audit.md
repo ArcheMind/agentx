@@ -1,6 +1,6 @@
 # Lifecycle and protocol audit
 
-Verified on 2026-09-10 against the installed native CLIs and their bundled help/source: Claude Code 2.1.206, Codex CLI 0.154.0, DeepSeek Harness 0.1.5-rc.1, Gemini CLI 0.51.0, OpenCode 0.5.27, and Pi 0.84.4. Antigravity CLI 1.5.8 was added in November 2026 using native help, ACP and SQLite/protobuf evidence. This matrix defines SessionMan's advertised surface; newer native releases must be re-audited before capabilities change.
+Verified on 2026-09-10 against the installed native CLIs and their bundled help/source: Claude Code 2.1.206, Codex CLI 0.154.0, DeepSeek Harness 0.1.5-rc.1, OpenCode 0.5.27, and Pi 0.84.4. Antigravity CLI 1.5.8 was added in November 2026 using native help, ACP and SQLite/protobuf evidence. This matrix defines SessionMan's advertised surface; newer native releases must be re-audited before capabilities change.
 
 ## DeepSeek Harness
 
@@ -14,7 +14,6 @@ DSH's bundled DeepSeek catalog supplies model discovery. Its local credential pr
 | --- | --- | --- | --- | --- |
 | Claude | supported | supported, single account | supported | `claude auth` lists `login`, `status --json`, and `logout` |
 | Codex | supported | supported, single account | supported | `codex login`, `codex login status`, and `codex logout` |
-| Gemini | supported, interactive | unsupported | supported, interactive | interactive `/auth` and `/logout`; no Agent-wide status command in CLI help |
 | OpenCode | supported | supported, provider list | supported | `opencode auth` lists `login`, `list`, and `logout` |
 | agy | supported, `agy acp --login` | unsupported | supported, interactive `/logout` | Native CLI 1.5.8; authentication stays in the OS keyring; no authoritative native status query |
 | Pi | supported, SDK OAuth provider selector | supported, stored-provider list | supported, interactive | Pi SDK `ModelRuntime.login()` writes native `auth.json`; interactive `/logout` remains native |
@@ -31,7 +30,7 @@ AgentX owns only locate and install planning. Each Agent registry entry owns its
 
 ## Sessions
 
-The cross-Agent service supports `list`, `show`, `resume`, `export`, `import` and `continue`. Native session lifecycles are not uniform: Gemini advertises project-scoped list/resume/delete, while Codex advertises resume/fork/archive/unarchive/delete. AgentX does not normalize destructive operations that lack a shared workflow or semantics. The source dimension is consistently named `--source` on session source filters.
+The cross-Agent service supports `list`, `show`, `resume`, `export`, `import` and `continue`. Native session lifecycles are not uniform: Codex advertises resume/fork/archive/unarchive/delete. AgentX does not normalize destructive operations that lack a shared workflow or semantics. The source dimension is consistently named `--source` on session source filters.
 
 ## CLI grammar
 

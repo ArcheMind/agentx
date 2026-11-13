@@ -20,7 +20,6 @@ var agentColors = map[string]string{
 	"claude":   "\x1b[38;5;208m",
 	"codex":    "\x1b[38;5;42m",
 	"dsh":      "\x1b[38;5;33m",
-	"gemini":   "\x1b[38;5;45m",
 	"opencode": "\x1b[38;5;220m",
 	"pi":       "\x1b[38;5;201m",
 }

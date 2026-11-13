@@ -35,7 +35,6 @@ New session · Presets
 Recent sessions · Current workspace
   claude    Sep 11 05:08 (18m)      Design the interactive session-resume experience for the…
   codex     Sep 11 04:42 (47m)      Refactor the OAuth callback and tighten token refresh ha…
-  gemini    Sep 11 04:08 (1h 03m)   Map the runtime boundaries before splitting the command …
   opencode  Sep 11 03:50 (1h 10m)   Polish the session list layout and status copy
   pi        Sep 11 03:24 (44m)      Reduce duplicate state in the keyboard navigation handler
 
@@ -43,7 +42,6 @@ Recent sessions · Global
   codex     Sep 10 12:20 (1h 15m)   ../data-pipeline      Fix the streaming response parser …
   claude    Sep 10 10:48 (33m)      ../api-gateway        Review the production timeout inci…
   opencode  Sep 10 10:20 (4h 00m)   ../analytics          Investigate the slow analytics que…
-  gemini    Sep 10 09:40 (2h 30m)   ../mobile-app         Prepare the mobile release checkli…
   pi        Sep 10 06:15 (55m)      ../infrastructure     Add a preflight check before the p…
 
 ↑/↓ or j/k select · Enter open · e export session · m manage presets · q/Esc cancel
@@ -68,7 +66,6 @@ Choose an agent:
 > agy
   claude
   codex
-  gemini
   opencode
   pi
 ```
@@ -117,8 +114,8 @@ Exact inputs, limits, and acceptance evidence: [docs/subagents.md](docs/subagent
 ## Configure once, every agent follows
 
 ```text
-~/.agents/skills/<name>/SKILL.md      codex · dsh · gemini · opencode · pi, Claude via .claude/skills
-~/.agents/hooks.json                  claude · codex · gemini · pi; agy SessionStart/Stop
+~/.agents/skills/<name>/SKILL.md      codex · dsh · opencode · pi, Claude via .claude/skills
+~/.agents/hooks.json                  claude · codex · pi; agy SessionStart/Stop
 ~/.sessionman/presets/<name>/PRESET.md  sm · the ExternalSubagent tools above
 ```
 
@@ -143,7 +140,7 @@ effort: low
 Read-only research and code review. Not for large refactors.
 ```
 
-`sm` shows `+ Create preset…` on the home screen and `m` edits the highlighted one. Native config stays native: SessionMan never merges into your Claude, Codex, Gemini, or Pi configuration; hook and skill bridges remain visible to native discovery and trust review. For agy, SessionMan owns a marked plugin under `~/.gemini/config/plugins/sessionman`; it preserves unrelated native configuration.
+`sm` shows `+ Create preset…` on the home screen and `m` edits the highlighted one. Native config stays native: SessionMan never merges into your Claude, Codex, or Pi configuration; hook and skill bridges remain visible to native discovery and trust review. For agy, SessionMan owns a marked plugin under `~/.gemini/config/plugins/sessionman`; it preserves unrelated native configuration.
 
 ## Install
 
@@ -175,7 +172,6 @@ Interactive bare `sm` checks for a stable update at most once a day and asks bef
 | Claude Code | yes | yes | yes, via `.claude/skills` | yes |
 | Codex CLI | yes | yes | yes | yes |
 | DeepSeek Harness | — | — | yes | — |
-| Gemini CLI | yes | yes | yes | yes |
 | OpenCode | yes | yes | yes | — |
 | Pi | yes | yes | yes | yes |
 

@@ -39,9 +39,9 @@ effort: low
 Read-only research and code review. Not for large refactors.
 ```
 
-- `agent`: `agy`, `claude`, `codex`, `gemini`, `opencode` or `pi`.
+- `agent`: `agy`, `claude`, `codex`, `opencode` or `pi`.
   Native ExternalSubagent adapters exist for `agy`, `claude`, `codex` and `pi`.
-  Gemini and OpenCode presets support ordinary launch; they have no native
+  OpenCode presets support ordinary launch; they have no native
   ExternalSubagent execution adapter.
 - `model`: the exact native model ID, passed unchanged to `--model`. Pi needs
   `provider/model`. No fallback model is ever used.
@@ -51,7 +51,7 @@ Read-only research and code review. Not for large refactors.
   lists for the chosen model; a manually entered model shows them as
   unverified); Pi `low`, `medium`, `high`, `xhigh`, `max` (`--thinking`);
   agy and Claude `low`, `medium`, `high`, `xhigh`, `max` (`--effort`; per-model support
-  unverified). Gemini and OpenCode accept no explicit effort. Pi `off` and
+  unverified). OpenCode accepts no explicit effort. Pi `off` and
   `minimal` are rejected: for Codex-backed models Pi sends no effort for `off`
   (the server default, medium for gpt-5.6-luna, applies) and sends `low` for
   `minimal`. ExternalSubagent reports compare explicit effort with available
@@ -453,7 +453,7 @@ that describe verify-and-fail behavior are not the current contract.
 Pi provides no OS sandbox through this integration.
 Native project context (for example AGENTS.md) still applies. Credentials
 and policies are not inherited from Claude. Other
-agents (including Gemini) remain available for ordinary SessionMan launch/exec but
+agents remain available for ordinary SessionMan launch/exec but
 are not delivered MCP combinations in this integration.
 
 Reports identify preset, execution agent, actual selected model, effort, mode, discovered auth, ExternalSubagent/task

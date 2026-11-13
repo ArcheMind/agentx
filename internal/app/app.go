@@ -226,11 +226,9 @@ func (a App) agentShow(ctx context.Context, verb string, args []string) error {
 		return a.models(ctx, args)
 	}
 
-	if agent.Models != nil {
-		if _, unsupported := agent.Models.(drivers.UnsupportedModels); !unsupported {
-			if models, modelErr := agent.Models.ListModels(ctx, a.Runner); modelErr == nil {
-				result.Models = models
-			}
+	if hasCapability(agent.Capabilities, runtime.CapabilityModelList) {
+		if models, modelErr := agent.Models.ListModels(ctx, a.Runner); modelErr == nil {
+			result.Models = models
 		}
 	}
 
@@ -973,7 +971,7 @@ func (a App) resumeSession(ctx context.Context, agent runtime.Agent, detail sess
 }
 
 func (a App) chooseModel(ctx context.Context, reader *bufio.Reader, agent runtime.Agent) (string, error) {
-	if _, unsupported := agent.Models.(drivers.UnsupportedModels); unsupported || !hasCapability(agent.Capabilities, runtime.CapabilityModelSelect) {
+	if !hasCapability(agent.Capabilities, runtime.CapabilityModelList) {
 		_, err := a.chooseOptions(reader, "Choose a model:", []string{"Native default"})
 		return "", err
 	}
@@ -1049,7 +1047,7 @@ Usage:
   sm [--json|--yaml] preset <list|show> [args...]
   sm wait <agent-id> --after <seq>
 
-  sm agent exec <agy|codex|pi|gemini> [--model <model>] [--resume <session-id>] [--cwd <path>] [--dry-run] < prompt.txt
+  sm agent exec <agy|codex|pi> [--model <model>] [--resume <session-id>] [--cwd <path>] [--dry-run] < prompt.txt
   sm --json session continue <agy|claude|codex|pi> [--model <model>] [--mcp-config <file>] [--mode yolo] < transcript.json
 
   sm version
@@ -1072,14 +1070,14 @@ resumes an exported transcript interactively.
 Presets live in ~/.sessionman/presets/<name>/PRESET.md and are shared with MCP
 ExternalSubagents. The sm <agent> shortcut launches an installed agent directly.
 
-Agents: agy, claude, codex, dsh, gemini, opencode, pi
+Agents: agy, claude, codex, dsh, opencode, pi
 
 Set SM_LOG=debug or pass --verbose before the command to log raw external input,
 output, and errors as JSON on stderr.
 `)
 }
 
-var convertProviders = []string{"agy", "claude", "codex", "gemini", "opencode", "pi"}
+var convertProviders = []string{"agy", "claude", "codex", "opencode", "pi"}
 
 func isConvertProvider(id string) bool {
 	for _, p := range convertProviders {
@@ -1126,10 +1124,6 @@ func (a App) convertTo(provider string) error {
 		return writeJSONL(a.Stdout, sessions.SerializeCodex(detail))
 	case "pi":
 		return writeJSONL(a.Stdout, sessions.SerializePi(detail))
-	case "gemini":
-		encoder := json.NewEncoder(a.Stdout)
-		encoder.SetIndent("", "  ")
-		return encoder.Encode(sessions.SerializeGemini(detail))
 	case "opencode":
 		return fmt.Errorf("opencode requires a directory target; use session resume instead")
 	}
@@ -1149,26 +1143,17 @@ func (a App) convertFrom(provider string) error {
 		return a.convertFromAgy(data)
 	}
 	var records []map[string]any
-	switch provider {
-	case "gemini":
-		var single map[string]any
-		if err := json.Unmarshal(data, &single); err != nil {
-			return fmt.Errorf("parse %s JSON from stdin: %w", provider, err)
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
 		}
-		records = []map[string]any{single}
-	default:
-		lines := strings.Split(strings.TrimSpace(string(data)), "\n")
-		for _, line := range lines {
-			line = strings.TrimSpace(line)
-			if line == "" {
-				continue
-			}
-			var record map[string]any
-			if err := json.Unmarshal([]byte(line), &record); err != nil {
-				return fmt.Errorf("parse %s JSONL from stdin: %w", provider, err)
-			}
-			records = append(records, record)
+		var record map[string]any
+		if err := json.Unmarshal([]byte(line), &record); err != nil {
+			return fmt.Errorf("parse %s JSONL from stdin: %w", provider, err)
 		}
+		records = append(records, record)
 	}
 
 	detail, ok := sessions.ParseRecords(provider, records)

@@ -14,7 +14,7 @@ Set BorderRadius 10
 Set CursorBlink false
 
 Hide
-Type "go build -o /tmp/sm-vhs-demo ./docs/demo"
+Type "make demo-build"
 Enter
 Type `export PATH="$PWD/docs/demo/bin:/usr/bin:/bin"`
 Enter
