@@ -22,6 +22,8 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+      - name: Install Codex for native config discovery smoke
+        run: npm install --global @openai/codex@0.164.0
       - name: Verify
         run: make verify
       - name: Release
