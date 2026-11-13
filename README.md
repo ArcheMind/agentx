@@ -65,7 +65,8 @@ Press Enter on a session, then choose who continues it:
 
 ```text
 Choose an agent:
-> claude
+> agy
+  claude
   codex
   gemini
   opencode
@@ -80,7 +81,7 @@ The same hand-off without the screen:
 sm session resume codex <claude-session-id> --source claude
 ```
 
-SessionMan converts the session into the target agent's native transcript format and starts its native resume (`claude --resume`, `codex resume`, `pi --session`, …). Source sessions are only read, never modified.
+SessionMan converts the session into the target agent's native transcript format and starts its native resume (`agy --conversation`, `claude --resume`, `codex resume`, `pi --session`, …). Source sessions are only read, never modified.
 
 ## Move it to another machine
 
@@ -117,7 +118,7 @@ Exact inputs, limits, and acceptance evidence: [docs/subagents.md](docs/subagent
 
 ```text
 ~/.agents/skills/<name>/SKILL.md      codex · dsh · gemini · opencode · pi, Claude via .claude/skills
-~/.agents/hooks.json                  claude · codex · gemini · pi
+~/.agents/hooks.json                  claude · codex · gemini · pi; agy SessionStart/Stop
 ~/.sessionman/presets/<name>/PRESET.md  sm · the ExternalSubagent tools above
 ```
 
@@ -142,7 +143,7 @@ effort: low
 Read-only research and code review. Not for large refactors.
 ```
 
-`sm` shows `+ Create preset…` on the home screen and `m` edits the highlighted one. Native config stays native: SessionMan never merges into your Claude, Codex, Gemini, or Pi configuration; hook and skill bridges are isolated and visible to the agent's own trust review.
+`sm` shows `+ Create preset…` on the home screen and `m` edits the highlighted one. Native config stays native: SessionMan never merges into your Claude, Codex, Gemini, or Pi configuration; hook and skill bridges remain visible to native discovery and trust review. For agy, SessionMan owns a marked plugin under `~/.gemini/config/plugins/sessionman`; it preserves unrelated native configuration.
 
 ## Install
 
@@ -170,12 +171,15 @@ Interactive bare `sm` checks for a stable update at most once a day and asks bef
 
 | Agent | Sessions | Continue in it | Reads `~/.agents/skills` | Portable hooks |
 | --- | --- | --- | --- | --- |
+| Antigravity CLI (`agy`) | yes | yes | project roots; user install projection | `SessionStart`, `Stop` |
 | Claude Code | yes | yes | yes, via `.claude/skills` | yes |
 | Codex CLI | yes | yes | yes | yes |
 | DeepSeek Harness | — | — | yes | — |
 | Gemini CLI | yes | yes | yes | yes |
 | OpenCode | yes | yes | yes | — |
 | Pi | yes | yes | yes | yes |
+
+Antigravity CLI 1.5.8 supports native SQLite sessions, model discovery, presets and ACP ExternalSubagents. Its ordinary exec/continue path rejects temporary `--mcp-config` and `--append-system-prompt`; ACP supports session-scoped MCP. Provider effort is unverified. Its owned plugin is also discovered by plain `agy`, whose MCP bridge requires launching through `sm` to bind the workspace. See [agy acceptance and boundaries](docs/agy-acceptance.md).
 
 DeepSeek Harness has no verified session source, so it is not a session or resume target. SessionMan can still install, authenticate, and launch it. OpenCode and DeepSeek Harness are not part of the actively developed skill and hook integrations. Exact native versions and evidence: [lifecycle and protocol audit](docs/lifecycle-and-protocol-audit.md).
 

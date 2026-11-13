@@ -39,10 +39,10 @@ effort: low
 Read-only research and code review. Not for large refactors.
 ```
 
-- `agent`: `claude`, `codex`, `gemini`, `opencode` or `pi`. Only `codex` and
-  `pi` can run as MCP `ExternalSubagent`. Other presets appear in `sm` only;
-  the MCP catalog, tool index and `status` leave them out, and a call naming
-  one is rejected as `interactive launch only`.
+- `agent`: `agy`, `claude`, `codex`, `gemini`, `opencode` or `pi`.
+  Native ExternalSubagent adapters exist for `agy`, `claude`, `codex` and `pi`.
+  Gemini and OpenCode presets support ordinary launch; they have no native
+  ExternalSubagent execution adapter.
 - `model`: the exact native model ID, passed unchanged to `--model`. Pi needs
   `provider/model`. No fallback model is ever used.
 - `effort` (optional): omitted means the agent's native default and is shown as
@@ -50,12 +50,12 @@ Read-only research and code review. Not for large refactors.
   `high`, `xhigh`, `max`, `ultra` (the creation flow offers only the levels Codex
   lists for the chosen model; a manually entered model shows them as
   unverified); Pi `low`, `medium`, `high`, `xhigh`, `max` (`--thinking`);
-  Claude `low`, `medium`, `high`, `xhigh`, `max` (`--effort`; per-model support
+  agy and Claude `low`, `medium`, `high`, `xhigh`, `max` (`--effort`; per-model support
   unverified). Gemini and OpenCode accept no explicit effort. Pi `off` and
   `minimal` are rejected: for Codex-backed models Pi sends no effort for `off`
   (the server default, medium for gpt-5.6-luna, applies) and sends `low` for
-  `minimal`. As an ExternalSubagent, every turn with an explicit effort is
-  checked against native evidence (see
+  `minimal`. ExternalSubagent reports compare explicit effort with available
+  native evidence; agy provider effort remains unverified (see
   [Effort verification](#effort-verification)); interactive launch passes the
   level but cannot check it.
 - The description is the Markdown body. `name` and `description` keys in the
@@ -150,10 +150,10 @@ Permissions belong to the native agent, not to SessionMan. Each `ExternalSubagen
 call picks one `mode`, fixed for that ExternalSubagent:
 `SendExternalSubagentMessage` and queued work reuse it and cannot change it.
 
-| `mode` | Claude | Codex | Pi |
-| --- | --- | --- | --- |
-| `normal` | No permission flags: Claude's own settings decide | Native approval and sandbox configuration | Native tools with `--no-approve` |
-| `yolo` | `--dangerously-skip-permissions` | Thread `sandbox: "danger-full-access"` and `approvalPolicy: "never"` | Rejected before any work starts |
+| `mode` | Claude | Codex | Pi | agy |
+| --- | --- | --- | --- | --- |
+| `normal` | No permission flags: Claude's own settings decide | Native approval and sandbox configuration | Native tools with `--no-approve` | Native configuration, no bypass flag |
+| `yolo` | `--dangerously-skip-permissions` | Thread `sandbox: "danger-full-access"` and `approvalPolicy: "never"` | Rejected before any work starts | `--dangerously-skip-permissions` |
 
 - `normal` uses the native agent's configuration. Codex app-server receives no
   approval or sandbox override; approval requests that need a human are denied
@@ -171,6 +171,10 @@ and cannot honor the exec-only `--ignore-user-config` behavior. There is no
 exec fallback. Pi `user_config: false` disables skills and prompt templates.
 
 ### Authentication
+
+agy uses native keyring credential resolution without an identity override. It
+does not use the Codex/Pi file-source discovery described below, and has no
+authoritative account-status query.
 
 Authentication is discovered, not configured. Before every turn SessionMan selects
 the native agent's own credential directory, which is `CODEX_HOME` or
@@ -275,8 +279,8 @@ submission. `SendExternalSubagentMessage` accepts text plus an optional
 disposition — `steered` (read inside the running turn at the next safe point),
 `queued` (held until the current run settles, then a new round) or `started`
 (agent was idle; new round began, warm or cold resume) — never a claim of
-completion. Claude uses stream-json, Codex uses app-server and Pi uses RPC;
-all three keep a native process alive across rounds. After an idle process has
+completion. Claude uses stream-json, Codex uses app-server, Pi uses RPC and
+agy uses ACP v1; all four keep a native process alive across rounds. After an idle process has
 exited, continuation resumes the exact native session. Codex steering that races
 with turn completion is queued; other native errors remain errors.
 
@@ -365,7 +369,7 @@ stale metadata. The branch stays until you delete it.
 
 ## Nested delegation
 
-Dispatched Claude and Codex agents receive SessionMan as an MCP server. Pi
+Dispatched Claude, Codex and agy agents receive SessionMan as an MCP server. Pi
 receives the same delegation tools through its extension bridge.
 
 - **Depth limit.** `SM_DELEGATION_DEPTH` starts at 0 for top-level hosts and is
@@ -388,7 +392,23 @@ receives the same delegation tools through its extension bridge.
 | --- | --- | --- | --- |
 | Claude | `normal`: no permission flags (Claude's own settings); `yolo`: `--dangerously-skip-permissions`; native auth | Exact session UUID (`--resume`) | Preset effort via `--effort`, or native default |
 | Codex | Native app-server thread policy in `normal`; `yolo` sets `approvalPolicy: "never"` and `sandbox: "danger-full-access"`; discovered `CODEX_HOME`; `user_config: false` rejected | Warm thread, or exact UUID via `thread/resume` | Preset effort via app-server config; each turn checked against `response.completed` telemetry |
+| agy | Native configuration in `normal`; `yolo`: `--dangerously-skip-permissions`; native keyring authentication | Persistent ACP process, or exact UUID via `session/load` | `thought_level` request; provider effort unverified |
 | Pi | Native tools with `--no-approve`; `yolo` rejected; discovered `PI_CODING_AGENT_DIR`; delegation bridge and effort observer injected when applicable | Persistent RPC process and exact dedicated session file | Preset `--thinking`; each turn checked against the session thinking level and provider requests |
+
+### agy ordinary CLI and ACP
+
+`sm agent exec agy` wraps stdin in native stream-json input; `session continue`
+imports a fresh native SQLite session and resumes its UUID using the same
+stream-json path. `normal` adds no native mode or permission override. `yolo`
+uses `--dangerously-skip-permissions`. Ordinary exec/continue does not support
+temporary `--mcp-config` or `--append-system-prompt`; these requests fail
+explicitly. ACP ExternalSubagents inject session-scoped `mcpServers` instead.
+
+Top-level launch/exec/continue prepares the owned global plugin. Plain `agy`
+also discovers it, but its MCP bridge requires the workspace supplied by `sm`.
+The hook projection supports only `SessionStart` and `Stop`; unsupported
+`SessionEnd` and `UserPromptSubmit` produce warnings. `PreInvocation` is not
+used as a substitute for user prompt submission. See [agy acceptance](agy-acceptance.md).
 
 ### Effort verification
 

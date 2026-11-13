@@ -57,4 +57,20 @@ hook bridge must document the narrower behavior it actually supports.
 
 ## Evidence
 
-Final integrated acceptance is pending. No live pass is claimed here yet.
+Final integrated acceptance is pending. The app/extensions owner reported
+`make smoke-agy-extensions-live` passing on 2026-11-13. Evidence:
+`/private/var/folders/34/yf5zv4k133l7nrksmz2flmw00000gn/T/sm-agy-extensions-live-z5issB`.
+
+That run exercised real `sm agent exec agy` with NDJSON stdin; the agent
+recalled a randomized `SessionStart` injection without tools. Real
+`session continue` cold and warm paths used new native UUIDs, preserved a
+prior secret and connected MCP in the actual project workspace. Each of three
+sessions fired `SessionStart` and `Stop` once. Unsupported events warned and
+did not run. Native project portable hooks were not executed twice. The test
+restored its owned global plugin afterward.
+
+This owner report does not establish final independent full-suite acceptance.
+Global owned-plugin and temporary ACP MCP coexistence/deduplication remains
+unverified. Windows quoting and installer selection have platform unit
+coverage; no real Windows execution is claimed. Native provider request effort
+was not captured, so it remains unverified regardless of task success.

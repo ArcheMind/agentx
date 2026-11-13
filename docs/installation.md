@@ -79,7 +79,7 @@ Use `make verify` when developing or validating a checkout.
 
 ## Native agent requirements
 
-SessionMan itself has no Node.js runtime dependency. `sm agent install`, however, delegates to the verified npm package for each supported native agent, so that command requires `npm` on `PATH`.
+SessionMan itself has no Node.js runtime dependency. Most `sm agent install` drivers delegate to verified npm packages and require `npm` on `PATH`. `sm agent install agy` uses the official Antigravity installer: Bash and curl on macOS/Linux, PowerShell on Windows. agy version pinning is unsupported by its native installer. Windows command construction is covered by platform tests; a real Windows installer run is not claimed.
 
 Already-installed agents continue to work with their own requirements. Run `sm agent list` to see what SessionMan can locate.
 
@@ -91,4 +91,24 @@ Remove the single executable from the directory where it was installed:
 rm "$HOME/.local/bin/sm"
 ```
 
-SessionMan creates no configuration, credential, or session store to clean up.
+Native credentials and sessions remain in their native stores. If you used agy through SessionMan, its marked plugin may remain at `~/.gemini/config/plugins/sessionman`, and user skill installations may have links under `~/.gemini/config/skills`. Remove only SessionMan-owned artifacts you no longer use.
+
+## Antigravity CLI setup
+
+```bash
+sm agent install agy --dry-run
+sm agent install agy
+sm auth login agy
+sm agent models agy
+sm agy
+```
+
+Login uses `agy acp --login`; logout opens the native client with the `/logout`
+instruction. SessionMan does not read keyring secrets or infer an account status.
+Models are the exact IDs returned by the account's `agy models` command.
+
+Launching through `sm` prepares the marked native plugin and passes the project
+workspace to its MCP bridge. The native plugin loader also sees this global
+plugin in plain `agy`; without the workspace supplied by SessionMan, the bridge
+returns an explicit instruction to start through `sm`, rather than running in
+the plugin directory. Existing unmarked plugin directories are not overwritten.

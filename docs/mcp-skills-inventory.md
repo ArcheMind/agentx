@@ -27,6 +27,7 @@ Discovery only supplies configuration evidence. It does not probe servers or obs
 
 | Agent | Skills | MCP |
 | --- | --- | --- |
+| agy | Project `.agents/skills`; User `.gemini/skills`, `.gemini/antigravity-cli/skills`, `.gemini/config/skills`; Project `.agents/plugins/*/skills` and User `.gemini/config/plugins/*/skills` | Project `.agents/mcp_config.json` and `.agents/plugins/*/mcp_config.json`; User `.gemini/config/mcp_config.json` and `.gemini/config/plugins/*/mcp_config.json` |
 | Claude | User/Project `.claude/skills` | User `.claude.json` (`mcpServers` and only current project's `projects[path].mcpServers`), Project `.mcp.json` |
 | Codex | User `CODEX_HOME/skills` and `.system`, User `.agents/skills`; Project `.codex/skills`, ancestor `.agents/skills`/`.codex/skills` through nearest repository boundary | User `CODEX_HOME/config.toml`, Project `.codex/config.toml`, cwd `config.toml`, ancestor `.codex/config.toml` through nearest repository boundary |
 | Gemini | User/Project `.gemini/skills` and `.agents/skills` | User/Project `.gemini/settings.json` (`mcpServers`) |
@@ -68,3 +69,16 @@ The repository's existing `make fmt check test audit` entry points passed on the
 | F10 | Skills/MCP source tests | Pass: other project's fixtures excluded, User kept separate |
 
 Additional regressions: `skills.TestFlatAndNestedAgentApplicability`, `skills.TestInventoryNativeFilesystemRoots`, `skills.TestUserOverrides`, `skills.TestPiOverrideFlatAndInvalidMetadata`, `skills.TestNestedProjectionIdentity`, `mcp.TestClaudeConfigOverride`, `mcp.TestTOMLReadFailure`. `app.TestInventoryTerminalModesF05F06` creates a real POSIX PTY and a real subprocess pipe; its child uses the production color detection and source renderer. It verifies normal TTY ANSI and empty-NO_COLOR/pipe stripping and logs captured output on failure/verbose runs. Actual host connections, session-loaded state, and a live-TTY screenshot are not claimed verified.
+
+## Antigravity shared sources
+
+Project `.agents/skills` is a native agy source. User `~/.agents/skills` alone
+is not advertised as an agy source; `sm skill install --scope user` creates an
+explicit link under `~/.gemini/config/skills/<name>` so the native loader can
+find it. Inventory deduplicates the physical resource while retaining its
+reader and alias paths.
+
+The marked `~/.gemini/config/plugins/sessionman` plugin supplies native MCP and
+the narrow portable hook bridge. Native agy prefixes its MCP server identity
+with the plugin name. Filesystem inventory shows available sources; it does
+not establish whether a running native session loaded or trusted them.
