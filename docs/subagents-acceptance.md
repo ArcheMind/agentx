@@ -12,7 +12,7 @@ The current tools are `ExternalSubagent`, `SendExternalSubagentMessage`,
 `StopExternalSubagent`, and `listExternalSubagentSessions`. They replace the
 earlier `Agent`, `SendMessage`, `TaskStop`, and `ListAgents` MCP names without
 aliases. Parameter keys, configured combination names, permissions and lifecycle
-semantics remain unchanged. The server identity remains SessionMan and `agentx`; native Claude tools are not renamed.
+semantics remain unchanged. The server identity remains SessionMan and `sessionman`; native Claude tools are not renamed.
 
 The live observations and quoted tool names below are historical pre-rename
 records. They establish lifecycle behavior before this naming change, not a new
