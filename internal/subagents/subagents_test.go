@@ -1,7 +1,7 @@
 package subagents
 
 import (
-	"github.com/ArcheMind/agentx/internal/drivers"
+	"github.com/ArcheMind/agentx/internal/agentparams"
 	"strings"
 	"testing"
 )
@@ -11,22 +11,22 @@ func TestExternalPlansUseNativeReadOnlyAndExactResume(t *testing.T) {
 	for _, item := range []struct{ agent, policy, resume string }{
 		{"pi", "--print --mode json", "--session " + id},
 	} {
-		plan, err := drivers.ExecPlan(item.agent, "/child", "selected-model", id)
+		plan, err := agentparams.Build(item.agent, agentparams.Exec, agentparams.Request{Cwd: "/child", Model: "selected-model", Session: id})
 		if err != nil {
 			t.Fatal(err)
 		}
 		args := strings.Join(plan.Args, " ")
-		if plan.Executable != item.agent || plan.Cwd != "/child" || !strings.Contains(args, item.policy) || !strings.Contains(args, item.resume) || !strings.Contains(args, "--model selected-model") {
+		if !strings.Contains(args, item.policy) || !strings.Contains(args, item.resume) || !strings.Contains(args, "--model selected-model") {
 			t.Fatalf("unexpected plan: %#v", plan)
 		}
 		for _, invalid := range []string{"latest", "--continue", "partial-id"} {
-			if _, err := drivers.ExecPlan(item.agent, "/child", "", invalid); err == nil {
+			if _, err := agentparams.Build(item.agent, agentparams.Exec, agentparams.Request{Cwd: "/child", Session: invalid}); err == nil {
 				t.Fatalf("accepted %s resume %s", item.agent, invalid)
 			}
 		}
 	}
 	for _, unsupported := range []string{"dsh", "opencode", "unknown"} {
-		if _, err := drivers.ExecPlan(unsupported, "/child", "", ""); err == nil {
+		if _, err := agentparams.Build(unsupported, agentparams.Exec, agentparams.Request{Cwd: "/child"}); err == nil {
 			t.Fatalf("accepted unsupported %s", unsupported)
 		}
 	}

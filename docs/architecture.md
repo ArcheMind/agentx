@@ -29,6 +29,37 @@ CLI grammar and output protocol
 
 `internal/app` owns the resource-first grammar, argument validation, text and structured output, dry-run behavior, and stable error envelopes. It coordinates capabilities but does not contain agent-specific parsing.
 
+## Unified invocation parameters
+
+`internal/agentparams` owns the logical invocation request, parameter defaults and
+validation, and the native CLI/RPC mappings for each agent. CLI commands, presets,
+headless continuation, and ExternalSubagents carry the same typed fields through
+to this layer: model, effort, mode, user configuration, native flags, working
+directory, session, appended instructions, and MCP servers.
+
+```text
+CLI / preset / session / MCP input
+                 |
+          Request + Resolve
+                 |
+      per-agent CLI / RPC mapping
+                 |
+         native process / session
+```
+
+An explicit call override replaces a preset value. An omitted value preserves
+the preset value or, without a preset, the native default. Presets apply their
+existing mode default before resolution. Native flags are preserved; a known
+flag that conflicts with an explicit logical field is rejected. Unsupported
+parameter/transport combinations fail before native execution.
+
+`internal/presets` stores user choices and produces a logical request; it does
+not render native arguments. `internal/app` parses common options once and
+coordinates execution. Subagent adapters own protocol lifecycles, delivery, and
+events; parameter mappings stay in `agentparams`. `internal/runtime` executes
+plans and does not interpret agent parameters. Native credentials, configuration
+files, and session stores retain their native ownership.
+
 ## Agent registry and drivers
 
 `internal/drivers` registers one identity per supported agent. Installation, authentication, model discovery, and launch are separate interfaces because native tools do not expose a symmetrical lifecycle.

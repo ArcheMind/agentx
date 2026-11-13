@@ -45,7 +45,7 @@ func nativeAgent(id, name, binary, npmPackage string, models runtime.ModelDriver
 	}
 	return runtime.Agent{
 		ID: id, Name: name, Binary: binary,
-		Launch:       NativeLaunch{Binary: binary, ModelFlag: "--model"},
+		Launch:       NativeLaunch{Binary: binary},
 		Models:       models,
 		Auth:         auth,
 		Install:      NPMPackage{Package: npmPackage},

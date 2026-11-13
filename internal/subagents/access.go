@@ -6,12 +6,13 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/ArcheMind/agentx/internal/agentparams"
 	"github.com/ArcheMind/agentx/internal/presets"
 )
 
 const (
-	ModeNormal = presets.ModeNormal
-	ModeYolo   = presets.ModeYolo
+	ModeNormal = agentparams.ModeNormal
+	ModeYolo   = agentparams.ModeYolo
 )
 
 // Auth is the native credential source discovered for one turn.
@@ -76,7 +77,7 @@ func Limits(o presets.Preset) string {
 	var text strings.Builder
 	fmt.Fprintf(&text, "Mode: preset default is %s. ", presets.ModeLabel(o.Mode))
 	text.WriteString("normal passes no permission or sandbox flags, so the agent's own configuration decides; yolo bypasses the agent's permission checks and sandbox. ")
-	if !presets.Agents[o.Agent].Bypassable {
+	if !agentparams.Agents[o.Agent].Bypassable {
 		text.WriteString("This agent rejects yolo. ")
 	}
 	text.WriteString("Preset user_config and flags are passed through to the agent. ")
@@ -84,20 +85,4 @@ func Limits(o presets.Preset) string {
 	text.WriteString(IsolationLimits())
 	text.WriteString("Effort is fixed by the preset.")
 	return text.String()
-}
-
-// effectiveMode resolves the call-time mode against the preset default.
-func effectiveMode(o presets.Preset, callMode string) string {
-	if callMode != "" {
-		return callMode
-	}
-	return o.EffectiveMode()
-}
-
-// checkMode rejects yolo before any work starts for agents without a permission boundary to bypass.
-func checkMode(o presets.Preset, mode string) error {
-	if mode == ModeYolo && !presets.Agents[o.Agent].Bypassable {
-		return fmt.Errorf("mode %q rejected for %s preset %s: %s has no runtime permission boundary to bypass; no task started", ModeYolo, presets.AgentName(o.Agent), o.Name, presets.AgentName(o.Agent))
-	}
-	return nil
 }

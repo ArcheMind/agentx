@@ -140,6 +140,16 @@ effort: low
 Read-only research and code review. Not for large refactors.
 ```
 
+Launch, resume, and headless continuation share parameter handling. Use
+`--model`, `--effort`, `--mode normal|yolo`, `--user-config true|false`,
+`--append-system-prompt`, and `--mcp-config` where the target agent and transport
+support them; native arguments follow `--`. Preset launches and resumes also
+forward the saved `flags` and `user_config`. Unsupported combinations and known
+conflicts between unified fields and native flags are reported explicitly.
+Codex CLI YOLO uses `--dangerously-bypass-approvals-and-sandbox`; its app-server
+uses the corresponding thread policy fields. `approval_policy="never"` alone
+only disables approval prompts and does not remove a sandbox.
+
 `sm` shows `+ Create preset…` on the home screen and `m` edits the highlighted one. Native config stays native: SessionMan never merges into your Claude, Codex, or Pi configuration; hook and skill bridges remain visible to native discovery and trust review. For agy, SessionMan owns a marked plugin under `~/.gemini/config/plugins/sessionman`; it preserves unrelated native configuration.
 
 ## Install
@@ -172,12 +182,17 @@ Interactive bare `sm` checks for a stable update at most once a day and asks bef
 | Claude Code | yes | yes | yes, via `.claude/skills` | yes |
 | Codex CLI | yes | yes | yes | yes |
 | DeepSeek Harness | — | — | yes | — |
-| OpenCode | yes | yes | yes | — |
+| OpenCode | yes | native sessions only | yes | — |
 | Pi | yes | yes | yes | yes |
 
 Antigravity CLI 1.5.8 supports native SQLite sessions, model discovery, presets and ACP ExternalSubagents. Its ordinary exec/continue path rejects temporary `--mcp-config` and `--append-system-prompt`; ACP supports session-scoped MCP. Provider effort is unverified. Its owned plugin is also discovered by plain `agy`, whose MCP bridge requires launching through `sm` to bind the workspace. See [agy acceptance and boundaries](docs/agy-acceptance.md).
 
-DeepSeek Harness has no verified session source, so it is not a session or resume target. SessionMan can still install, authenticate, and launch it. OpenCode and DeepSeek Harness are not part of the actively developed skill and hook integrations. Exact native versions and evidence: [lifecycle and protocol audit](docs/lifecycle-and-protocol-audit.md).
+DeepSeek Harness has no verified session source, so it is not a session or resume target. SessionMan can still install, authenticate, and launch it. OpenCode and DeepSeek Harness are not part of the actively developed skill and hook integrations. OpenCode resumes native session IDs through `--session`; converted transcript
+directories are not native session IDs and cannot be resumed through this path.
+Codex transcript import resolves its provider through app-server configuration
+inspection; imports using `--profile` or `user_config: false` are rejected because
+that inspection cannot honor those selections. Existing native sessions do not
+require this import step. Exact native versions and evidence: [lifecycle and protocol audit](docs/lifecycle-and-protocol-audit.md).
 
 ## Command reference
 

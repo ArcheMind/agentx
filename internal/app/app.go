@@ -14,6 +14,7 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/ArcheMind/agentx/internal/agentparams"
 	"github.com/ArcheMind/agentx/internal/drivers"
 	"github.com/ArcheMind/agentx/internal/hooks"
 	"github.com/ArcheMind/agentx/internal/presets"
@@ -331,7 +332,7 @@ func (a App) models(ctx context.Context, args []string) error {
 
 func (a App) runAgent(ctx context.Context, args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: ax [--json|--yaml] agent run <agent> [--model <model>] [--cwd <path>] [--dry-run] [-- <native args...>]")
+		return fmt.Errorf("usage: ax [--json|--yaml] agent run <agent> [--model <model>] [--effort <level>] [--mode <normal|yolo>] [--user-config <true|false>] [--cwd <path>] [--dry-run] [-- <native args...>]")
 	}
 	agent, err := a.Registry.Get(args[0])
 	if err != nil {
@@ -343,16 +344,13 @@ func (a App) runAgent(ctx context.Context, args []string) error {
 	request := runtime.RunRequest{}
 	dryRun := false
 	for index := 1; index < len(args); index++ {
-		switch args[index] {
-		case "--":
-			request.PassthroughArgs = append(request.PassthroughArgs, args[index+1:]...)
-			index = len(args)
-		case "--model":
-			index++
-			if index >= len(args) {
-				return fmt.Errorf("--model requires a value")
+		if handled, err := parseRunOption(args, &index, &request); handled || err != nil {
+			if err != nil {
+				return err
 			}
-			request.Model = args[index]
+			continue
+		}
+		switch args[index] {
 		case "--cwd":
 			index++
 			if index >= len(args) {
@@ -742,16 +740,23 @@ func (a App) sessionInfo(args []string) error {
 
 func (a App) sessionResume(ctx context.Context, args []string) error {
 	if len(args) < 2 {
-		return fmt.Errorf("usage: ax [--json|--yaml] session resume <target-agent> <session-id> [--source <agent>] [--workspace <path>] [--dry-run]")
+		return fmt.Errorf("usage: ax [--json|--yaml] session resume <target-agent> <session-id> [--source <agent>] [--model <model>] [--effort <level>] [--mode <normal|yolo>] [--workspace <path>] [--dry-run]")
 	}
 	agent, err := a.Registry.Get(args[0])
 	if err != nil {
 		return err
 	}
 	id := args[1]
-	var source, workspace string
+	var source string
+	request := runtime.RunRequest{}
 	dryRun := false
 	for index := 2; index < len(args); index++ {
+		if handled, err := parseRunOption(args, &index, &request); handled || err != nil {
+			if err != nil {
+				return err
+			}
+			continue
+		}
 		switch args[index] {
 		case "--source":
 			index++
@@ -764,7 +769,7 @@ func (a App) sessionResume(ctx context.Context, args []string) error {
 			if index >= len(args) {
 				return fmt.Errorf("--workspace requires a value")
 			}
-			workspace = args[index]
+			request.Cwd = args[index]
 		case "--dry-run":
 			dryRun = true
 		default:
@@ -775,7 +780,7 @@ func (a App) sessionResume(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	return a.resumeSession(ctx, agent, detail, workspace, "", nil, false, dryRun)
+	return a.resumeSession(ctx, agent, detail, request, false, dryRun)
 }
 
 func (a App) sessionExport(args []string) error {
@@ -819,7 +824,7 @@ func (a App) sessionImport(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	token, err := a.writeResumeSession(ctx, detail, agent.ID, nil)
+	token, err := a.writeResumeSession(ctx, detail, agent.ID, runtime.RunRequest{})
 	if err != nil {
 		return err
 	}
@@ -895,8 +900,9 @@ func transcriptFileName(detail sessions.Session) string {
 	return strings.Join(parts, "-") + ".json"
 }
 
-func (a App) resumeSession(ctx context.Context, agent runtime.Agent, detail sessions.Session, workspace, model string, extraArgs []string, fresh, dryRun bool) error {
+func (a App) resumeSession(ctx context.Context, agent runtime.Agent, detail sessions.Session, request runtime.RunRequest, fresh, dryRun bool) error {
 	var err error
+	workspace := request.Cwd
 	if workspace == "" {
 		workspace = detail.Workspace
 	}
@@ -914,6 +920,12 @@ func (a App) resumeSession(ctx context.Context, agent runtime.Agent, detail sess
 	if err != nil || !info.IsDir() {
 		return fmt.Errorf("session workspace %s is not an accessible directory", workspace)
 	}
+	if _, err := agentparams.Build(agent.ID, agentparams.Interactive, request); err != nil {
+		return err
+	}
+	if agent.ID == "opencode" && (detail.Provider != agent.ID || fresh) {
+		return fmt.Errorf("OpenCode transcript import has no verified native resume mechanism; a native OpenCode session ID is required")
+	}
 	if fresh {
 		if detail, err = a.freshSessionDetail(detail); err != nil {
 			return err
@@ -926,12 +938,12 @@ func (a App) resumeSession(ctx context.Context, agent runtime.Agent, detail sess
 		resumeToken = detail.ID
 	} else {
 		detail.Workspace = workspace
-		resumeToken, err = a.writeResumeSession(ctx, detail, agent.ID, extraArgs)
+		resumeToken, err = a.writeResumeSession(ctx, detail, agent.ID, request)
 		if err != nil {
 			return fmt.Errorf("prepare resume session: %w", err)
 		}
 	}
-	request := runtime.RunRequest{Cwd: workspace, Model: model, PassthroughArgs: append(extraArgs, sessions.ResumeArgs(agent.ID, resumeToken)...)}
+	request.Cwd, request.Session = workspace, resumeToken
 	switch agent.ID {
 	case "claude":
 		if err := a.injectClaudeAgentX(&request); err != nil {
@@ -1035,7 +1047,7 @@ func (a App) printHelp() {
 Usage:
   sm [--include-subagents]
   sm --resume <transcript-file>
-  sm <agent> [--model <model>] [--cwd <path>] [--dry-run] [-- <native args...>]
+  sm <agent> [--model <model>] [--effort <level>] [--mode <normal|yolo>] [--user-config <true|false>] [--cwd <path>] [--dry-run] [-- <native args...>]
   sm [--json|--yaml] status
 
   sm [--json|--yaml] agent <list|show|install|run|exec> [args...]

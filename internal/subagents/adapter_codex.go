@@ -3,18 +3,17 @@ package subagents
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/ArcheMind/agentx/internal/agentparams"
 	"github.com/ArcheMind/agentx/internal/runtime"
 )
 
 // codexState is the app-server protocol state beside the live codex process: JSON-RPC
 // correlation plus per-turn scratch (JSON-RPC 2.0 over stdio, line-delimited, no jsonrpc header).
 type codexState struct {
-	yolo   bool
 	closed chan struct{}
 
 	rpcMu   sync.Mutex
@@ -136,18 +135,19 @@ func (d *Daemon) startCodexLocked() error {
 	if err != nil {
 		return err
 	}
-	if a.Option.UserConfig != nil && !*a.Option.UserConfig {
-		return fmt.Errorf("codex app-server loads the user configuration of its CODEX_HOME; preset user_config=false cannot be honored on the duplex channel")
+	req, err := d.parameterRequest(roleInstructions)
+	if err != nil {
+		return err
+	}
+	mapped, err := agentparams.Build(a.Option.Agent, agentparams.AppServer, req)
+	if err != nil {
+		return err
 	}
 	auth, err := DiscoverAuth("codex")
 	if err != nil {
 		return err
 	}
-	config, err := d.codexConfig()
-	if err != nil {
-		return err
-	}
-	plan := runtime.CommandPlan{Executable: "codex", Args: append([]string{"app-server"}, a.Option.Flags...), Cwd: a.Cwd}
+	plan := runtime.CommandPlan{Executable: "codex", Args: mapped.Args, Cwd: req.Cwd}
 	plan.Env, plan.UnsetEnv = AuthEnvironment(auth)
 	plan.Env["RUST_LOG"] = codexTelemetryFilter
 	stream, err := d.startStream(plan)
@@ -155,7 +155,7 @@ func (d *Daemon) startCodexLocked() error {
 		return err
 	}
 	proc := &nativeProc{stream: stream, done: make(chan struct{})}
-	cs := &codexState{yolo: a.Mode == ModeYolo, pending: map[int]chan codexReply{}, closed: make(chan struct{})}
+	cs := &codexState{pending: map[int]chan codexReply{}, closed: make(chan struct{})}
 	d.proc, d.codex, d.procAuth = proc, cs, auth
 	notes := make(chan string, 256)
 	go d.readCodex(proc, cs, notes)
@@ -170,22 +170,10 @@ func (d *Daemon) startCodexLocked() error {
 		}
 		return fail(err)
 	}
-	params := map[string]any{"cwd": a.Cwd, "model": a.Option.Model}
-	if roleInstructions != "" {
-		params["developerInstructions"] = roleInstructions
-	}
-	if len(config) > 0 {
-		params["config"] = config
-	}
-	if cs.yolo {
-		params["approvalPolicy"] = "never"
-		params["sandbox"] = "danger-full-access"
-	}
+	params := mapped.Params
 	method := "thread/start"
 	if a.Session != "" {
 		method = "thread/resume"
-		params["threadId"] = a.Session
-		params["excludeTurns"] = true
 	}
 	result, rpcErr, err := cs.call(stream, method, params, 60*time.Second)
 	if err != nil {
@@ -206,40 +194,6 @@ func (d *Daemon) startCodexLocked() error {
 	a.Session = thread.Thread.ID
 	d.persistMetaLocked()
 	return nil
-}
-
-// codexConfig builds the thread-level config overrides: effort, preset -c flags, and the
-// delegation MCP server (the app-server equivalent of the old -c CLI injection).
-func (d *Daemon) codexConfig() (map[string]any, error) {
-	config := map[string]any{}
-	if effort := d.agent.Option.Effort; effort != "" {
-		config["model_reasoning_effort"] = effort
-	}
-	if d.meta.AxBinary != "" && d.meta.DelegationDepth < MaxDelegationDepth {
-		env := map[string]any{
-			"SM_DELEGATION_DEPTH": fmt.Sprint(d.meta.DelegationDepth + 1),
-			"SM_HOST_AGENT_DIR":   d.Dir,
-		}
-		if home := os.Getenv("SM_SUBAGENT_HOME"); home != "" {
-			env["SM_SUBAGENT_HOME"] = home
-		}
-		setDotted(config, "mcp_servers.sessionman", map[string]any{"command": d.meta.AxBinary, "args": []any{"mcp", "serve"}, "env": env})
-	}
-	return config, nil
-}
-
-func setDotted(config map[string]any, key string, value any) {
-	parts := strings.Split(key, ".")
-	current := config
-	for _, part := range parts[:len(parts)-1] {
-		next, ok := current[part].(map[string]any)
-		if !ok {
-			next = map[string]any{}
-			current[part] = next
-		}
-		current = next
-	}
-	current[parts[len(parts)-1]] = value
 }
 
 // readCodex classifies app-server lines: responses are routed lock-free so callers may wait

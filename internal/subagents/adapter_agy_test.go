@@ -105,10 +105,6 @@ func fakeAgyMain() {
 
 func agyServer(t *testing.T, extra map[string]string) (*Server, string) {
 	t.Helper()
-	if _, ok := presets.Agents["agy"]; !ok {
-		presets.Agents["agy"] = presets.AgentRule{Name: "agy", Efforts: []string{"low", "medium", "high"}, Bypassable: true}
-		t.Cleanup(func() { delete(presets.Agents, "agy") })
-	}
 	s := testServer(t, runtime.ExecRunner{})
 	record := installFakeNative(t, "agy", extra)
 	savePreset(t, s.Home, presets.Preset{Name: "agy-test", Agent: "agy", Model: "gemini-3.8-flash-low", Effort: "low", Description: "review"})
@@ -251,9 +247,13 @@ func TestAgyStopTerminatesDetachedDescendant(t *testing.T) {
 }
 
 func TestAgyNestedMCPAndUnknownExecutor(t *testing.T) {
-	d := &Daemon{Dir: "/agent", agent: &ExternalSubagentState{Cwd: "/child-work"}, meta: AgentMeta{AxBinary: "/sm", DelegationDepth: 1}}
-	mount := d.agyMCPServers()
-	if len(mount) != 1 || mount[0].Command != "/sm" || len(mount[0].Env) != 3 {
+	d := &Daemon{Dir: "/agent", agent: &ExternalSubagentState{Cwd: "/child-work", Option: presets.Preset{Agent: "agy"}}, meta: AgentMeta{AxBinary: "/sm", DelegationDepth: 1}}
+	req, err := d.parameterRequest("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	mount := req.MCP.Servers["sessionman"]
+	if mount.Command != "/sm" || len(mount.Env) != 3 {
 		t.Fatal(mount)
 	}
 	d.agent = &ExternalSubagentState{Option: presets.Preset{Agent: "unknown"}}
@@ -308,6 +308,27 @@ func TestAgyNormalLeavesNativePermissionConfiguration(t *testing.T) {
 		}
 	}
 	if fakeRequest(t, records, "session/set_model")["modelId"] != "gemini-3.8-flash-low" {
+		t.Fatal(records)
+	}
+}
+
+func TestAgyUserConfigAndFlagsReachACP(t *testing.T) {
+	s, record := agyServer(t, nil)
+	preset, err := presets.Read(s.Home, "agy-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := false
+	preset.UserConfig = &f
+	preset.Flags = []string{"--trace"}
+	savePreset(t, s.Home, preset)
+	startAgyTest(t, s, "configured", false)
+	records := readFakeRecords(t, record)
+	args := strings.Join(records[0].Argv, " ")
+	if !strings.Contains(args, "--include-default-customizations=false") || !strings.Contains(args, "--trace") {
+		t.Fatal(args)
+	}
+	if fakeRequest(t, records, "session/set_model")["sessionId"] != fakeAgySession || fakeRequest(t, records, "session/set_config_option")["value"] != "low" {
 		t.Fatal(records)
 	}
 }

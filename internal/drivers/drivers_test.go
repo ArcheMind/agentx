@@ -194,8 +194,8 @@ func TestNPMPackagePlanUsesArgumentBoundaries(t *testing.T) {
 }
 
 func TestNativeLaunchPreservesPassthroughArgs(t *testing.T) {
-	plan, err := (NativeLaunch{Binary: "codex", ModelFlag: "--model"}).PlanRun(runtime.RunRequest{
-		Cwd: "/tmp/project", Model: "gpt-test", PassthroughArgs: []string{"--full-auto", "fix it"},
+	plan, err := (NativeLaunch{Binary: "codex"}).PlanRun(runtime.RunRequest{
+		Cwd: "/tmp/project", Model: "gpt-test", Flags: []string{"--full-auto", "fix it"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -218,7 +218,7 @@ func TestDSHHasOnlyVerifiedDrivers(t *testing.T) {
 	if !reflect.DeepEqual(agent.Capabilities, want) {
 		t.Fatalf("dsh capabilities = %#v", agent.Capabilities)
 	}
-	plan, err := agent.Launch.PlanRun(runtime.RunRequest{Cwd: "/tmp/project", PassthroughArgs: []string{"web", "--no-open"}})
+	plan, err := agent.Launch.PlanRun(runtime.RunRequest{Cwd: "/tmp/project", Flags: []string{"web", "--no-open"}})
 	if err != nil {
 		t.Fatal(err)
 	}

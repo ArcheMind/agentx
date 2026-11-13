@@ -402,3 +402,64 @@ func TestPickedSessionDuplicateIDViolatesInvariant(t *testing.T) {
 		t.Logf("%s error:\n%s", name, err)
 	}
 }
+
+func TestPresetLaunchAndResumeShareUnifiedParameters(t *testing.T) {
+	disabled := false
+	for _, item := range []struct {
+		agent, model    string
+		config          *bool
+		flags, expected []string
+	}{
+		{"codex", "gpt-test", nil, []string{"--search"}, []string{"--dangerously-bypass-approvals-and-sandbox", "--search"}},
+		{"claude", "opus", &disabled, []string{"--verbose"}, []string{"--dangerously-skip-permissions", "--setting-sources", "project,local", "--verbose"}},
+		{"pi", "provider/model", &disabled, []string{"--verbose"}, []string{"--no-skills", "--no-prompt-templates", "--verbose"}},
+		{"agy", "native-model", nil, []string{"--custom"}, []string{"--dangerously-skip-permissions", "--custom"}},
+	} {
+		t.Run(item.agent, func(t *testing.T) {
+			app, _, runner := presetApp(t, "", item.agent)
+			app.Output = OutputText
+			p := presets.Preset{Name: "unified", Agent: item.agent, Model: item.model, Description: "Parameter forwarding", Effort: "high", UserConfig: item.config, Flags: item.flags}
+			mustCreate(t, app.Hooks.Home, p)
+			if started, err := app.startPreset(context.Background(), bufio.NewReader(strings.NewReader("")), app.Hooks.Home, p); err != nil || !started {
+				t.Fatalf("start = %t, %v", started, err)
+			}
+			cwd, _ := os.Getwd()
+			id := "11111111-2222-4333-8444-555555555555"
+			detail := sessions.Session{ID: id, Provider: item.agent, Workspace: cwd}
+			if err := app.resumeSession(context.Background(), runtimeAgent(t, app, item.agent), detail, p.Request(), false, false); err != nil {
+				t.Fatal(err)
+			}
+			if len(runner.plans) != 2 {
+				t.Fatalf("plans = %#v", runner.plans)
+			}
+			for _, plan := range runner.plans {
+				if plan.Cwd != cwd || flagValue(plan.Args, "--model") != item.model {
+					t.Fatalf("plan = %#v", plan)
+				}
+				for _, want := range item.expected {
+					found := false
+					for _, arg := range plan.Args {
+						if arg == want {
+							found = true
+						}
+					}
+					if !found {
+						t.Fatalf("missing %q in %#v", want, plan.Args)
+					}
+				}
+			}
+			if !strings.Contains(strings.Join(runner.plans[1].Args, " "), id) {
+				t.Fatal("resume lost native session")
+			}
+		})
+	}
+}
+
+func runtimeAgent(t *testing.T, app App, id string) runtime.Agent {
+	t.Helper()
+	agent, err := app.Registry.Get(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return agent
+}

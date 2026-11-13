@@ -100,23 +100,6 @@ func WriteCodexSessionFile(detail Session, codexHome, provider string) (string, 
 	return id, writeJSONLFile(filepath.Join(dir, name), records)
 }
 
-func ResumeArgs(agentID, token string) []string {
-	switch agentID {
-	case "agy":
-		return []string{"--conversation", token}
-	case "codex":
-		return []string{"resume", token}
-	case "claude":
-		return []string{"--resume", token}
-	case "pi":
-		return []string{"--session", token}
-	case "opencode":
-		return []string{"--prompt", ""}
-	default:
-		return []string{"--resume", token}
-	}
-}
-
 func newUUID() string {
 	var b [16]byte
 	if _, err := rand.Read(b[:]); err != nil {

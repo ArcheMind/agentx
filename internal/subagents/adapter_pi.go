@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ArcheMind/agentx/internal/agentparams"
 	"github.com/ArcheMind/agentx/internal/runtime"
 )
 
@@ -112,15 +113,15 @@ func (d *Daemon) startPiLocked() error {
 	if err != nil {
 		return err
 	}
-	args := []string{"--mode", "rpc", "--model", a.Option.Model, "--session", a.Session, "--no-approve"}
-	if a.Option.UserConfig != nil && !*a.Option.UserConfig {
-		args = append(args, "--no-skills", "--no-prompt-templates")
+	req, err := d.parameterRequest(roleInstructions)
+	if err != nil {
+		return err
 	}
-	if roleInstructions != "" {
-		args = append(args, "--append-system-prompt", roleInstructions)
+	mapped, err := agentparams.Build(a.Option.Agent, agentparams.RPC, req)
+	if err != nil {
+		return err
 	}
-	args = append(args, a.Option.Flags...)
-	plan := runtime.CommandPlan{Executable: "pi", Args: args, Cwd: a.Cwd}
+	plan := runtime.CommandPlan{Executable: "pi", Args: mapped.Args, Cwd: req.Cwd}
 	plan.Env, plan.UnsetEnv = AuthEnvironment(auth)
 	if err := d.injectPiDelegation(&plan); err != nil {
 		return err

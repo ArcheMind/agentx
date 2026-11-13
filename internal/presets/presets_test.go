@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/ArcheMind/agentx/internal/agentparams"
 )
 
 func TestRoundTripKeepsDescriptionInMarkdownBody(t *testing.T) {
@@ -175,30 +177,16 @@ func TestUpdateKeepsOriginalOnInvalidInput(t *testing.T) {
 	}
 }
 
-func TestLaunchArgsNeverInventEffort(t *testing.T) {
-	cases := map[string][]string{
-		"agy":    {"--dangerously-skip-permissions", "--effort", "high"},
-		"codex":  {"-c", `sandbox_mode="danger-full-access"`, "-c", `model_reasoning_effort="high"`},
-		"claude": {"--dangerously-skip-permissions", "--effort", "high"},
-		"pi":     {"--thinking", "high"},
+func TestRequestPreservesPresetParameters(t *testing.T) {
+	disabled := false
+	p := Preset{Agent: "codex", Model: "gpt-test", Effort: "high", UserConfig: &disabled, Flags: []string{"--custom", "value"}}
+	request := p.Request()
+	if request.Model != p.Model || request.Effort != p.Effort || request.Mode != agentparams.ModeYolo || request.UserConfig != p.UserConfig || strings.Join(request.Flags, " ") != "--custom value" {
+		t.Fatalf("request = %#v", request)
 	}
-	for agent, want := range cases {
-		got := Preset{Agent: agent, Effort: "high"}.LaunchArgs()
-		if strings.Join(got, " ") != strings.Join(want, " ") {
-			t.Fatalf("%s args = %v", agent, got)
-		}
-	}
-	// Bypassable agents with no effort still get mode flags; non-bypassable get nothing.
-	codexDefault := Preset{Agent: "codex"}.LaunchArgs()
-	if strings.Join(codexDefault, " ") != `-c sandbox_mode="danger-full-access"` {
-		t.Fatalf("codex native default args = %v", codexDefault)
-	}
-	claudeDefault := Preset{Agent: "claude"}.LaunchArgs()
-	if strings.Join(claudeDefault, " ") != "--dangerously-skip-permissions" {
-		t.Fatalf("claude native default args = %v", claudeDefault)
-	}
-	if args := (Preset{Agent: "pi"}).LaunchArgs(); len(args) != 0 {
-		t.Fatalf("pi native default args = %v", args)
+	request.Flags[0] = "changed"
+	if p.Flags[0] != "--custom" {
+		t.Fatal("request mutated stored preset flags")
 	}
 }
 
@@ -220,7 +208,7 @@ func TestParsePresetWithNewFields(t *testing.T) {
 }
 
 func TestAGYPresetKeepsNativeDefaultsAndExactSelection(t *testing.T) {
-	for _, mode := range []string{ModeNormal, ModeYolo, ""} {
+	for _, mode := range []string{agentparams.ModeNormal, agentparams.ModeYolo, ""} {
 		p := Preset{Name: "agy-native", Description: "Native Antigravity", Agent: "agy", Model: "future-exact-model", Effort: "medium", Mode: mode}
 		if err := p.Validate(); err != nil {
 			t.Fatal(err)
@@ -233,17 +221,12 @@ func TestAGYPresetKeepsNativeDefaultsAndExactSelection(t *testing.T) {
 		if err != nil || !loaded.Equal(p) {
 			t.Fatalf("preset = %#v, error = %v", loaded, err)
 		}
-		want := "--effort medium"
-		if mode != ModeNormal {
-			want = "--dangerously-skip-permissions " + want
-		}
-		if got := strings.Join(p.LaunchArgs(), " "); got != want {
-			t.Fatalf("mode %q args = %q", mode, got)
+		request := p.Request()
+		if request.Model != p.Model || request.Effort != p.Effort || request.Mode != p.EffectiveMode() {
+			t.Fatalf("request = %#v", request)
 		}
 	}
-	if args := (Preset{Agent: "agy", Mode: ModeNormal}).LaunchArgs(); len(args) != 0 {
-		t.Fatalf("native defaults overridden: %v", args)
-	}
+
 	for _, effort := range []string{"off", "ultra", "HIGH"} {
 		if err := (Preset{Name: "agy", Description: "x", Agent: "agy", Model: "exact", Effort: effort}).Validate(); err == nil {
 			t.Fatalf("accepted effort %q", effort)

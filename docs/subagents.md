@@ -153,22 +153,32 @@ call picks one `mode`, fixed for that ExternalSubagent:
 | `mode` | Claude | Codex | Pi | agy |
 | --- | --- | --- | --- | --- |
 | `normal` | No permission flags: Claude's own settings decide | Native approval and sandbox configuration | Native tools with `--no-approve` | Native configuration, no bypass flag |
-| `yolo` | `--dangerously-skip-permissions` | Thread `sandbox: "danger-full-access"` and `approvalPolicy: "never"` | Rejected before any work starts | `--dangerously-skip-permissions` |
+| `yolo` | `--dangerously-skip-permissions` | Thread `sandbox: "danger-full-access"` and `approvalPolicy: "never"` | No additional permission flags | `--dangerously-skip-permissions` |
 
 - `normal` uses the native agent's configuration. Codex app-server receives no
   approval or sandbox override; approval requests that need a human are denied
   because this channel is headless. Claude refuses tools its settings do not allow.
 - `yolo` bypasses the agent's permission checks and sandbox entirely. Use it
   only where the agent may do anything the user could.
-- Pi has no runtime permission boundary to bypass, so `yolo` is rejected for
-  Pi presets. Pi uses its native tools, with `--no-approve`.
+- Pi has no tool sandbox to bypass, so `yolo` adds no permission flags. Its
+  headless transports retain `--no-approve`, which ignores project-local files;
+  this is a project trust option, not an instruction to approve tool calls.
 - `isolation` is independent of `mode`: it only chooses where the agent works.
   See [Isolation](#isolation).
 
 Preset flags apply to the native streaming process. Codex `user_config: false`
 is rejected before execution: app-server loads its `CODEX_HOME` configuration
 and cannot honor the exec-only `--ignore-user-config` behavior. There is no
-exec fallback. Pi `user_config: false` disables skills and prompt templates.
+exec fallback. Pi `user_config: false` disables skills and prompt templates. Claude excludes
+user settings via `--setting-sources project,local`; agy ACP disables default
+customizations. These are the supported native customization controls, not an
+isolated credential or configuration store. All transports use the same logical
+request and per-agent mappings in `internal/agentparams`.
+
+For interactive Codex launch/resume, `user_config: false` is also unsupported;
+Codex headless exec supports it through `--ignore-user-config`. Ordinary agy
+CLI launch/continue cannot disable user customizations through the verified ACP
+option and rejects `user_config: false`.
 
 ### Authentication
 
@@ -393,7 +403,7 @@ receives the same delegation tools through its extension bridge.
 | Claude | `normal`: no permission flags (Claude's own settings); `yolo`: `--dangerously-skip-permissions`; native auth | Exact session UUID (`--resume`) | Preset effort via `--effort`, or native default |
 | Codex | Native app-server thread policy in `normal`; `yolo` sets `approvalPolicy: "never"` and `sandbox: "danger-full-access"`; discovered `CODEX_HOME`; `user_config: false` rejected | Warm thread, or exact UUID via `thread/resume` | Preset effort via app-server config; each turn checked against `response.completed` telemetry |
 | agy | Native configuration in `normal`; `yolo`: `--dangerously-skip-permissions`; native keyring authentication | Persistent ACP process, or exact UUID via `session/load` | `thought_level` request; provider effort unverified |
-| Pi | Native tools with `--no-approve`; `yolo` rejected; discovered `PI_CODING_AGENT_DIR`; delegation bridge and effort observer injected when applicable | Persistent RPC process and exact dedicated session file | Preset `--thinking`; each turn checked against the session thinking level and provider requests |
+| Pi | Native tools with `--no-approve`; `yolo` adds no permission flags; discovered `PI_CODING_AGENT_DIR`; delegation bridge and effort observer injected when applicable | Persistent RPC process and exact dedicated session file | Preset `--thinking`; each turn checked against the session thinking level and provider requests |
 
 ### agy ordinary CLI and ACP
 

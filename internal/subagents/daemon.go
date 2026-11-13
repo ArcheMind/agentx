@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/ArcheMind/agentx/internal/agentparams"
 	"github.com/ArcheMind/agentx/internal/presets"
 	"github.com/ArcheMind/agentx/internal/runtime"
 )
@@ -343,6 +344,27 @@ func (d *Daemon) preStartLocked() (string, error) {
 		return "Role: " + a.Option.Name + "\n" + a.Option.Description, nil
 	}
 	return "", nil
+}
+
+func (d *Daemon) parameterRequest(role string) (agentparams.Request, error) {
+	a := d.agent
+	mcp := agentparams.MCPConfig{Servers: map[string]agentparams.MCPServer{}}
+	if a.Option.Agent != "pi" && d.meta.AxBinary != "" && d.meta.DelegationDepth < MaxDelegationDepth {
+		env := map[string]string{
+			"SM_DELEGATION_DEPTH": strconv.Itoa(d.meta.DelegationDepth + 1),
+			"SM_HOST_AGENT_DIR":   d.Dir,
+		}
+		if a.Option.Agent == "agy" {
+			env["SM_MCP_CWD"] = a.Cwd
+		}
+		if home := os.Getenv("SM_SUBAGENT_HOME"); home != "" {
+			env["SM_SUBAGENT_HOME"] = home
+		}
+		mcp.Servers["sessionman"] = agentparams.MCPServer{Command: d.meta.AxBinary, Args: []string{"mcp", "serve"}, Env: env}
+	}
+	return agentparams.Resolve(a.Option.Agent, a.Option.Request(), agentparams.Request{
+		Cwd: a.Cwd, Session: a.Session, Mode: a.Mode, SystemPrompt: role, MCP: mcp,
+	})
 }
 
 func (d *Daemon) startStream(plan runtime.CommandPlan) (*runtime.Stream, error) {

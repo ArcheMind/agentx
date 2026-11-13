@@ -2,10 +2,8 @@ package subagents
 
 import (
 	"encoding/json"
-	"os"
-	"strconv"
 
-	"github.com/ArcheMind/agentx/internal/drivers"
+	"github.com/ArcheMind/agentx/internal/agentparams"
 	"github.com/ArcheMind/agentx/internal/runtime"
 )
 
@@ -53,11 +51,18 @@ func (d *Daemon) startClaudeLocked() error {
 	if err != nil {
 		return err
 	}
-	plan, err := drivers.ClaudePolicyExecPlan(a.Cwd, a.Option.Model, a.Session, a.Mode == ModeYolo, a.Option.Effort, roleInstructions, a.Option.Flags)
+	req, err := d.parameterRequest(roleInstructions)
 	if err != nil {
 		return err
 	}
-	d.injectClaudeDelegation(&plan)
+	mapped, err := agentparams.Build(a.Option.Agent, agentparams.Stream, req)
+	if err != nil {
+		return err
+	}
+	plan := runtime.CommandPlan{Executable: "claude", Args: mapped.Args, Cwd: req.Cwd}
+	if len(req.MCP.Servers) > 0 {
+		plan.Args = append(plan.Args, "--allowedTools", "mcp__sessionman__StartExternalSubagent", "mcp__sessionman__SendExternalSubagentMessage", "mcp__sessionman__StopExternalSubagent", "mcp__sessionman__ListExternalSubagentSessions", "mcp__sessionman__MessageHost")
+	}
 	d.procAuth = Auth{}
 	plan.Env, plan.UnsetEnv = AuthEnvironment(d.procAuth)
 	stream, err := d.startStream(plan)
@@ -129,24 +134,4 @@ func (d *Daemon) handleClaudeLine(line string) {
 		d.mu.Unlock()
 		d.deliverQueue()
 	}
-}
-
-func (d *Daemon) injectClaudeDelegation(plan *runtime.CommandPlan) {
-	if d.meta.AxBinary == "" || d.meta.DelegationDepth >= MaxDelegationDepth {
-		return
-	}
-	env := map[string]string{
-		"SM_DELEGATION_DEPTH": strconv.Itoa(d.meta.DelegationDepth + 1),
-		"SM_HOST_AGENT_DIR":   d.Dir,
-	}
-	if home := os.Getenv("SM_SUBAGENT_HOME"); home != "" {
-		env["SM_SUBAGENT_HOME"] = home
-	}
-	entry, _ := json.Marshal(map[string]any{"mcpServers": map[string]any{"sessionman": map[string]any{
-		"type": "stdio", "command": d.meta.AxBinary, "args": []string{"mcp", "serve"}, "env": env,
-	}}})
-	plan.Args = append(plan.Args,
-		"--mcp-config", string(entry),
-		"--allowedTools", "mcp__sessionman__StartExternalSubagent", "mcp__sessionman__SendExternalSubagentMessage", "mcp__sessionman__StopExternalSubagent", "mcp__sessionman__ListExternalSubagentSessions", "mcp__sessionman__MessageHost",
-	)
 }

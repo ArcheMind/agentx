@@ -10,29 +10,38 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/ArcheMind/agentx/internal/agentparams"
 	"github.com/ArcheMind/agentx/internal/drivers"
 	"github.com/ArcheMind/agentx/internal/runtime"
 )
 
 func (a App) execAgent(ctx context.Context, args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: ax agent exec <agy|codex|pi> [--model <model>] [--resume <session-id>] [--cwd <path>] [--dry-run] < prompt.txt")
+		return fmt.Errorf("usage: ax agent exec <agy|pi> [--model <model>] [--resume <session-id>] [--cwd <path>] [--dry-run] < prompt.txt")
 	}
-	model, resume, cwd := "", "", ""
+	if _, err := a.Registry.Get(args[0]); err != nil {
+		return err
+	}
+	resume, cwd := "", ""
+	request := runtime.RunRequest{}
 	dryRun := false
 	for i := 1; i < len(args); i++ {
+		if handled, err := parseRunOption(args, &i, &request); handled || err != nil {
+			if err != nil {
+				return err
+			}
+			continue
+		}
 		option := args[i]
 		switch option {
 		case "--dry-run":
 			dryRun = true
-		case "--model", "--resume", "--cwd":
+		case "--resume", "--cwd":
 			i++
 			if i == len(args) || strings.TrimSpace(args[i]) == "" {
 				return fmt.Errorf("%s requires a value", option)
 			}
 			switch option {
-			case "--model":
-				model = args[i]
 			case "--resume":
 				resume = args[i]
 			case "--cwd":
@@ -60,7 +69,8 @@ func (a App) execAgent(ctx context.Context, args []string) error {
 	if !info.IsDir() {
 		return fmt.Errorf("working directory %s is not a directory", cwd)
 	}
-	plan, err := drivers.ExecPlan(args[0], cwd, model, resume)
+	request.Cwd, request.Session = cwd, resume
+	plan, err := drivers.Plan(args[0], agentparams.Exec, request)
 	if err != nil {
 		return err
 	}

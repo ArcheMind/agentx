@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ArcheMind/agentx/internal/drivers"
+	"github.com/ArcheMind/agentx/internal/agentparams"
 	"github.com/ArcheMind/agentx/internal/runtime"
 	"github.com/ArcheMind/agentx/internal/sessions"
 )
@@ -129,20 +129,20 @@ func (d *Daemon) startAgyLocked() error {
 	if err != nil {
 		return err
 	}
-	args := []string{"acp", "--stdio"}
-	if a.Mode == ModeYolo {
-		args = append(args, "--dangerously-skip-permissions")
+	req, err := d.parameterRequest(role)
+	if err != nil {
+		return err
 	}
-	if a.Option.UserConfig != nil && !*a.Option.UserConfig {
-		args = append(args, "--include-default-customizations=false")
+	mapped, err := agentparams.Build(a.Option.Agent, agentparams.ACP, req)
+	if err != nil {
+		return err
 	}
-	args = append(args, a.Option.Flags...)
-	stream, err := d.startStream(runtime.CommandPlan{Executable: "agy", Args: args, Cwd: a.Cwd, Env: d.agyEnvironment()})
+	stream, err := d.startStream(runtime.CommandPlan{Executable: "agy", Args: mapped.Args, Cwd: req.Cwd, Env: d.agyEnvironment()})
 	if err != nil {
 		return err
 	}
 	proc := &nativeProc{stream: stream, done: make(chan struct{})}
-	state := &agyState{pending: map[int]chan agyReply{}, closed: make(chan struct{}), prompts: map[int]bool{}, role: role}
+	state := &agyState{pending: map[int]chan agyReply{}, closed: make(chan struct{}), prompts: map[int]bool{}, role: mapped.PromptPrefix}
 	d.proc, d.agy, d.procAuth = proc, state, Auth{}
 	notes := make(chan string, 256)
 	go d.readAgy(proc, state, notes)
@@ -156,11 +156,10 @@ func (d *Daemon) startAgyLocked() error {
 	if _, err := state.call(stream, "initialize", map[string]any{"protocolVersion": 1, "clientCapabilities": map[string]any{}, "clientInfo": map[string]any{"name": "sessionman"}}); err != nil {
 		return fail(err)
 	}
-	params := map[string]any{"cwd": a.Cwd, "mcpServers": d.agyMCPServers()}
+	params := mapped.Params
 	method := "session/new"
 	if a.Session != "" {
 		method = "session/load"
-		params["sessionId"] = a.Session
 	}
 	result, err := state.call(stream, method, params)
 	if err != nil {
@@ -181,13 +180,9 @@ func (d *Daemon) startAgyLocked() error {
 		return fail(fmt.Errorf("agy returned a different native session; no replacement accepted"))
 	}
 	a.NativeID = a.Session
-	if a.Option.Model != "" {
-		if _, err := state.call(stream, "session/set_model", map[string]any{"sessionId": a.Session, "modelId": a.Option.Model}); err != nil {
-			return fail(err)
-		}
-	}
-	if a.Option.Effort != "" {
-		if _, err := state.call(stream, "session/set_config_option", map[string]any{"sessionId": a.Session, "configId": "thought_level", "value": a.Option.Effort}); err != nil {
+	for _, setting := range mapped.Settings {
+		setting.Params["sessionId"] = a.Session
+		if _, err := state.call(stream, setting.Method, setting.Params); err != nil {
 			return fail(err)
 		}
 	}
@@ -201,15 +196,6 @@ func (d *Daemon) agyEnvironment() map[string]string {
 		env["SM_SUBAGENT_HOME"] = home
 	}
 	return env
-}
-
-func (d *Daemon) agyMCPServers() []drivers.AgyMCPServer {
-	config := drivers.MCPConfig{Servers: map[string]drivers.MCPServer{}}
-	if d.meta.AxBinary != "" && d.meta.DelegationDepth < MaxDelegationDepth {
-		env := d.agyEnvironment()
-		config.Servers["sessionman"] = drivers.MCPServer{Command: d.meta.AxBinary, Args: []string{"mcp", "serve"}, Env: env}
-	}
-	return drivers.AgyMCPServers(config)
 }
 
 func (d *Daemon) readAgy(proc *nativeProc, state *agyState, notes chan<- string) {

@@ -289,9 +289,7 @@ func TestAgySubagentVisibilityAndFreshImport(t *testing.T) {
 	if err != nil || again == id {
 		t.Fatalf("same-agent import reused identity: %s %v", again, err)
 	}
-	if got := ResumeArgs("agy", again); !reflect.DeepEqual(got, []string{"--conversation", again}) {
-		t.Fatal(got)
-	}
+
 }
 
 func TestAgyCatalogKeepsValidSessionsAndReportsBrokenEntries(t *testing.T) {

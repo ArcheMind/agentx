@@ -13,6 +13,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/ArcheMind/agentx/internal/agentparams"
 	"github.com/ArcheMind/agentx/internal/invariant"
 	"github.com/ArcheMind/agentx/internal/presets"
 	"github.com/ArcheMind/agentx/internal/runtime"
@@ -303,14 +304,14 @@ func (a App) resumeSessionInteractive(ctx context.Context, reader *bufio.Reader,
 		if err != nil {
 			return err
 		}
-		return a.resumeSession(ctx, agent, detail, "", chosen.preset.Model, chosen.preset.LaunchArgs(), fresh, false)
+		return a.resumeSession(ctx, agent, detail, chosen.preset.Request(), fresh, false)
 	}
 
 	model, err := a.chooseModel(ctx, reader, chosen.agent)
 	if err != nil {
 		return err
 	}
-	return a.resumeSession(ctx, chosen.agent, detail, "", model, nil, fresh, false)
+	return a.resumeSession(ctx, chosen.agent, detail, runtime.RunRequest{Model: model}, fresh, false)
 }
 
 // startPreset reports launched=true once the native agent ran; pre-launch failures return to the home screen.
@@ -333,7 +334,8 @@ func (a App) startPreset(ctx context.Context, reader *bufio.Reader, home string,
 	if err != nil {
 		return false, fmt.Errorf("read working directory: %w", err)
 	}
-	request := runtime.RunRequest{Cwd: cwd, Model: p.Model, PassthroughArgs: p.LaunchArgs()}
+	request := p.Request()
+	request.Cwd = cwd
 	if problem != "" {
 		return a.startFailure(ctx, reader, home, p, problem, true)
 	}
@@ -536,7 +538,7 @@ func (a App) changeField(ctx context.Context, reader *bufio.Reader, home string,
 func (a App) askAgent(reader *bufio.Reader, draft *presetDraft) error {
 	var rows []contentRow
 	selected := 0
-	for index, id := range presets.AgentOrder {
+	for index, id := range agentparams.AgentOrder {
 		agent, err := a.Registry.Get(id)
 		if err != nil {
 			continue
@@ -667,7 +669,7 @@ type effortChoice struct {
 }
 
 func effortChoices(draft presetDraft) (string, []effortChoice) {
-	rule := presets.Agents[draft.preset.Agent]
+	rule := agentparams.Agents[draft.preset.Agent]
 	choices := []effortChoice{{value: "", label: "Native default — no explicit effort; the agent decides", status: "native default; preset sets no effort"}}
 	switch {
 	case draft.preset.Agent == "codex" && draft.listed != nil && len(draft.listed.Efforts) > 0:
@@ -739,10 +741,10 @@ func (a App) askEffort(ctx context.Context, reader *bufio.Reader, draft *presetD
 }
 
 func (a App) askMode(reader *bufio.Reader, draft *presetDraft) error {
-	rule := presets.Agents[draft.preset.Agent]
+	rule := agentparams.Agents[draft.preset.Agent]
 	if !rule.Bypassable {
 		fmt.Fprintln(a.Stdout, colorize(a.Color, ansiDim, fmt.Sprintf("%s has no runtime permission boundary; mode is always normal.", rule.Name)))
-		draft.preset.Mode = presets.ModeNormal
+		draft.preset.Mode = agentparams.ModeNormal
 		return nil
 	}
 	labels := []string{
@@ -750,7 +752,7 @@ func (a App) askMode(reader *bufio.Reader, draft *presetDraft) error {
 		"normal — no permission flags; the agent's own configuration decides",
 	}
 	selected := 0
-	if draft.preset.EffectiveMode() == presets.ModeNormal {
+	if draft.preset.EffectiveMode() == agentparams.ModeNormal {
 		selected = 1
 	}
 	rows := make([]contentRow, len(labels))
@@ -765,7 +767,7 @@ func (a App) askMode(reader *bufio.Reader, draft *presetDraft) error {
 	case 0:
 		draft.preset.Mode = "" // empty = yolo default
 	case 1:
-		draft.preset.Mode = presets.ModeNormal
+		draft.preset.Mode = agentparams.ModeNormal
 	}
 	return nil
 }

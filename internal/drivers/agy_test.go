@@ -71,7 +71,7 @@ func TestAGYLaunchPreservesExactModelAndNativeArguments(t *testing.T) {
 		t.Fatal(err)
 	}
 	args := []string{"--effort", "high", "--conversation", "native-id", "--settings", `{"modelProvider":"gemini"}`}
-	plan, err := agent.Launch.PlanRun(runtime.RunRequest{Cwd: "/project", Model: "future-native-model", PassthroughArgs: args})
+	plan, err := agent.Launch.PlanRun(runtime.RunRequest{Cwd: "/project", Model: "future-native-model", Flags: args})
 	if err != nil {
 		t.Fatal(err)
 	}

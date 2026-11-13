@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ArcheMind/agentx/internal/agentparams"
 	"github.com/ArcheMind/agentx/internal/runtime"
 )
 
@@ -24,7 +25,7 @@ func TestCodexProviderUsesNativeEffectiveConfig(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			runner := &codexModelsRunner{response: json.RawMessage(test.response)}
 			plan := runtime.CommandPlan{Cwd: "/target", Env: map[string]string{"CODEX_HOME": "/auth"}}
-			provider, err := CodexProvider(context.Background(), runner, plan, []string{"--dangerously-bypass-approvals-and-sandbox", "-c", `model_provider="company"`, "--config=model=example"})
+			provider, err := CodexProvider(context.Background(), runner, plan, agentparams.Request{Flags: []string{"--dangerously-bypass-approvals-and-sandbox", "-c", `model_provider="company"`, "--config=model=example"}})
 			if provider != test.provider || (test.failure == "" && err != nil) || (test.failure != "" && (err == nil || !strings.Contains(err.Error(), test.failure))) {
 				t.Fatalf("provider = %q, err = %v", provider, err)
 			}
@@ -41,5 +42,24 @@ func TestCodexProviderUsesNativeEffectiveConfig(t *testing.T) {
 				t.Fatalf("request = %s, err = %v", runner.requests[2], err)
 			}
 		})
+	}
+}
+
+func TestCodexProviderRejectsUnsupportedConfigurationSelection(t *testing.T) {
+	disabled := false
+	for _, request := range []agentparams.Request{
+		{UserConfig: &disabled},
+		{Flags: []string{"--profile", "company"}},
+		{Flags: []string{"--profile=company"}},
+		{Flags: []string{"-p", "company"}},
+		{Flags: []string{"--ignore-user-config"}},
+	} {
+		runner := &codexModelsRunner{}
+		if _, err := CodexProvider(context.Background(), runner, runtime.CommandPlan{}, request); err == nil {
+			t.Fatalf("silently ignored %#v", request)
+		}
+		if len(runner.plan.Args) != 0 {
+			t.Fatal("started discovery with the wrong configuration")
+		}
 	}
 }

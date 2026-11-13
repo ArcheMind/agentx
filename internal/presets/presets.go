@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/ArcheMind/agentx/internal/agentparams"
 	"gopkg.in/yaml.v3"
 )
 
@@ -21,14 +22,6 @@ const FileName = "PRESET.md"
 var NamePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$`)
 
 var ErrExists = errors.New("a preset with this name already exists")
-
-const (
-	ModeNormal  = "normal"
-	ModeYolo    = "yolo"
-	ModeDefault = ModeYolo
-)
-
-var ValidModes = []string{ModeNormal, ModeYolo}
 
 type Preset struct {
 	Name        string   `json:"name" yaml:"-"`
@@ -47,18 +40,16 @@ func (p Preset) Equal(o Preset) bool {
 }
 
 func (p Preset) EffectiveMode() string {
-	if p.Mode != "" {
-		return p.Mode
-	}
-	if rule, ok := Agents[p.Agent]; ok && !rule.Bypassable {
-		return ModeNormal
-	}
-	return ModeDefault
+	return agentparams.EffectiveMode(p.Agent, p.Mode)
+}
+
+func (p Preset) Request() agentparams.Request {
+	return agentparams.Request{Model: p.Model, Effort: p.Effort, Mode: p.EffectiveMode(), UserConfig: p.UserConfig, Flags: append([]string(nil), p.Flags...)}
 }
 
 func ModeLabel(mode string) string {
 	if mode == "" {
-		return ModeDefault + " (default)"
+		return agentparams.ModeDefault + " (default)"
 	}
 	return mode
 }
@@ -83,24 +74,6 @@ type Problem struct {
 	Path string `json:"path"`
 	Err  string `json:"error"`
 }
-
-type AgentRule struct {
-	Name string
-	// Efforts are the explicit levels the native CLI accepts; per-model support may still differ.
-	Efforts    []string
-	EffortNote string
-	Bypassable bool
-}
-
-var Agents = map[string]AgentRule{
-	"agy":      {Name: "Antigravity CLI", Efforts: []string{"low", "medium", "high", "xhigh", "max"}, EffortNote: "Antigravity CLI --effort levels; per-model support is not verified by agy models", Bypassable: true},
-	"claude":   {Name: "Claude", Efforts: []string{"low", "medium", "high", "xhigh", "max"}, EffortNote: "Claude Code --effort levels; per-model support is not verified locally", Bypassable: true},
-	"codex":    {Name: "Codex", Efforts: []string{"none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"}, EffortNote: "Codex reports supported levels per model", Bypassable: true},
-	"opencode": {Name: "OpenCode", EffortNote: "OpenCode exposes no verified effort control"},
-	"pi":       {Name: "Pi", Efforts: []string{"low", "medium", "high", "xhigh", "max"}, EffortNote: "Pi --thinking levels; ExternalSubagent reports a warning when Pi's provider request carries a different effort, without blocking execution (Pi can clamp or remap unsupported levels). off and minimal are not offered: for Codex-backed models Pi sends no effort for off (the server default applies) and sends low for minimal", Bypassable: true},
-}
-
-var AgentOrder = []string{"claude", "codex", "opencode", "pi", "agy"}
 
 var piModel = regexp.MustCompile(`^[A-Za-z0-9_-]+/[^*?:[:space:]]+$`)
 
@@ -155,62 +128,21 @@ func (p Preset) Validate() error {
 	if strings.TrimSpace(p.Description) == "" {
 		return fmt.Errorf("description is empty; write when to use this preset below the front matter")
 	}
-	rule, ok := Agents[p.Agent]
+	_, ok := agentparams.Agents[p.Agent]
 	if !ok {
-		return fmt.Errorf("unsupported agent %q; supported: %s", p.Agent, strings.Join(AgentOrder, ", "))
+		return fmt.Errorf("unsupported agent %q; supported: %s", p.Agent, strings.Join(agentparams.AgentOrder, ", "))
 	}
 	if strings.TrimSpace(p.Model) == "" {
 		return fmt.Errorf("model is required")
 	}
-	if strings.ContainsFunc(p.Model, func(r rune) bool { return r <= ' ' || r == 0x7f }) {
-		return fmt.Errorf("model %q must not contain whitespace or control characters", p.Model)
-	}
 	if p.Agent == "pi" && !piModel.MatchString(p.Model) {
 		return fmt.Errorf("Pi requires an exact provider/model ID without a thinking suffix or wildcard")
 	}
-	if p.Effort != "" {
-		if len(rule.Efforts) == 0 {
-			return fmt.Errorf("explicit effort is not supported for %s: %s; remove effort to use the native default", rule.Name, rule.EffortNote)
-		}
-		if !Contains(rule.Efforts, p.Effort) {
-			return fmt.Errorf("effort %q is not a %s level; supported: %s", p.Effort, rule.Name, strings.Join(rule.Efforts, ", "))
-		}
-	}
-	if p.Mode != "" && !Contains(ValidModes, p.Mode) {
-		return fmt.Errorf("mode %q is not supported; supported: %s", p.Mode, strings.Join(ValidModes, ", "))
-	}
-	if p.Mode == ModeYolo && !rule.Bypassable {
-		return fmt.Errorf("mode %q is not supported for %s: %s has no runtime permission boundary to bypass", ModeYolo, rule.Name, rule.Name)
-	}
-	return nil
-}
-
-// LaunchArgs maps the preset effort and mode to native interactive flags.
-func (p Preset) LaunchArgs() []string {
-	var args []string
-	if p.EffectiveMode() == ModeYolo {
-		switch p.Agent {
-		case "agy", "claude":
-			args = append(args, "--dangerously-skip-permissions")
-		case "codex":
-			args = append(args, "-c", `sandbox_mode="danger-full-access"`)
-		}
-	}
-	if p.Effort != "" {
-		switch p.Agent {
-		case "codex":
-			args = append(args, "-c", fmt.Sprintf("model_reasoning_effort=%q", p.Effort))
-		case "agy", "claude":
-			args = append(args, "--effort", p.Effort)
-		case "pi":
-			args = append(args, "--thinking", p.Effort)
-		}
-	}
-	return args
+	return agentparams.Validate(p.Agent, agentparams.Request{Model: p.Model, Effort: p.Effort, Mode: p.Mode, UserConfig: p.UserConfig, Flags: p.Flags})
 }
 
 func AgentName(agent string) string {
-	if rule, ok := Agents[agent]; ok {
+	if rule, ok := agentparams.Agents[agent]; ok {
 		return rule.Name
 	}
 	return agent

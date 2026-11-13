@@ -12,7 +12,7 @@ import (
 func agyAgent() runtime.Agent {
 	return runtime.Agent{
 		ID: "agy", Name: "Antigravity CLI", Binary: "agy",
-		Launch: NativeLaunch{Binary: "agy", ModelFlag: "--model"},
+		Launch: NativeLaunch{Binary: "agy"},
 		Models: AGYModels{},
 		Auth: AGYAuth{NativeAuth: NativeAuth{
 			Command:           runtime.CommandPlan{Executable: "agy", Args: []string{"acp", "--login"}},

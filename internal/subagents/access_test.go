@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ArcheMind/agentx/internal/drivers"
+	"github.com/ArcheMind/agentx/internal/agentparams"
 	"github.com/ArcheMind/agentx/internal/presets"
 )
 
@@ -50,7 +50,7 @@ func TestNormalModePassesNoPermissionFlags(t *testing.T) {
 	if params["sandbox"] != nil || params["approvalPolicy"] != nil || !strings.Contains(text, "Mode: normal\n") || !strings.Contains(text, `Auth source for this turn: CODEX_HOME="`+os.Getenv("CODEX_HOME")+`"`+"\n") {
 		t.Fatal(params, text)
 	}
-	plan, err := drivers.ClaudePolicyExecPlan("/cwd", "opus", "", false, "", "", nil)
+	plan, err := agentparams.Build("claude", agentparams.Stream, agentparams.Request{Cwd: "/cwd", Model: "opus", Mode: ModeNormal})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -71,7 +71,7 @@ func TestYoloModeBypassesNativePermissions(t *testing.T) {
 	if params["sandbox"] != "danger-full-access" || params["approvalPolicy"] != "never" || !strings.Contains(text, "Mode: yolo\n") {
 		t.Fatal(params, text)
 	}
-	plan, err := drivers.ClaudePolicyExecPlan("/cwd", "opus", "", true, "", "", nil)
+	plan, err := agentparams.Build("claude", agentparams.Stream, agentparams.Request{Cwd: "/cwd", Model: "opus", Mode: ModeYolo})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -165,7 +165,7 @@ func TestUserConfigFalseRejectsBeforeStarting(t *testing.T) {
 	p.UserConfig = &f
 	savePreset(t, s.Home, p)
 	_, err := s.call("ExternalSubagent", []byte(`{"description":"x","prompt":"x","model":"review","run_in_background":false}`))
-	if err == nil || !strings.Contains(err.Error(), "cannot honor preset user_config=false") {
+	if err == nil || !strings.Contains(err.Error(), "user_config=false") || !strings.Contains(err.Error(), "no task started") {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(record); !os.IsNotExist(err) || len(s.agents) != 0 {
@@ -183,5 +183,19 @@ func TestPresetFlagsAppendedToNativeArgs(t *testing.T) {
 	args := strings.Join(readFakeRecords(t, record)[0].Argv, " ")
 	if !strings.Contains(args, "-c custom_setting=true") {
 		t.Fatal("preset flags not forwarded", args)
+	}
+}
+
+func TestPiUserConfigAndFlagsReachRPC(t *testing.T) {
+	record := installFakeNative(t, "pi", nil)
+	s := testServer(t, nil)
+	f := false
+	savePreset(t, s.Home, presets.Preset{Name: "pi-config", Agent: "pi", Model: "provider/model", Description: "test", UserConfig: &f, Flags: []string{"--trace"}})
+	callTest(t, s, "ExternalSubagent", map[string]any{"description": "x", "prompt": "x", "model": "pi-config", "run_in_background": false})
+	args := strings.Join(readFakeRecords(t, record)[0].Argv, " ")
+	for _, want := range []string{"--mode rpc", "--no-skills", "--no-prompt-templates", "--trace"} {
+		if !strings.Contains(args, want) {
+			t.Fatal(want, args)
+		}
 	}
 }

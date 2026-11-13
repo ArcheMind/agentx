@@ -135,9 +135,6 @@ func preparePiObserver(a *ExternalSubagentState) ([]string, map[string]string, e
 	}
 	args := []string{"--extension", observer}
 	env := map[string]string{}
-	if a.Option.Effort != "" {
-		args = append(args, "--thinking", a.Option.Effort)
-	}
 	return args, env, nil
 }
 

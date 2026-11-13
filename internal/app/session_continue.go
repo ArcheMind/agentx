@@ -12,13 +12,14 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/ArcheMind/agentx/internal/agentparams"
 	"github.com/ArcheMind/agentx/internal/drivers"
 	"github.com/ArcheMind/agentx/internal/runtime"
 	"github.com/ArcheMind/agentx/internal/sessions"
 	"github.com/ArcheMind/agentx/internal/subagents"
 )
 
-const sessionContinueUsage = "usage: ax [--json|--yaml] session continue <target-agent> [file] [--model <model>] [--effort <level>] [--append-system-prompt <text>] [--mcp-config <file|json>] [--mode <normal|yolo>] [--workspace <path>]"
+const sessionContinueUsage = "usage: ax [--json|--yaml] session continue <target-agent> [file] [--model <model>] [--effort <level>] [--append-system-prompt <text>] [--mcp-config <file|json>] [--mode <normal|yolo>] [--user-config <true|false>] [--workspace <path>] [-- <native args...>]"
 
 // sessionContinue runs one headless turn on a unified transcript: import the
 // history into the target agent's native store, resume it with the trailing
@@ -32,43 +33,16 @@ func (a App) sessionContinue(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	var file, model, effort, systemPrompt, mcpValue, workspace string
-	mode := "normal"
+	var file, workspace string
+	request := runtime.RunRequest{}
 	for index := 1; index < len(args); index++ {
+		if handled, err := parseRunOption(args, &index, &request); handled || err != nil {
+			if err != nil {
+				return err
+			}
+			continue
+		}
 		switch args[index] {
-		case "--model":
-			index++
-			if index >= len(args) {
-				return fmt.Errorf("--model requires a value")
-			}
-			model = args[index]
-		case "--effort":
-			index++
-			if index >= len(args) {
-				return fmt.Errorf("--effort requires a value")
-			}
-			effort = args[index]
-		case "--append-system-prompt":
-			index++
-			if index >= len(args) {
-				return fmt.Errorf("--append-system-prompt requires a value")
-			}
-			systemPrompt = args[index]
-		case "--mcp-config":
-			index++
-			if index >= len(args) {
-				return fmt.Errorf("--mcp-config requires a value")
-			}
-			mcpValue = args[index]
-		case "--mode":
-			index++
-			if index >= len(args) {
-				return fmt.Errorf("--mode requires a value")
-			}
-			mode = args[index]
-			if mode != "normal" && mode != "yolo" {
-				return fmt.Errorf("--mode must be normal or yolo")
-			}
 		case "--workspace":
 			index++
 			if index >= len(args) {
@@ -83,8 +57,13 @@ func (a App) sessionContinue(ctx context.Context, args []string) error {
 			return fmt.Errorf("unknown session continue option %q", args[index])
 		}
 	}
+	model := request.Model
+
 	if agent.ID != "agy" && agent.ID != "claude" && agent.ID != "codex" && agent.ID != "pi" {
 		return fmt.Errorf("%s has no headless continue adapter", agent.ID)
+	}
+	if _, err := agentparams.Build(agent.ID, agentparams.OneShot, request); err != nil {
+		return err
 	}
 	// The caller owns this process (a host harness); SIGTERM/SIGINT must cancel
 	// the native turn's whole process group instead of orphaning it.
@@ -92,13 +71,6 @@ func (a App) sessionContinue(ctx context.Context, args []string) error {
 	defer stopSignals()
 	if agent.ID == "pi" && model == "" {
 		return fmt.Errorf("--model is required for pi (provider/model)")
-	}
-	mcp := drivers.MCPConfig{}
-	if mcpValue != "" {
-		mcp, err = readMCPConfig(mcpValue)
-		if err != nil {
-			return err
-		}
 	}
 	detail, err := a.readTranscript(file)
 	if err != nil {
@@ -134,7 +106,7 @@ func (a App) sessionContinue(ctx context.Context, args []string) error {
 		// the Codex item id cap are shortened.
 		imported.Messages = sessions.SanitizeMessageIDs(sessions.SanitizeToolIDs(sessions.RechainMessages(fillTimestamps(history))))
 		imported.MessageCount = len(history)
-		token, err = a.writeResumeSession(ctx, imported, agent.ID, nil)
+		token, err = a.writeResumeSession(ctx, imported, agent.ID, request)
 		if err != nil {
 			return err
 		}
@@ -149,7 +121,8 @@ func (a App) sessionContinue(ctx context.Context, args []string) error {
 		prefix = len(before.Messages)
 	}
 
-	plan, err := drivers.ContinueExecPlan(agent.ID, workspace, model, token, effort, systemPrompt, mode == "yolo", mcp)
+	request.Cwd, request.Session = workspace, token
+	plan, err := drivers.Plan(agent.ID, agentparams.OneShot, request)
 	if err != nil {
 		return err
 	}
@@ -232,14 +205,14 @@ func (a App) sessionContinue(ctx context.Context, args []string) error {
 // writeResumeSession materializes a transcript as a native session file.
 // Codex sessions go to the auth-discovered home (CODEX_HOME when set),
 // because that is the store the codex CLI reads.
-func (a App) writeResumeSession(ctx context.Context, detail sessions.Session, agentID string, flags []string) (string, error) {
+func (a App) writeResumeSession(ctx context.Context, detail sessions.Session, agentID string, request runtime.RunRequest) (string, error) {
 	if agentID == "codex" {
 		auth, err := subagents.DiscoverAuth(agentID)
 		if err != nil {
 			return "", err
 		}
 		env, unset := subagents.AuthEnvironment(auth)
-		provider, err := drivers.CodexProvider(ctx, a.Runner, runtime.CommandPlan{Cwd: detail.Workspace, Env: env, UnsetEnv: unset}, flags)
+		provider, err := drivers.CodexProvider(ctx, a.Runner, runtime.CommandPlan{Cwd: detail.Workspace, Env: env, UnsetEnv: unset}, request)
 		if err != nil {
 			return "", err
 		}
@@ -368,25 +341,25 @@ func namespaceDelta(messages []sessions.Message, runID string) []sessions.Messag
 	return out
 }
 
-func readMCPConfig(value string) (drivers.MCPConfig, error) {
+func readMCPConfig(value string) (agentparams.MCPConfig, error) {
 	data := []byte(value)
 	if !strings.HasPrefix(strings.TrimSpace(value), "{") {
 		loaded, err := os.ReadFile(value)
 		if err != nil {
-			return drivers.MCPConfig{}, fmt.Errorf("read MCP config: %w", err)
+			return agentparams.MCPConfig{}, fmt.Errorf("read MCP config: %w", err)
 		}
 		data = loaded
 	}
-	var config drivers.MCPConfig
+	var config agentparams.MCPConfig
 	if err := json.Unmarshal(data, &config); err != nil {
-		return drivers.MCPConfig{}, fmt.Errorf("parse MCP config JSON: %w", err)
+		return agentparams.MCPConfig{}, fmt.Errorf("parse MCP config JSON: %w", err)
 	}
 	if len(config.Servers) == 0 {
-		return drivers.MCPConfig{}, fmt.Errorf("MCP config must declare at least one server under mcpServers")
+		return agentparams.MCPConfig{}, fmt.Errorf("MCP config must declare at least one server under mcpServers")
 	}
 	for name, server := range config.Servers {
 		if server.Command == "" {
-			return drivers.MCPConfig{}, fmt.Errorf("MCP server %q must declare a command", name)
+			return agentparams.MCPConfig{}, fmt.Errorf("MCP server %q must declare a command", name)
 		}
 	}
 	return config, nil

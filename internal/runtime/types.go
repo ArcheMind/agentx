@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+
+	"github.com/ArcheMind/agentx/internal/agentparams"
 )
 
 type Capability string
@@ -44,11 +46,7 @@ type Model struct {
 	DefaultEffort string   `json:"default_effort,omitempty" yaml:"default_effort,omitempty"`
 }
 
-type RunRequest struct {
-	Cwd             string
-	Model           string
-	PassthroughArgs []string
-}
+type RunRequest = agentparams.Request
 
 type ExecuteOptions struct {
 	Interactive        bool

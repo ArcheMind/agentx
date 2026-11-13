@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ArcheMind/agentx/internal/agentparams"
 	"github.com/ArcheMind/agentx/internal/presets"
 	"github.com/ArcheMind/agentx/internal/runtime"
 	"github.com/ArcheMind/agentx/internal/sessions"
@@ -317,12 +318,26 @@ func (s *Server) callStart(raw json.RawMessage) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if o.Agent == "codex" && o.UserConfig != nil && !*o.UserConfig {
-		return "", fmt.Errorf("codex app-server cannot honor preset user_config=false; no task started")
+	role := ""
+	if o.Description != "" {
+		role = "Role: " + o.Name + "\n" + o.Description
 	}
-	in.Mode = effectiveMode(o, in.Mode)
-	if err := checkMode(o, in.Mode); err != nil {
-		return "", err
+	resolved, err := agentparams.Resolve(o.Agent, o.Request(), agentparams.Request{Cwd: s.Cwd, Mode: in.Mode, SystemPrompt: role})
+	if err != nil {
+		return "", fmt.Errorf("%w; no task started", err)
+	}
+	in.Mode = resolved.Mode
+	transport := agentparams.Stream
+	switch o.Agent {
+	case "codex":
+		transport = agentparams.AppServer
+	case "pi":
+		transport = agentparams.RPC
+	case "agy":
+		transport = agentparams.ACP
+	}
+	if _, err := agentparams.Build(o.Agent, transport, resolved); err != nil {
+		return "", fmt.Errorf("%w; no task started", err)
 	}
 	id, cwd := "ax-"+randomID(), s.Cwd
 	var worktree *Worktree

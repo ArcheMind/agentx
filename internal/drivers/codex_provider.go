@@ -7,29 +7,23 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ArcheMind/agentx/internal/agentparams"
 	"github.com/ArcheMind/agentx/internal/runtime"
 )
 
 // CodexProvider delegates project and user config layering to Codex itself.
-func CodexProvider(ctx context.Context, runner runtime.Runner, plan runtime.CommandPlan, flags []string) (string, error) {
+func CodexProvider(ctx context.Context, runner runtime.Runner, plan runtime.CommandPlan, input agentparams.Request) (string, error) {
 	rpc, ok := runner.(runtime.JSONRPCRunner)
 	if !ok {
 		return "", fmt.Errorf("Codex provider discovery requires JSON-RPC command support")
 	}
 	plan.Executable = "codex"
 	plan.Args = []string{"app-server", "--stdio"}
-	for i := 0; i < len(flags); i++ {
-		switch {
-		case flags[i] == "-c" || flags[i] == "--config":
-			if i+1 >= len(flags) {
-				return "", fmt.Errorf("%s requires a value", flags[i])
-			}
-			plan.Args = append(plan.Args, flags[i], flags[i+1])
-			i++
-		case strings.HasPrefix(flags[i], "--config="):
-			plan.Args = append(plan.Args, flags[i])
-		}
+	configArgs, err := agentparams.CodexConfigArgs(input)
+	if err != nil {
+		return "", err
 	}
+	plan.Args = append(plan.Args, configArgs...)
 	params := map[string]any{"includeLayers": false}
 	if plan.Cwd != "" {
 		params["cwd"] = plan.Cwd

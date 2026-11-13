@@ -86,7 +86,7 @@ func (a App) prepareHooks(request *runtime.RunRequest, agent string, write bool)
 			fmt.Fprintf(a.Stderr, "warning: %s %s\n", warning.Event, warning.Message)
 		}
 	}
-	request.PassthroughArgs = append(projection.Args, request.PassthroughArgs...)
+	request.Flags = append(projection.Args, request.Flags...)
 	return nil
 }
 
