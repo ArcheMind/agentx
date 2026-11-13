@@ -127,15 +127,30 @@ try{
  const normalArm=rearm(normalStarted)
  const normalReport=await armWait(normalArm.id,normalArm.seq)
  const normalEvent=(await events(normalArm.id)).filter(x=>x.kind==='report').at(-1)
- assert(['completed','cancelled'].includes(normalEvent?.status),'normal run did not settle through native permissions: '+normalReport)
  const normalLog=await nativeLog(normalArm.id)
  const normalStart=normalLog.find(x=>x.event==='stream_start')
  const yoloStart=(await nativeLog(arm1.id)).find(x=>x.event==='stream_start')
  assert(normalStart&&!normalStart.input.args.includes('--dangerously-skip-permissions'),'normal missing native start or enabled bypass')
  assert(yoloStart?.input?.args.includes('--dangerously-skip-permissions'),'yolo omitted native bypass')
  assert(!(await nativeMessages(normalArm.id)).some(x=>x.method==='session/set_mode'),'normal overwrote native permission mode')
- await log('normal-yolo.json',{normalEvent,normalStart,yoloStart,permissionRequests:(await nativeMessages(normalArm.id)).filter(x=>x.method==='session/request_permission')})
- verdict.modes='PASS: real normal turn settles under native configuration; yolo uses only native bypass flag'
+ const normalMessages=await nativeMessages(normalArm.id)
+ const permissionRequests=normalMessages.filter(x=>x.direction==='out'&&x.method==='session/request_permission')
+ let normalFile=null
+ try{normalFile=await readFile(join(work,'native-normal.txt'),'utf8')}catch(error){if(error.code!=='ENOENT')throw error}
+ if(permissionRequests.length){
+  for(const request of permissionRequests)assert(normalMessages.some(x=>x.direction==='in'&&x.id===request.id&&x.result?.outcome?.outcome==='cancelled'),'normal permission request did not receive native cancelled response')
+  assert(normalFile===null,'headless denied native write was executed')
+  if(normalEvent?.status==='failed'){
+   assert(normalEvent.failure==='ExternalSubagent exited without a complete report; no implicit retry','normal failure is not the exact native no-report outcome: '+normalReport)
+   assert(normalMessages.some(x=>x.direction==='out'&&x.result?.stopReason==='end_turn'),'no-report denied turn lacked native end_turn')
+   assert(!normalMessages.some(x=>x.direction==='out'&&x.params?.update?.sessionUpdate==='agent_message_chunk'&&x.params.update.content?.text),'denied no-report turn unexpectedly had assistant text')
+  }else assert(['completed','cancelled'].includes(normalEvent?.status),'denied normal turn has unexpected status: '+normalReport)
+ }else{
+  assert(normalEvent?.status==='completed'&&normalFile==='NORMAL-WRITE','native normal configuration neither requested permission nor completed the write: '+normalReport)
+ }
+ await log('normal-yolo.json',{normalEvent,normalStart,yoloStart,permissionRequests,normalFile})
+ verdict.modes='PASS: normal retains native policy; requested headless approvals cancel without executing the write; denied native end_turn without text remains an explicit failed report; yolo uses native bypass'
+
 
  await checkpoint('recording-native-cold-recovery-token')
  const coldToken='COLD-'+randomUUID()
