@@ -41,6 +41,7 @@ type Daemon struct {
 	proc       *nativeProc
 	codex      *codexState
 	pi         *piState
+	agy        *agyState
 	procAuth   Auth
 	running    bool
 	stopping   bool
@@ -233,8 +234,12 @@ func (d *Daemon) sendAdapterLocked(message, delivery string) controlResponse {
 		return d.sendClaudeLocked(message, delivery)
 	case "codex":
 		return d.sendCodexLocked(message, delivery)
-	default:
+	case "pi":
 		return d.sendPiLocked(message, delivery)
+	case "agy":
+		return d.sendAgyLocked(message, delivery)
+	default:
+		return controlResponse{Error: fmt.Sprintf("%s has no native subagent execution adapter", d.agent.Option.Agent)}
 	}
 }
 
@@ -356,7 +361,7 @@ func (d *Daemon) procExit(proc *nativeProc, label string) {
 	remaining := d.worktreeState()
 	d.mu.Lock()
 	wasRunning, stopping := d.running, d.stopping
-	d.proc, d.codex, d.pi = nil, nil, nil
+	d.proc, d.codex, d.pi, d.agy = nil, nil, nil, nil
 	d.running = false
 	if wasRunning {
 		if stopping {

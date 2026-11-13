@@ -1,0 +1,319 @@
+package subagents
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"sync"
+	"time"
+
+	"github.com/ArcheMind/agentx/internal/drivers"
+	"github.com/ArcheMind/agentx/internal/runtime"
+)
+
+type agyError struct {
+	Code    int    `json:"code"`
+	Message string `json:"message"`
+}
+
+type agyReply struct {
+	result json.RawMessage
+	err    *agyError
+}
+type agyState struct {
+	rpcMu     sync.Mutex
+	nextID    int
+	pending   map[int]chan agyReply
+	closed    chan struct{}
+	live      bool
+	prompts   map[int]bool
+	text      string
+	usage     json.RawMessage
+	failure   string
+	cancelled bool
+	role      string
+}
+
+func (a *agyState) request(stream *runtime.Stream, method string, params any, wait bool) (int, <-chan agyReply, error) {
+	a.rpcMu.Lock()
+	a.nextID++
+	id := a.nextID
+	var ch chan agyReply
+	if wait {
+		ch = make(chan agyReply, 1)
+		a.pending[id] = ch
+	}
+	a.rpcMu.Unlock()
+	raw, err := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": id, "method": method, "params": params})
+	if err == nil {
+		err = stream.WriteLine(string(raw))
+	}
+	if err != nil {
+		a.rpcMu.Lock()
+		delete(a.pending, id)
+		a.rpcMu.Unlock()
+	}
+	return id, ch, err
+}
+
+func (a *agyState) call(stream *runtime.Stream, method string, params any) (json.RawMessage, error) {
+	id, ch, err := a.request(stream, method, params, true)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { a.rpcMu.Lock(); delete(a.pending, id); a.rpcMu.Unlock() }()
+	select {
+	case reply := <-ch:
+		if reply.err != nil {
+			return nil, fmt.Errorf("agy %s failed (%d): %s", method, reply.err.Code, runtime.RedactSecrets(reply.err.Message))
+		}
+		return reply.result, nil
+	case <-a.closed:
+		return nil, fmt.Errorf("agy exited while awaiting %s", method)
+	case <-time.After(60 * time.Second):
+		return nil, fmt.Errorf("agy did not answer %s within 60s", method)
+	}
+}
+
+func (d *Daemon) sendAgyLocked(message, delivery string) controlResponse {
+	if d.proc == nil {
+		if err := d.startAgyLocked(); err != nil {
+			return controlResponse{Error: err.Error()}
+		}
+	}
+	seq := LastEventSeq(d.Dir)
+	state := d.agy
+	disposition := "started"
+	if d.running {
+		if delivery == "queued" {
+			d.queue = append(d.queue, message)
+			return controlResponse{Disposition: "queued", Seq: seq}
+		}
+		disposition, message = "steered", steerPrefix+message
+	} else {
+		state.text, state.usage, state.failure, state.cancelled = "", nil, "", false
+		if state.role != "" {
+			message = state.role + "\n\n" + message
+		}
+	}
+	state.rpcMu.Lock()
+	state.live = true
+	state.rpcMu.Unlock()
+	id, _, err := state.request(d.proc.stream, "session/prompt", map[string]any{"sessionId": d.agent.Session, "prompt": []map[string]any{{"type": "text", "text": message}}}, false)
+	if err != nil {
+		return controlResponse{Error: err.Error()}
+	}
+	state.prompts[id] = true
+	d.running = true
+	return controlResponse{Disposition: disposition, Seq: seq}
+}
+
+func (d *Daemon) startAgyLocked() error {
+	a := d.agent
+	role, err := d.preStartLocked()
+	if err != nil {
+		return err
+	}
+	args := []string{"acp", "--stdio"}
+	if a.Mode == ModeYolo {
+		args = append(args, "--dangerously-skip-permissions")
+	}
+	if a.Option.UserConfig != nil && !*a.Option.UserConfig {
+		args = append(args, "--include-default-customizations=false")
+	}
+	args = append(args, a.Option.Flags...)
+	stream, err := d.startStream(runtime.CommandPlan{Executable: "agy", Args: args, Cwd: a.Cwd})
+	if err != nil {
+		return err
+	}
+	proc := &nativeProc{stream: stream, done: make(chan struct{})}
+	state := &agyState{pending: map[int]chan agyReply{}, closed: make(chan struct{}), prompts: map[int]bool{}, role: role}
+	d.proc, d.agy, d.procAuth = proc, state, Auth{}
+	notes := make(chan string, 256)
+	go d.readAgy(proc, state, notes)
+	go func() {
+		for line := range notes {
+			d.handleAgyLine(state, line)
+		}
+		d.procExit(proc, "agy ACP execution")
+	}()
+	fail := func(err error) error { stream.Kill(); return err }
+	if _, err := state.call(stream, "initialize", map[string]any{"protocolVersion": 1, "clientCapabilities": map[string]any{}, "clientInfo": map[string]any{"name": "sessionman", "version": "1.0"}}); err != nil {
+		return fail(err)
+	}
+	params := map[string]any{"cwd": a.Cwd, "mcpServers": d.agyMCPServers()}
+	method := "session/new"
+	if a.Session != "" {
+		method = "session/load"
+		params["sessionId"] = a.Session
+	}
+	result, err := state.call(stream, method, params)
+	if err != nil {
+		return fail(err)
+	}
+	var session struct {
+		ID string `json:"sessionId"`
+	}
+	if err := json.Unmarshal(result, &session); err != nil {
+		return fail(fmt.Errorf("invalid agy session response: %w", err))
+	}
+	if a.Session == "" {
+		if session.ID == "" {
+			return fail(fmt.Errorf("agy returned no native session; no replacement accepted"))
+		}
+		a.Session = session.ID
+	} else if session.ID != "" && session.ID != a.Session {
+		return fail(fmt.Errorf("agy returned a different native session; no replacement accepted"))
+	}
+	a.NativeID = a.Session
+	if a.Option.Model != "" {
+		if _, err := state.call(stream, "session/set_model", map[string]any{"sessionId": a.Session, "modelId": a.Option.Model}); err != nil {
+			return fail(err)
+		}
+	}
+	if a.Option.Effort != "" {
+		if _, err := state.call(stream, "session/set_config_option", map[string]any{"sessionId": a.Session, "configId": "thought_level", "value": a.Option.Effort}); err != nil {
+			return fail(err)
+		}
+	}
+	d.persistMetaLocked()
+	return nil
+}
+
+func (d *Daemon) agyMCPServers() []drivers.AgyMCPServer {
+	config := drivers.MCPConfig{Servers: map[string]drivers.MCPServer{}}
+	if d.meta.AxBinary != "" && d.meta.DelegationDepth < MaxDelegationDepth {
+		env := map[string]string{"SM_DELEGATION_DEPTH": fmt.Sprint(d.meta.DelegationDepth + 1), "SM_HOST_AGENT_DIR": d.Dir}
+		if home := os.Getenv("SM_SUBAGENT_HOME"); home != "" {
+			env["SM_SUBAGENT_HOME"] = home
+		}
+		config.Servers["sessionman"] = drivers.MCPServer{Command: d.meta.AxBinary, Args: []string{"mcp", "serve"}, Env: env}
+	}
+	return drivers.AgyMCPServers(config)
+}
+
+func (d *Daemon) readAgy(proc *nativeProc, state *agyState, notes chan<- string) {
+	for line := range proc.stream.Lines() {
+		var envelope struct {
+			ID     json.RawMessage `json:"id"`
+			Method string          `json:"method"`
+			Result json.RawMessage `json:"result"`
+			Error  *agyError       `json:"error"`
+		}
+		if err := json.Unmarshal([]byte(line), &envelope); err != nil {
+			d.debugf("invalid agy event: %v; raw=%s", err, line)
+			continue
+		}
+		if len(envelope.ID) > 0 && envelope.Method != "" {
+			d.answerAgyRequest(proc.stream, envelope.ID, envelope.Method)
+			continue
+		}
+		if len(envelope.ID) > 0 {
+			var id int
+			if json.Unmarshal(envelope.ID, &id) != nil {
+				continue
+			}
+			state.rpcMu.Lock()
+			ch := state.pending[id]
+			delete(state.pending, id)
+			state.rpcMu.Unlock()
+			if ch != nil {
+				ch <- agyReply{result: envelope.Result, err: envelope.Error}
+				continue
+			}
+		}
+		state.rpcMu.Lock()
+		live := state.live
+		state.rpcMu.Unlock()
+		if live {
+			notes <- line
+		}
+	}
+	close(state.closed)
+	close(notes)
+}
+
+func (d *Daemon) answerAgyRequest(stream *runtime.Stream, id json.RawMessage, method string) {
+	reply := map[string]any{"jsonrpc": "2.0", "id": id}
+	if method == "session/request_permission" {
+		reply["result"] = map[string]any{"outcome": map[string]any{"outcome": "cancelled"}}
+	} else {
+		reply["error"] = map[string]any{"code": -32601, "message": "interactive client request unavailable in an ExternalSubagent: " + method}
+	}
+	raw, _ := json.Marshal(reply)
+	if err := stream.WriteLine(string(raw)); err != nil {
+		d.debugf("agy client response failed: %v", err)
+	}
+}
+
+func (d *Daemon) handleAgyLine(state *agyState, line string) {
+	var event struct {
+		ID     int       `json:"id"`
+		Method string    `json:"method"`
+		Error  *agyError `json:"error"`
+		Result struct {
+			StopReason string          `json:"stopReason"`
+			Usage      json.RawMessage `json:"usage"`
+		} `json:"result"`
+		Params struct {
+			Session string `json:"sessionId"`
+			Update  struct {
+				Type    string `json:"sessionUpdate"`
+				Content struct {
+					Type string `json:"type"`
+					Text string `json:"text"`
+				} `json:"content"`
+			} `json:"update"`
+		} `json:"params"`
+	}
+	if json.Unmarshal([]byte(line), &event) != nil {
+		return
+	}
+	d.mu.Lock()
+	if d.agy != state || d.stopping {
+		d.mu.Unlock()
+		return
+	}
+	if event.Method == "session/update" {
+		if event.Params.Session == d.agent.Session && event.Params.Update.Type == "agent_message_chunk" && event.Params.Update.Content.Type == "text" {
+			state.text += event.Params.Update.Content.Text
+		}
+		d.mu.Unlock()
+		return
+	}
+	if !state.prompts[event.ID] {
+		d.mu.Unlock()
+		return
+	}
+	delete(state.prompts, event.ID)
+	if event.Error != nil {
+		state.failure = fmt.Sprintf("agy session/prompt failed (%d): %s", event.Error.Code, runtime.RedactSecrets(event.Error.Message))
+	}
+	if len(event.Result.Usage) > 0 {
+		state.usage = event.Result.Usage
+	}
+	if event.Result.StopReason == "cancelled" {
+		state.cancelled = true
+	}
+	if len(state.prompts) > 0 {
+		d.mu.Unlock()
+		return
+	}
+	report := Event{Status: "completed", Report: state.text, Usage: state.usage, Auth: "agy native credential resolution (no identity override)"}
+	if d.agent.Option.Effort != "" {
+		report.Evidence = "WARNING: agy accepted the thought_level request=" + d.agent.Option.Effort + "; native provider request effort was not recorded and is unverified"
+	}
+	switch {
+	case state.failure != "":
+		report.Status, report.Report, report.Failure = "failed", "", state.failure
+	case state.cancelled:
+		report.Status, report.Report, report.Failure = "cancelled", "", "Native turn cancelled"
+	case state.text == "":
+		report.Status, report.Failure = "failed", "ExternalSubagent exited without a complete report; no implicit retry"
+	}
+	d.running = false
+	report.Worktree = d.worktreeState()
+	d.appendReportLocked(report)
+	d.mu.Unlock()
+	d.deliverQueue()
+}

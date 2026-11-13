@@ -26,8 +26,11 @@ func (a Auth) String() string {
 // authSource is the native agent's own credential directory: its environment variable when set,
 // otherwise the native default under the user's home. SM_SUBAGENT_HOME never changes it.
 func authSource(agent string) (string, string, error) {
-	if agent == "claude" {
+	if agent == "claude" || agent == "agy" {
 		return "", "", nil
+	}
+	if agent != "codex" && agent != "pi" {
+		return "", "", fmt.Errorf("%s has no native credential source", agent)
 	}
 	key, rel := "CODEX_HOME", ".codex"
 	if agent == "pi" {
@@ -59,7 +62,7 @@ func AuthEnvironment(auth Auth) (map[string]string, []string) {
 // Whether that directory can serve the model is the runtime's own call: pi and
 // codex resolve models and credentials themselves and fail loudly in-stream.
 func DiscoverAuth(agent string) (Auth, error) {
-	if agent == "claude" {
+	if agent == "claude" || agent == "agy" {
 		return Auth{}, nil
 	}
 	key, dir, err := authSource(agent)

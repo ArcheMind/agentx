@@ -159,3 +159,30 @@ func indexOf(t *testing.T, args []string, value string) int {
 	t.Fatalf("args %q missing %q", args, value)
 	return -1
 }
+
+func TestAgyContinueUsesNativeConversationAndRejectsUnverifiedMount(t *testing.T) {
+	plan, err := ContinueExecPlan("agy", "/ws", "native-model", continueUUID, "high", "", true, MCPConfig{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	args := strings.Join(plan.Args, " ")
+	for _, want := range []string{"--print --output-format stream-json", "--conversation " + continueUUID, "--effort high", "--model native-model", "--dangerously-skip-permissions"} {
+		if !strings.Contains(args, want) {
+			t.Fatal(args, want)
+		}
+	}
+	if _, err := ContinueExecPlan("agy", "/ws", "", "", "", "", false, MCPConfig{Servers: map[string]MCPServer{"x": {Command: "tool"}}}); err == nil {
+		t.Fatal("unverified temporary CLI MCP accepted")
+	}
+	if _, err := ContinueExecPlan("agy", "/ws", "", "bad", "", "", false, MCPConfig{}); err == nil {
+		t.Fatal("invalid native session accepted")
+	}
+}
+
+func TestAgyACPMCPEnvironment(t *testing.T) {
+	t.Setenv("AGY_TEST_PASSTHROUGH", "inherited")
+	servers := AgyMCPServers(MCPConfig{Servers: map[string]MCPServer{"tool": {Command: "native", EnvPassthrough: []string{"AGY_TEST_PASSTHROUGH"}, Env: map[string]string{"EXPLICIT": "value"}}}})
+	if len(servers) != 1 || len(servers[0].Env) != 2 || servers[0].Env[0].Name != "AGY_TEST_PASSTHROUGH" || servers[0].Env[0].Value != "inherited" {
+		t.Fatal(servers)
+	}
+}

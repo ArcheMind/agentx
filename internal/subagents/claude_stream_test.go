@@ -18,6 +18,9 @@ import (
 // SM_FAKE_CLAUDE set, so the daemon drives a real process over real pipes.
 func TestMain(m *testing.M) {
 	switch os.Getenv("SM_FAKE_NATIVE") {
+	case "agy":
+		fakeAgyMain()
+		return
 	case "codex":
 		fakeCodexMain()
 		return
