@@ -394,9 +394,9 @@ receives the same delegation tools through its extension bridge.
 
 Native CLIs can run a different effort from the one requested without failing,
 and their own records may still show the requested one. SessionMan therefore
-checks what was actually sent or run, per turn, and fails the turn on any
-difference. The failed report still carries the agent's text, labelled
-untrusted, and the ExternalSubagent cannot be continued; nothing is retried.
+reports the available native evidence per turn. A difference or absent evidence
+produces a warning; it does not turn a successful native result into a failure.
+Native execution errors still fail the turn. Nothing is retried automatically.
 
 - Codex: the configured level is echoed in the rollout `turn_context` even
   when Codex sends another one (`gpt-5.6-luna` with `ultra` sends `max`). SessionMan
@@ -412,22 +412,23 @@ untrusted, and the ExternalSubagent cannot be continued; nothing is retried.
   without any session trace (Codex-backed models: `minimal` is sent as `low`,
   `off` sends no effort). SessionMan loads its own observer extension, which only
   appends an `sessionman-provider-request` entry with the request's reasoning
-  effort to the Pi session before each provider request. A turn passes only
-  if the session's thinking level equals the preset effort and every provider
-  request of that turn carried exactly that effort. Models whose requests carry
-  no reasoning effort field therefore fail explicit effort.
+  effort to the Pi session before each provider request. The report compares
+  the session thinking level and recorded provider request efforts with the
+  preset. A clamp, mismatch, or missing provider effort is reported as a warning
+  or unverified evidence; it does not fail an otherwise successful turn.
 
-Verified per level on 2026-10-21 (Codex 0.163.0, Pi 0.84.4, see
+Historical observations on 2026-10-21 (Codex 0.163.0, Pi 0.84.4, see
 [acceptance evidence](subagents-acceptance.md)):
 
-| Combination | Runs as | Rejected |
+| Combination | Observed native effort | Native rejection or mismatch |
 | --- | --- | --- |
 | Codex `gpt-5.6-luna` | `none`, `low`, `medium`, `high`, `xhigh`, `max` | `minimal` (native 400), `ultra` (silently run as `max`; detected) |
 | Pi `openai-codex/gpt-5.6-luna` | `low`, `medium`, `high`, `xhigh`, `max` | `off`, `minimal` at preset validation (not sent as requested) |
 | Pi `deepseek/deepseek-flash` | not claimed | `max` clamped by Pi to `high`; detected |
 
-Other models are checked the same way at run time; no level is claimed for
-them in advance.
+These observations do not establish support for other models or current native
+versions. Current mismatch reporting is advisory; historical acceptance records
+that describe verify-and-fail behavior are not the current contract.
 
 Pi provides no OS sandbox through this integration.
 Native project context (for example AGENTS.md) still applies. Credentials
